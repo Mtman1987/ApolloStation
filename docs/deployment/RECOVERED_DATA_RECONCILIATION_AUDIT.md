@@ -80,3 +80,14 @@ A second extraction pass kept the Chat Tag and StreamWeaver archives in separate
 The StreamWeaver candidate set includes the archived global actions/commands/configuration JSON as well as tenant documents; the 124 token-path JSON files are excluded. The 251 redacted-document count is broader than path exclusions because some otherwise importable JSON documents contain embedded credential fields.
 
 This is a local offline preflight using the same recursive JSON traversal, tenant-path classification, and normalized sensitive-key matching as the staging utility. It is not a Turso write or a live deployment test. The new regression work in PR #419 adds direct Node.js coverage for nested Twitch/Discord credential fields and verifies that CLI dry-run does not instantiate a Turso client or require credentials.
+
+## Partial legacy identity crosswalk
+
+A separate comparison of the Chat Tag `users` map against StreamWeaver's tenant directory names and Twitch configuration found:
+
+- 13 of the 39 legacy Chat Tag user IDs exactly match a StreamWeaver runtime tenant-directory ID.
+- For all 13 matches, the legacy Chat Tag Twitch username also agrees with that directory's `config/twitch.json` broadcaster username.
+- 33 of the 155 Chat Tag player usernames overlap a username in the legacy `users` map.
+- None of the 155 `tagPlayers.id` values equals one of the 39 legacy `users` map IDs.
+
+These are useful source-to-source identity hints, not Apollo tenant ownership. The 13 exact matches still need to be joined to canonical SPMT tenant/account records before assigning any player, score, immunity, pass, Quackverse, or historical event data. The other 26 legacy user IDs and 122 non-overlapping player usernames remain unresolved by this evidence.
