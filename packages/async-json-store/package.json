@@ -1,0 +1,17 @@
+{
+  "name": "@spmt/async-json-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    }
+  },
+  "dependencies": {
+    "@spmt/turso-http": "0.1.0"
+  }
+}
