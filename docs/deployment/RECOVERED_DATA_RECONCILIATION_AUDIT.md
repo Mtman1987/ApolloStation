@@ -67,3 +67,16 @@ The prior high-level inventory recorded larger `data/` and `config/` counts (942
 ## Current release boundary
 
 PR #413 provides the SQLite-to-Turso transfer primitive. PR #417 adds the Nebula Mosaic-only Turso runtime integration. Neither imports these recovered JSON archives, migrates the Chat Tag player/economy stores, or moves StreamWeaver's domain stores to Turso. No Hostless live smoke test or recovered-data import is claimed by this audit.
+
+## Offline staging-manifest preflight
+
+A second extraction pass kept the Chat Tag and StreamWeaver archives in separate working directories and applied the staging utility's source-path and sensitive-key rules without opening a Turso connection:
+
+| Source | Candidate JSON documents | Invalid JSON | Documents with redacted fields | Destination scopes |
+|---|---:|---:|---:|---:|
+| Chat Tag legacy-global | 16 | 0 | 4 | 1 |
+| StreamWeaver | 5,731 | 0 | 251 | 58 (57 tenant IDs plus `__global__`) |
+
+The StreamWeaver candidate set includes the archived global actions/commands/configuration JSON as well as tenant documents; the 124 token-path JSON files are excluded. The 251 redacted-document count is broader than path exclusions because some otherwise importable JSON documents contain embedded credential fields.
+
+This is a local offline preflight using the same recursive JSON traversal, tenant-path classification, and normalized sensitive-key matching as the staging utility. It is not a Turso write or a live deployment test. The new regression work in PR #419 adds direct Node.js coverage for nested Twitch/Discord credential fields and verifies that CLI dry-run does not instantiate a Turso client or require credentials.
