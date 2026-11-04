@@ -23,7 +23,7 @@ export class StellarSpeechProvider {
   capabilities() { return [...(this.configured() ? ["stellar.speech.synthesize.v1"] : []), ...(this.transcriptionConfigured() ? ["stellar.speech.transcribe.v1"] : [])]; }
   defaultVoice() { return this.localKokoroConfigured() ? "kokoro:af_heart" : ATHENA_CANONICAL_TTS_VOICE; }
   voices() { return TTS_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
-  async synthesize(text: string, voiceId = ATHENA_CANONICAL_TTS_VOICE, tenantId = "") {
+  async synthesize(text: string, voiceId = this.defaultVoice(), tenantId = "") {
     if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
     text = boundedText(text, 20_000);
     const voice = getTtsVoiceOption(voiceId);
