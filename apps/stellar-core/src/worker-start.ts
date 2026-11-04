@@ -21,7 +21,10 @@ const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getA
 const provider = openAiKey ? new OpenAiResponsesChatProvider({ apiKey: openAiKey, model }) : new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
 const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
 const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
-const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled" && process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}), ...(process.env.STELLAR_KOKORO_URL ? { kokoroOrigin: process.env.STELLAR_KOKORO_URL, kokoroToken: process.env.STELLAR_KOKORO_AUTH_TOKEN } : {}) }), `${workerId}-speech`, executionTarget);
+const kokoroUrl = process.env.STELLAR_KOKORO_URL;
+const kokoroToken = process.env.STELLAR_KOKORO_AUTH_TOKEN;
+if (Boolean(kokoroUrl) !== Boolean(kokoroToken) || (kokoroToken && kokoroToken.length < 32)) throw new Error("STELLAR_KOKORO_URL and a 32+ character STELLAR_KOKORO_AUTH_TOKEN must be configured together");
+const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled" && process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}), ...(kokoroUrl && kokoroToken ? { kokoroOrigin: kokoroUrl, kokoroToken } : {}) }), `${workerId}-speech`, executionTarget);
 const controller = new AbortController();
 const startedAt = new Date().toISOString();
 const startedMs = Date.now();
