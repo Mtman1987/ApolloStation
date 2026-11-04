@@ -34,13 +34,29 @@ before continuing.
 
 ### Next continuation
 
-1. Finish the remaining Nebula/Chat Tag parity audit, especially Quackverse
-   card-art controls and any remaining Mosaic art/paint administration gaps.
-   Avoid rebuilding the Quackverse trade desk (#392), Mosaic Discord cards
+1. Nebula art-controls audit is complete. Apollo's Art Studio already
+   supports master generation, upload/delete, 24-card batch generation,
+   cancellation, enhancement/hover animation and status. The live donor's
+   provider/model/resolution controls are centralized in its art manager;
+   Apollo centralizes those settings in StreamWeaver Image Studio instead.
+   Quackverse art jobs bill the requesting user and the StreamWeaver image
+   worker loads that user's saved provider settings; do not duplicate a
+   second provider selector in Nebula. The DSH hover-art worker is FFmpeg
+   based and does not require paid AI.
+2. A separate portability blocker remains: Nebula media-delivery and
+   Quackverse art jobs, StreamWeaver image generation, DSH art rendering,
+   Stellar chat/speech, and several HearMeOut workers still hardcode
+   `executionTarget: "sprite"`. The contract currently allows only
+   `sprite`, `fly`, and `companion`. Before Oracle-hosted jobs can work
+   without Sprite/Fly, add a vendor-neutral `hosted` execution target across
+   contracts, job creation, worker reporting/claiming and readiness checks.
+   Keep backward compatibility for existing queued jobs and tests; do not
+   deploy or claim Oracle acceptance.
+3. Continue Discord Stream Hub parity after the portability plan. Preserve
+   existing Restream and OverlayBay functionality and keep Lounge continuity
+   safe. Avoid rebuilding Quackverse trade desk (#392), Mosaic Discord cards
    (#393), leaderboard work (#394-395), Space Mountain reward retry (#396),
    Commander avatar gestures (#398), or Commander MT listener (#399).
-2. Then move to Discord Stream Hub parity. Preserve existing Restream and
-   OverlayBay functionality and keep Lounge continuity safe.
 3. TTS remains a separate StreamWeaver gap. Donor StreamWeaver has a local
    Kokoro ONNX worker in `workers/free-tts/server.py`, pinned dependencies,
    a 2-thread CPU cap, startup smoke inference, bounded loopback WAV responses,
