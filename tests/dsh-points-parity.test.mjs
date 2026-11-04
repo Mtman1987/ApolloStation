@@ -24,7 +24,7 @@ test("DSH leaderboard cards use canonical lifetime XP and expose safe rank contr
 test("DSH leaderboard image is rendered locally and uploaded as a Discord attachment", async () => {
   const rows = [{ rank: 1, userId: "user-1", displayName: "<@everyone> Captain", lifetimeXp: 1200, spendableXp: 200, level: 4 }];
   const svg = renderDshLeaderboardSvg(rows, { communityName: "Crew & Friends", updatedAt: "2026-11-03T20:00:00.000Z" });
-  assert.match(svg, /Crew &amp; Friends/);
+  assert.match(svg, /CREW &amp; FRIENDS/);
   assert.match(svg, /&lt;@everyone&gt; Captain/);
   const png = renderDshLeaderboardPng(rows, { communityName: "Crew & Friends", updatedAt: "2026-11-03T20:00:00.000Z" });
   assert.deepEqual([...png.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
