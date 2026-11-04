@@ -42,14 +42,14 @@ test("Chat Tag front-seat check-in bonus credits 100 Nebula points exactly once 
     const state = store.get("tenant");
     assert.equal(state.players["spmt:canonical-member"].gamePointsBalance, 100);
     assert.equal(state.players["spmt:canonical-member"].lifetimeEarned, 100);
-    assert.equal(state.ledger.filter(entry => entry.reason === "Chat Tag front-seat check-in bonus").length, 1);
+    assert.equal(state.ledger.filter(entry => entry.reason === "Front-seat check-in bonus").length, 1);
     assert.ok(state.ledger.at(-1).sourceId);
     store.close();
     store = new SqliteNebulaGameRuntimeStore(path);
     const duplicate = store.update("tenant", state => awardNebulaCheckinBonus(state, input)).result;
     assert.equal(duplicate.duplicate, true);
     assert.equal(duplicate.balance, 100);
-    assert.equal(store.get("tenant").ledger.filter(entry => entry.reason === "Chat Tag front-seat check-in bonus").length, 1);
+    assert.equal(store.get("tenant").ledger.filter(entry => entry.reason === "Front-seat check-in bonus").length, 1);
     assert.throws(() => store.update("tenant", state => awardNebulaCheckinBonus(state, { ...input, userId: "spmt:other-member" })), /already credited to another player/);
     assert.equal(store.get("tenant").players["spmt:other-member"], undefined);
   } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
