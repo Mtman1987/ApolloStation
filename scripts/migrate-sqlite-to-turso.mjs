@@ -122,6 +122,9 @@ export async function migrateSqliteFile({ sourcePath, adapter, apply = false, on
       throw new Error("Source SQLite quick_check failed; refusing to migrate");
     }
     const { objects, tables, tableInfo } = getSourceInventory(db);
+    const hasSequence = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'").get());
+    const sequences = hasSequence ? db.prepare("SELECT name, seq FROM sqlite_sequence").all() : [];
+    const sourceUserVersion = Number(db.prepare("PRAGMA user_version").get().user_version);
     const destination = await adapter.execute(
       "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' LIMIT 1",
       [],
@@ -164,6 +167,13 @@ export async function migrateSqliteFile({ sourcePath, adapter, apply = false, on
       if (pending.length) await adapter.pipeline(pending);
       onProgress({ phase: "rows", table: table.name, expected: counts.get(table.name) });
     }
+
+    // Preserve AUTOINCREMENT high-water marks, including values above the current max row id.
+    for (const sequence of sequences) {
+      const updated = await adapter.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?", [sequence.seq, sequence.name]);
+      if (updated.affectedRows === 0) await adapter.execute("INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)", [sequence.name, sequence.seq]);
+    }
+    await adapter.execute(`PRAGMA user_version = ${sourceUserVersion}`);
 
     // Recreate indexes, views and triggers only after all base rows have been loaded.
     const secondary = objects.filter((item) => item.type !== "table");
