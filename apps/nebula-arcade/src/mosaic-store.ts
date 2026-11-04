@@ -67,6 +67,12 @@ export class SqliteNebulaMosaicStore {
       ) STRICT;`);
   }
   close() { this.db.close(); }
+  health() {
+    const row = this.db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    if (row?.quick_check !== "ok") return { ready: false };
+    this.db.prepare("SELECT 1 FROM nebula_mosaic_state LIMIT 1").get();
+    return { ready: true };
+  }
   get(tenantValue: unknown, channelValue: unknown): MosaicQueueState {
     const tenantId = cleanKey(tenantValue, "tenant id");
     const channel = cleanKey(channelValue, "channel");
