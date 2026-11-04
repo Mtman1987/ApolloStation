@@ -1,0 +1,27 @@
+services:
+  kokoro-tts:
+    build:
+      context: ../..
+      dockerfile: workers/free-tts/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+    cpus: 2.0
+    mem_limit: 2g
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - /opt/kokoro-venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
+      interval: 20s
+      timeout: 4s
+      start_period: 90s
+      retries: 3
