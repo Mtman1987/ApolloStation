@@ -64,6 +64,7 @@ export * from "./media-delivery.js";
 
 export * from "./mosaic-core.js";
 export * from "./mosaic-export.js";
+export * from "./mosaic-library.js";
 export * from "./mosaic-store.js";
 export * from "./mosaic-runtime.js";
 export * from "./mosaic-generation.js";
