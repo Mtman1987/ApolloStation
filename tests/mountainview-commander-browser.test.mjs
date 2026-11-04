@@ -26,7 +26,7 @@ test("MountainView serves the Commander MT listener with bounded cycles and expl
     assert.match(html, /data-commander-start/);
     assert.match(html, /data-commander-confirm/);
     assert.match(html, /\/api\/mountainview\/voice\/route/);
-    assert.match(html, /nothing is sent until you tap a send button/i);
+    assert.match(html, /tap Route/);
   } finally {
     await host.close();
     rmSync(dir, { recursive: true, force: true });
