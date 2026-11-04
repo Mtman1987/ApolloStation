@@ -22,6 +22,11 @@ on:
   pull_request:
     paths:
       - "infra/oracle/Dockerfile.apollo"
+      - "infra/oracle/apollo-core.compose.yml"
+      - "infra/oracle/Caddyfile.apollo"
+      - "infra/oracle/prepare-apollo-data-volume.sh"
+      - "infra/oracle/apollo.env.example"
+      - "apps/hearmeout/legacy-worker/**"
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
