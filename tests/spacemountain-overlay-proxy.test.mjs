@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { createSpaceMountainWebHost } from "../apps/spacemountain-web/dist/server.js";
+import { createSpaceMountainWebHost, validateIntegratedWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
 import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
@@ -116,6 +116,40 @@ test("multi-node ingress accepts HTTPS service origins", async () => {
   try {
     await web.listen();
     const response = await fetch(`${origin(web.server)}/v1/nebula/game-actions`);
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error, "internal_proxy_unavailable");
+  } finally { await web.close(); }
+});
+
+
+test("production integrated gateway accepts HTTPS origins for the three-node services", () => {
+  const checked = validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "production",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    NEBULA_ARCADE_ORIGIN: "https://nebula.example.test",
+    STREAMWEAVER_WEB_ORIGIN: "https://streamweaver.example.test",
+    DSH_WEB_ORIGIN: "https://discord.example.test",
+  });
+  assert.equal(checked.spmtOrigin, "http://127.0.0.1:3000");
+  assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
+  assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
+  assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
+  assert.throws(() => validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "production",
+    SPMT_ORIGIN: "http://spmt.example.test",
+  }), /must use HTTPS/);
+});
+
+test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS node", async () => {
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    greenAppOrigins: { streamweaver: "https://127.0.0.1:1" },
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const response = await fetch(`${origin(web.server)}/apps/streamweaver`);
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "internal_proxy_unavailable");
   } finally { await web.close(); }
