@@ -194,10 +194,10 @@ async function main() {
     return;
   }
   const records = await buildRecoveredJsonManifest(options);
-  const adapter = new TursoHttpAdapter({
+  const adapter = options.apply ? new TursoHttpAdapter({
     url: process.env.TURSO_DATABASE_URL ?? "",
     authToken: process.env.TURSO_AUTH_TOKEN ?? "",
-  });
+  }) : undefined;
   const result = await stageRecoveredJson({
     records, adapter, apply: options.apply,
     onProgress: (event) => process.stdout.write(JSON.stringify(event) + "\n"),
