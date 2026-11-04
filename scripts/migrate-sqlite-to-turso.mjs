@@ -123,7 +123,9 @@ export async function migrateSqliteFile({ sourcePath, adapter, apply = false, on
     }
     const { objects, tables, tableInfo } = getSourceInventory(db);
     const hasSequence = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'").get());
-    const sequences = hasSequence ? db.prepare("SELECT name, seq FROM sqlite_sequence").all() : [];
+    const sequenceQuery = hasSequence ? db.prepare("SELECT name, seq FROM sqlite_sequence") : undefined;
+    sequenceQuery?.setReadBigInts(true);
+    const sequences = sequenceQuery ? sequenceQuery.all() : [];
     const sourceUserVersion = Number(db.prepare("PRAGMA user_version").get().user_version);
     const destination = await adapter.execute(
       "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' LIMIT 1",
