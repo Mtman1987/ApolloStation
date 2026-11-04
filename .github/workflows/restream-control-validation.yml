@@ -1,6 +1,15 @@
 name: Restream control service validation
 
 on:
+  push:
+    branches:
+      - main
+      - feat/oracle-restream-control-service
+    paths:
+      - "services/restream-control/**"
+      - "infra/oracle/restream-control.compose.yml"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - ".github/workflows/restream-control-validation.yml"
   pull_request:
     paths:
       - "services/restream-control/**"
