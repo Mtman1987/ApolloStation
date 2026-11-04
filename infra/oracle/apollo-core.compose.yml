@@ -199,8 +199,8 @@ services:
 
   kokoro:
     build:
-      context: ../..
-      dockerfile: services/free-tts/Dockerfile
+      context: ../../services/free-tts
+      dockerfile: Dockerfile
     image: apollo-kokoro:local
     init: true
     restart: unless-stopped
