@@ -68,3 +68,6 @@ A green smoke test proves the deployed process can reach Turso. It does not by i
 
 
 The Nebula live host readiness endpoint now includes `mosaicStoreReady` and `mosaicStoreMode`, and returns HTTP 503 if the selected Mosaic persistence backend cannot pass its health check. On Hostless Node 2, set `NEBULA_ARCADE_MOSAIC_STORE=turso` and `NEBULA_ARCADE_REQUIRE_TURSO=1`. The expected response is `mosaicStoreMode: "turso"`, `mosaicStoreReady: true`, and `ready: true`. With the requirement enabled, a local SQLite fallback reports HTTP 503 rather than appearing deploy-ready.
+
+
+The production gate `NEBULA_ARCADE_REQUIRE_TURSO=1` now requires **both** Nebula Mosaic and Game Mix to select Turso. Mosaic uses `NEBULA_ARCADE_MOSAIC_STORE=turso` with `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Game Mix uses `NEBULA_ARCADE_TURSO_DATABASE_URL` and `NEBULA_ARCADE_TURSO_AUTH_TOKEN`. The readiness response exposes `mosaicStoreMode`, `gameMixStoreMode`, and `gameMixStoreReady`; it returns HTTP 503 if either remains on SQLite. The base Nebula host probes the Game Mix store, so a configured-but-unreachable Turso database fails readiness. This gate does not migrate existing Game Mix rows: import and verify any legacy mixes before enabling the Turso backend.

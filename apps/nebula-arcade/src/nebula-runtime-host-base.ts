@@ -54,7 +54,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         runtime.integrityCheck();
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
