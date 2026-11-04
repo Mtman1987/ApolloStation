@@ -41,7 +41,7 @@ variable "admin_cidr" {
   type        = string
 
   validation {
-    condition     = can(cidrhost(var.admin_cidr, 0))
+    condition     = can(cidrnetmask(var.admin_cidr))
     error_message = "admin_cidr must be a valid IPv4 CIDR."
   }
 }
