@@ -254,7 +254,7 @@ const authorizeWorker = (req, res, next) => {
 function authorizeRenderer(kind) {
   return (req, res, next) => {
     if (WORKER_ROLE !== kind && WORKER_ROLE !== 'all') return res.status(404).end();
-    // Dedicated renderer apps have no public Fly service. Only the one media
+    // Dedicated renderer apps have no public service endpoint. Only the one media
     // surface assigned to that private machine bypasses the shared worker
     // secret; every other worker endpoint keeps authorizeWorker unchanged.
     if (PRIVATE_RENDERER && WORKER_ROLE === kind) return next();
@@ -432,7 +432,7 @@ function markYoutubeAuthRequired(message) {
 
 function youtubeAuthRequiredError() {
   if (hasYoutubeCookies() || Date.now() > youtubeAuthRequiredUntil) return null;
-  return new Error('YouTube auth required: add a Netscape cookies.txt file at /data/youtube-cookies.txt or set YOUTUBE_COOKIES_B64 as a Fly secret.');
+  return new Error('YouTube auth required: add a Netscape cookies.txt file at /data/youtube-cookies.txt or set YOUTUBE_COOKIES_B64 as a deployment secret.');
 }
 
 function mimeFromYtDlpInfo(info, mode) {
@@ -1155,11 +1155,6 @@ function cleanHlsFileName(fileName) {
   const clean = String(fileName || '').replace(/[^a-zA-Z0-9_.-]/g, '');
   if (!clean || clean.includes('..')) throw new Error('Invalid HLS file');
   return clean;
-}
-
-function cleanFlyMachineId(machineId) {
-  const clean = String(machineId || '').replace(/[^a-zA-Z0-9]/g, '');
-  return clean || null;
 }
 
 function isAllowedYoutubeMediaUrl(rawUrl) {
@@ -2068,12 +2063,6 @@ app.get('/watch/xtream/hls/:streamId/:file', authorizeWorker, async (req, res) =
   try {
     const streamId = String(req.params.streamId || '');
     const file = cleanHlsFileName(req.params.file);
-    const requestedMachine = cleanFlyMachineId(req.query.machine);
-    if (requestedMachine && FLY_MACHINE_ID && requestedMachine !== FLY_MACHINE_ID) {
-      res.setHeader('fly-replay', `instance=${requestedMachine};app=${FLY_APP_NAME}`);
-      return res.status(409).send('Replaying to HLS owner');
-    }
-
     const { dir } = watchHlsPaths(streamId);
 
     if (file === 'index.m3u8') {
@@ -3207,9 +3196,8 @@ process.on('unhandledRejection', (reason) => {
 // ── Start ───────────────────────────────────────────────────────────────
 // Never silently fall back to the donor app. The worker must be explicitly bound to Apollo's HearMeOut service.
 if (!APP_URL) throw new Error('APP_URL must be configured to ApolloStation HearMeOut before this worker can start');
-// The DJ bridge must accept sibling-app traffic over Fly's private IPv6 6PN.
-// Node's IPv6 wildcard is dual-stack when ipv6Only is false, preserving Fly Proxy
-// health checks over IPv4. Keep unrelated worker roles on their existing bind.
+// Bind dual-stack so private IPv4 and IPv6 service networks can reach the worker.
+// Keep unrelated worker roles on their configured bind address.
 const requestedBindHost = process.env.HMO_BIND_HOST;
 const BIND_HOST = WORKER_ROLE === 'dj'
   ? (requestedBindHost && requestedBindHost !== '0.0.0.0' ? requestedBindHost : '::')
@@ -3226,7 +3214,7 @@ app.listen(LISTEN_OPTIONS, () => {
   console.log(`[DJ Worker] Cache dir: ${CACHE_DIR}`);
   console.log('[DJ Worker] Legacy audio extraction: disabled');
   // Source ownership is role-specific in production. The DJ worker owns cache/
-  // extraction only; each persistent renderer gets its own Fly Machine and
+  // extraction only; browser renderers remain separate processes with their own
   // memory budget. Local development defaults to "all" for convenience.
   if (RUN_SPOTLIGHT) {
     let checkingSpotlight = false;
