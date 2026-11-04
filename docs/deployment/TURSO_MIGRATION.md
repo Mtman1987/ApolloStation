@@ -86,3 +86,30 @@ A successful one-time import does not prove the hostless runtime can save new da
 | 3. Hostless Turso connection and release verification | Not configured or tested yet. |
 
 The current work is preparation and safe tooling. No Turso destination has been written and no production runtime has been switched.
+
+
+## Recovered Chat Tag and StreamWeaver JSON staging
+
+The separate JSON staging utility is `scripts/stage-recovered-json-to-turso.mjs`, exposed as `npm run db:stage-recovered-json:turso`.
+
+It accepts already-extracted source roots:
+- Chat Tag root: directory containing the recovered `data/app-state.json`.
+- StreamWeaver root: directory containing the recovered `data/runtime/...` tree.
+
+Example dry-run:
+```sh
+node scripts/stage-recovered-json-to-turso.mjs \
+  --chat-tag-root /path/to/chat-tag-extracted \
+  --streamweaver-root /path/to/streamweaver-extracted
+```
+
+With secure server-side environment variables present, `--apply` stages documents in the dedicated `apollo_recovered_json_stage_v1` table. It is not an Apollo domain import:
+- Chat Tag records use the single `legacy-global` scope.
+- StreamWeaver records under `data/runtime/tenants/<tenant>/...` retain that tenant key; `data/tenants/<tenant>/...` is also recognized.
+- Other StreamWeaver JSON is staged under `__global__`.
+- Token/secret/credential path segments are excluded; sensitive JSON keys are redacted before payload staging.
+- Source and redacted-payload SHA-256 hashes are stored separately.
+- Re-running identical input is idempotent. A changed source at an existing source/path key is rejected, never overwritten.
+- The raw stage preserves source documents for later mapping; it does not create players, points, tenant accounts, or live StreamWeaver domain rows.
+
+The importer currently reads an extracted directory tree, not ZIP/TAR archives directly. Extract to a separate working directory; keep the original recovery ZIPs and nested archives unchanged. Review the dry-run counts and redaction report before applying. Tenant identity reconciliation and domain conversion remain separate gates.
