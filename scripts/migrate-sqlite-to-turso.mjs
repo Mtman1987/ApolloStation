@@ -11,87 +11,8 @@ import { pathToFileURL } from "node:url";
 
 const BATCH_SIZE = 40;
 
-export function encodeHranaValue(value) {
-  if (value === null || value === undefined) return { type: "null" };
-  if (typeof value === "bigint") return { type: "integer", value: value.toString() };
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("SQLite source contains a non-finite number");
-    if (Number.isInteger(value) && Number.isSafeInteger(value)) return { type: "integer", value: String(value) };
-    return { type: "float", value };
-  }
-  if (typeof value === "string") return { type: "text", value };
-  if (value instanceof Uint8Array) return { type: "blob", base64: Buffer.from(value).toString("base64") };
-  throw new Error(`Unsupported SQLite value type: ${typeof value}`);
-}
-
-export function decodeHranaValue(value) {
-  if (!value || value.type === "null") return null;
-  if (value.type === "integer") {
-    const integer = BigInt(value.value);
-    return integer <= BigInt(Number.MAX_SAFE_INTEGER) && integer >= BigInt(Number.MIN_SAFE_INTEGER)
-      ? Number(integer)
-      : integer;
-  }
-  if (value.type === "float") return value.value;
-  if (value.type === "text") return value.value;
-  if (value.type === "blob") return Buffer.from(value.base64, "base64");
-  throw new Error(`Unsupported Turso result type: ${value.type}`);
-}
-
-export function normalizeTursoUrl(value) {
-  const url = new URL(value.startsWith("libsql://") ? value.replace(/^libsql:/, "https:") : value);
-  if (url.protocol !== "https:") throw new Error("Turso database URL must use libsql:// or https://");
-  url.pathname = "/v2/pipeline";
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-export class TursoHttpAdapter {
-  constructor({ url, authToken, fetchImpl = fetch }) {
-    if (!url || !authToken) throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required");
-    this.endpoint = normalizeTursoUrl(url);
-    this.authToken = authToken;
-    this.fetchImpl = fetchImpl;
-  }
-
-  async pipeline(statements) {
-    if (!statements.length) return [];
-    const requests = statements.map(({ sql, args = [], wantRows = false }) => ({
-      type: "execute",
-      stmt: { sql, args: args.map(encodeHranaValue), want_rows: wantRows },
-    }));
-    requests.push({ type: "close" });
-    const response = await this.fetchImpl(this.endpoint, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.authToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ baton: null, requests }),
-    });
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500);
-      throw new Error(`Turso HTTP ${response.status}: ${detail}`);
-    }
-    const payload = await response.json();
-    const results = payload.results ?? [];
-    const statementResults = results.slice(0, statements.length);
-    const failed = statementResults.find((item) => item.type !== "ok");
-    if (failed) throw new Error(`Turso SQL error: ${failed.error?.message ?? "unknown error"}`);
-    return statementResults.map((item) => {
-      const result = item.response?.result;
-      return {
-        rows: (result?.rows ?? []).map((row) => row.map(decodeHranaValue)),
-        affectedRows: Number(result?.affected_row_count ?? 0),
-      };
-    });
-  }
-
-  async execute(sql, args = [], wantRows = false) {
-    return (await this.pipeline([{ sql, args, wantRows }]))[0];
-  }
-}
+import { TursoHttpAdapter, encodeHranaValue, decodeHranaValue, normalizeTursoUrl } from "../packages/turso-http/index.mjs";
+export { TursoHttpAdapter, encodeHranaValue, decodeHranaValue, normalizeTursoUrl };
 
 function quoteIdentifier(value) {
   return '"' + value.replaceAll('"', '""') + '"';
