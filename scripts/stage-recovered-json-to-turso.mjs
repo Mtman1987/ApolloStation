@@ -56,7 +56,7 @@ async function walkJson(root) {
 
 function tenantFor(source, path) {
   const parts = path.split("/");
-  if (source === "chat-tag") return "legacy-global";
+  if (source === "nebula-legacy-global") return "legacy-global";
   const runtimeTenant = parts.findIndex((part, index) => part === "tenants" && parts[index - 1] === "runtime");
   if (runtimeTenant >= 0 && parts[runtimeTenant + 1]) return parts[runtimeTenant + 1];
   const appTenant = parts.findIndex((part, index) => part === "tenants" && parts[index - 1] === "data");
@@ -90,7 +90,7 @@ async function collect(source, root) {
 
 export async function buildRecoveredJsonManifest({ chatTagRoot, streamWeaverRoot }) {
   const records = [];
-  if (chatTagRoot) records.push(...await collect("chat-tag", resolve(chatTagRoot)));
+  if (chatTagRoot) records.push(...await collect("nebula-legacy-global", resolve(chatTagRoot)));
   if (streamWeaverRoot) records.push(...await collect("streamweaver", resolve(streamWeaverRoot)));
   if (!records.length) throw new Error("Provide at least one extracted source root");
   const keys = new Set();
