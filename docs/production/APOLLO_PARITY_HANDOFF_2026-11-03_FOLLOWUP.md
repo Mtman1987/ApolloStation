@@ -1,6 +1,66 @@
 # Apollo continuation follow-up — 2026-11-03
 
-## Current continuation — refreshed after PR #398
+## Current continuation — refreshed after PR #399
+
+**Fetch main before continuing.** PR #399 was squash-merged at
+`9330f522f1c1eaabf7241db55efa80dac0bf1a92`. This documentation refresh is
+separate; fetch main for the current HEAD. The open-PR query returned none.
+
+### Completed in PR #399 — Commander MT listener
+
+- Added the `Commander MT` wake phrase and a bounded transcript policy:
+  ten-second processing cycles, a rolling sixty-second window, and a
+  2,000-character transcript cap. The buffer handles a wake phrase split over
+  adjacent segments and consumes each detected wake event once.
+- Added a visible MountainView Voice page listener using the browser's
+  `SpeechRecognition` / `webkitSpeechRecognition` engine. The page pauses
+  listening when hidden; this is a foreground browser feature, not an
+  always-on background phone service.
+- MountainView stores no microphone audio. Recognized text remains in the page
+  until the user taps Route. Browser speech-recognition support varies; manual
+  transcript entry remains available where the API is unavailable.
+- Routed recognized commands through MountainView's authenticated SPMT session
+  and existing suite-action / Companion pipeline. Existing tenant, user, role,
+  device and capability checks remain authoritative.
+- Broadcast/high-impact allowlisted actions require a second explicit
+  confirmation before job creation. Unknown commands return a clarification
+  rather than being treated as arbitrary code or shell instructions.
+- No paid AI, TTS, audio synthesis, provider credential, deploy, Fly.io action,
+  or runtime/secret change was made. This is deterministic voice-command
+  routing, not yet a full conversational Athena voice assistant or spoken reply.
+
+### Validation evidence
+
+- Dedicated MountainView validation run
+  [#41758409794](https://github.com/Mtman1987/ApolloStation/actions/runs/41758409794)
+  completed successfully: workspace build plus **17/17 MountainView tests
+  passed**, including the browser page, rolling transcript, cross-segment wake
+  phrase, confirmation gate, Companion bootstrap and device isolation.
+- Combined parity validation run
+  [#41758409915](https://github.com/Mtman1987/ApolloStation/actions/runs/41758409915)
+  completed successfully: workspace build plus **26/26 focused StreamWeaver
+  and MountainView regressions passed**.
+- PR [#399](https://github.com/Mtman1987/ApolloStation/pull/399) is merged and
+  the open-PR query returned none. No deployment or live microphone acceptance
+  test was performed.
+
+### Next continuation
+
+1. Continue StreamWeaver donor parity, especially the private assistant and
+   Voice Commander response path. The MountainView listener is now present;
+   do not duplicate it in StreamWeaver. Keep voice action routing through
+   authenticated app contracts.
+2. TTS remains a separate gap. Do not wire paid Deepgram/EdenAI voices or
+   external speech providers under the user's no-paid-AI requirement. Identify
+   a genuinely no-cost path before enabling spoken persona replies.
+3. Continue StreamWeaver parity, then Nebula/Chat Tag, then Discord Stream Hub.
+   Preserve Restream and OverlayBay and keep Lounge continuity safe.
+4. Keep repo-to-repo only: no Fly.io, deploy, restart, secret, volume, or live
+   provider changes.
+
+---
+
+## Previous snapshot — refreshed after PR #398
 
 **Fetch main before continuing.** PR #398's code was squash-merged at
 `20c23a73f90ec82250aedd26aab02eb0fba30811`. This follow-up refresh is
