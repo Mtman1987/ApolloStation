@@ -40,9 +40,12 @@ jobs:
         run: npm ci
       - name: Inventory SQLite persistence usage
         run: node scripts/audit-sqlite-usage.mjs --json > /tmp/apollo-sqlite-audit.json && node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
-      - name: Install local media test tools
+      - name: Ensure local media test tools
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          ffmpeg -version
       - name: Build and run offline-network regression suite
         run: npm run test:offline
