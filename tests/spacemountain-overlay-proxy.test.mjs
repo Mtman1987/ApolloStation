@@ -154,3 +154,22 @@ test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS 
     assert.equal((await response.json()).error, "internal_proxy_unavailable");
   } finally { await web.close(); }
 });
+
+
+test("integrated gateway keeps sandbox origins loopback-only", () => {
+  const checked = validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "sandbox",
+    SPMT_OUTBOUND_MODE: "disabled",
+    SPMT_SANDBOX_ID: "apollo-sandbox",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    DSH_WEB_ORIGIN: "http://127.0.0.1:3201",
+  });
+  assert.equal(checked.greenAppOrigins["discord-stream-hub"], "http://127.0.0.1:3201");
+  assert.throws(() => validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "sandbox",
+    SPMT_OUTBOUND_MODE: "disabled",
+    SPMT_SANDBOX_ID: "apollo-sandbox",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    DSH_WEB_ORIGIN: "http://discord.example.test",
+  }), /resolve to loopback/);
+});
