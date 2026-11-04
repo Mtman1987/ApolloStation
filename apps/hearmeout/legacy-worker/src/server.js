@@ -90,15 +90,14 @@ const WATCH_HLS_LIST_SIZE = Number(process.env.WATCH_HLS_LIST_SIZE || 90);
 const WATCH_HLS_DELETE_THRESHOLD = Number(process.env.WATCH_HLS_DELETE_THRESHOLD || 12);
 const WATCH_HLS_BUDGET_BYTES = Number(process.env.WATCH_HLS_BUDGET_BYTES || 1536 * 1024 * 1024);
 const WATCH_HLS_MIN_FREE_BYTES = Number(process.env.WATCH_HLS_MIN_FREE_BYTES || 1024 * 1024 * 1024);
-const FLY_MACHINE_ID = process.env.FLY_MACHINE_ID || '';
-const FLY_APP_NAME = process.env.FLY_APP_NAME || 'hmo-dj-worker';
 const WORKER_ROLE = String(process.env.HMO_WORKER_ROLE || 'all').trim().toLowerCase();
 const PRIVATE_RENDERER = process.env.HMO_PRIVATE_RENDERER === 'true';
 const RUN_SPOTLIGHT = WORKER_ROLE === 'all' || WORKER_ROLE === 'spotlight';
 const RUN_LOUNGE = WORKER_ROLE === 'all' || WORKER_ROLE === 'lounge';
-const spotlightBroadcast = createSpotlightHls({
-  spotlightEndpoint: process.env.SPOTLIGHT_ENDPOINT || 'https://discord-stream-hub-new.fly.dev/api/community-spotlight',
-});
+const spotlightEndpoint = String(process.env.SPOTLIGHT_ENDPOINT || '').trim();
+if (RUN_SPOTLIGHT && !spotlightEndpoint) throw new Error('SPOTLIGHT_ENDPOINT must be explicitly configured for the spotlight worker');
+if (RUN_SPOTLIGHT && !process.env.SPOTLIGHT_PROFILE_DIR) throw new Error('SPOTLIGHT_PROFILE_DIR must use persistent storage for the spotlight worker');
+const spotlightBroadcast = createSpotlightHls({ spotlightEndpoint });
 const directLounge = RUN_LOUNGE && process.env.HMO_LOUNGE_DIRECT_ONLY === 'true'
   ? createDirectLounge({
       program: loungeProgram.program,
@@ -117,7 +116,9 @@ const loungeBroadcast = RUN_LOUNGE && !directLounge ? createLoungeBroadcast({
   puppeteer,
   sourceUrl: process.env.LOUNGE_SOURCE_URL || (APP_URL ? `${APP_URL}/overlay/system-spacemountainlive-lounge?clean=1` : ''),
 }) : null;
-const restreamControl = RUN_LOUNGE ? createRestreamControl({ chromiumPath: CHROMIUM_PATH, puppeteer }) : null;
+const restreamControl = RUN_LOUNGE && process.env.RESTREAM_AUTOMATION_ENABLED === 'true'
+  ? createRestreamControl({ chromiumPath: CHROMIUM_PATH, puppeteer, profileDir: process.env.RESTREAM_PROFILE_DIR })
+  : null;
 
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const OFFLINE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac']);
@@ -1259,22 +1260,8 @@ function protectWatchHlsStorage(child, dir) {
 }
 
 function pinManifestSegmentsToMachine(manifest) {
-  if (!FLY_MACHINE_ID) return manifest;
-  const machineParam = `machine=${encodeURIComponent(FLY_MACHINE_ID)}`;
-  return manifest
-    .split(/\r?\n/)
-    .map((line) => {
-      const trimmed = line.trim();
-      if (/^#EXT-X-MEDIA:/i.test(trimmed) && /URI="[^"]+"/i.test(line)) {
-        return line.replace(/URI="([^"]+)"/i, (_match, uri) => {
-          if (/[?&]machine=/.test(uri)) return `URI="${uri}"`;
-          return `URI="${uri}${uri.includes('?') ? '&' : '?'}${machineParam}"`;
-        });
-      }
-      if (!trimmed || trimmed.startsWith('#') || /[?&]machine=/.test(trimmed)) return line;
-      return `${line}${line.includes('?') ? '&' : '?'}${machineParam}`;
-    })
-    .join('\n');
+  // Oracle's single-owner worker serves HLS segments from the same durable volume.
+  return manifest;
 }
 
 function pruneWatchHlsRoot(targetBytes = WATCH_HLS_BUDGET_BYTES) {
@@ -1564,10 +1551,16 @@ if (RUN_LOUNGE) loungeProgram.configureMusicSource({
     if (Date.now() - lastSongFailureNoticeAt < 10 * 60_000) return;
     lastSongFailureNoticeAt = Date.now();
     try {
-      const response = await fetch('https://streamweaver-new.fly.dev/api/internal/hearmeout/lounge-song-unavailable', {
+      const internalOrigin = String(process.env.STREAMWEAVER_INTERNAL_ORIGIN || '').trim();
+      if (!internalOrigin) return;
+      const target = new URL(internalOrigin);
+      const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname);
+      if ((target.protocol !== 'https:' && !(target.protocol === 'http:' && loopback)) || target.username || target.password || target.pathname !== '/' || target.search || target.hash) throw new Error('STREAMWEAVER_INTERNAL_ORIGIN must be a credential-free HTTPS origin');
+      const response = await fetch(new URL('/api/internal/hearmeout/lounge-song-unavailable', target), {
         method: 'POST',
         headers: { Authorization: `Bearer ${WORKER_SHARED_SECRET}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: String(title || '').slice(0, 120) }),
+        redirect: 'manual',
         signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) console.warn(`[Lounge] Chat notification returned ${response.status}`);
@@ -1929,12 +1922,6 @@ app.get('/watch/youtube/hls/:videoId/:file', authorizeWorker, async (req, res) =
     const videoId = String(req.params.videoId || '');
     if (!isValidVideoId(videoId)) return res.status(400).json({ error: 'Invalid YouTube video id' });
     const file = cleanHlsFileName(req.params.file);
-    const requestedMachine = cleanFlyMachineId(req.query.machine);
-    if (requestedMachine && FLY_MACHINE_ID && requestedMachine !== FLY_MACHINE_ID) {
-      res.setHeader('fly-replay', `instance=${requestedMachine};app=${FLY_APP_NAME}`);
-      return res.status(409).send('Replaying to HLS owner');
-    }
-
     const streamId = youtubeWatchHlsId(videoId);
     const { dir } = watchHlsPaths(streamId);
 
