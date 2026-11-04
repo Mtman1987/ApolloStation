@@ -11,6 +11,7 @@ on:
       - apps/streamweaver/src/stream-presentation-runtime.ts
       - apps/streamweaver/src/web-controls.ts
       - apps/streamweaver/src/provider-runtime.ts
+      - apps/streamweaver/src/stella-lounge-host.ts
       - apps/streamweaver/src/stream-operations-client.ts
       - apps/streamweaver/src/web-client.ts
       - apps/streamweaver/src/image-worker.ts
@@ -47,7 +48,8 @@ on:
       - tests/dsh-channel-cleanup-parity.test.mjs
       - tests/nebula-arcade-provider-runtime.test.mjs
       - tests/streamweaver-checkin-presentation.test.mjs
-      - tests/streamweaver-flow-author-e2e.test.mjs
+      - tests/streamweaver-flow-author-e2e.test.mjs tests/streamweaver-stella-lounge-host.test.mjs
+      - tests/streamweaver-stella-lounge-host.test.mjs
       - apps/streamweaver/src/community-runtime.ts
       - apps/nebula-arcade/src/provider-runtime.ts
       - apps/mountainview/src/commander-listener.ts
