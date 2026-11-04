@@ -81,7 +81,7 @@ OverlayBay and Restream must be mapped to their actual existing Apollo modules a
 - Added regression tests proving that non-loopback cleartext HTTP is rejected at startup and that HTTPS origins are accepted for outbound proxying. Existing overlay proxy tests continue to cover local loopback behavior.
 - Enabled the existing offline monorepo validation workflow on pull requests that touch the ingress, its tests, or build configuration. No CI result has been returned yet.
 
-The source and test changes are committed to this branch. CI status has not yet been returned for the latest commit, so this slice is not marked tested or production-ready. Keep the existing Sprite launcher unchanged so local regression workflows remain available. Do not introduce a Hostless deployment file that automatically provisions multiple resources until the resource plan and exact Hostless schema are validated.
+The source and test changes are committed to `hostless-three-node-port`. On commit `ec8386a812856b29f05ae2ce27fb8d0978910128`, the Nebula Arcade parity workflow, ApolloStation pull-request validation (including build and offline-network regression suite), and StreamWeaver parity workflow all completed successfully. The StreamWeaver focused regression step reported 80 passed / 0 failed; its separate full-manual regression step was skipped by workflow conditions and is not claimed as run. These are code/CI results only, not production acceptance. Keep the existing Sprite launcher unchanged so local regression workflows remain available. Do not introduce a Hostless deployment file that automatically provisions multiple resources until the resource plan and exact Hostless schema are validated.
 
 ## Known blockers / decisions
 
