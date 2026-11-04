@@ -34,7 +34,7 @@ test('speech rejects simulation-disabled requests before network and does not ac
 });
 test('private preferences and notes survive restart and remain user/tenant scoped',()=>{
   const dir=mkdtempSync(join(tmpdir(),'assistant-port-')),path=join(dir,'state.sqlite');let store=new StellarAssistantStore(path);
-  try{const note=store.saveNote('a','one',{title:'Preference',subject:'Captain',content:'Prefers Athena.'});store.savePreferences('a','one',{voice:'deepgram:aura-2:athena',ttsEnabled:true});store.close();store=new StellarAssistantStore(path);assert.equal(store.notes('a','one')[0].id,note.id);assert.equal(store.notes('a','two').length,0);assert.equal(store.notes('b','one').length,0);assert.equal(store.preferences('a','one').ttsEnabled,true);store.deleteForUser('a','one');assert.equal(store.notes('a','one').length,0);}finally{store.close();rmSync(dir,{recursive:true,force:true})}
+  try{assert.equal(store.preferences('a','one').voice,'kokoro:af_heart');const note=store.saveNote('a','one',{title:'Preference',subject:'Captain',content:'Prefers Athena.'});store.savePreferences('a','one',{voice:'deepgram:aura-2:athena',ttsEnabled:true});store.close();store=new StellarAssistantStore(path);assert.equal(store.notes('a','one')[0].id,note.id);assert.equal(store.notes('a','two').length,0);assert.equal(store.notes('b','one').length,0);assert.equal(store.preferences('a','one').ttsEnabled,true);store.deleteForUser('a','one');assert.equal(store.notes('a','one').length,0);}finally{store.close();rmSync(dir,{recursive:true,force:true})}
 });
 test('chat desk rejects stale edits, advances once on elapsed duration and isolates filters',()=>{
   let now=0;const store=new CommlinkOperatorStore(':memory:',()=>now);
