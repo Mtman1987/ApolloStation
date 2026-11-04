@@ -1,4 +1,4 @@
-export type TTSProvider = 'edenai' | 'deepgram';
+export type TTSProvider = 'edenai' | 'deepgram' | 'kokoro';
 export type EdenAITTSProvider = 'google' | 'microsoft' | 'amazon' | 'openai';
 export type TTSVoiceGender = 'MALE' | 'FEMALE';
 
@@ -212,7 +212,33 @@ export const EDENAI_VOICE_OPTIONS: TTSVoiceOption[] = [
   },
 ];
 
-export const TTS_VOICE_OPTIONS = [...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
+
+// Local CPU-only Kokoro voices. These IDs never route to paid providers.
+export const KOKORO_VOICE_OPTIONS: TTSVoiceOption[] = [
+  ['af_heart', 'Heart', 'Female'], ['af_bella', 'Bella', 'Female'],
+  ['af_nicole', 'Nicole', 'Female'], ['af_kore', 'Kore', 'Female'],
+  ['af_sarah', 'Sarah', 'Female'], ['af_aoede', 'Aoede', 'Female'],
+  ['af_alloy', 'Alloy (Kokoro)', 'Female'], ['af_jessica', 'Jessica', 'Female'],
+  ['af_nova', 'Nova (Kokoro)', 'Female'], ['af_river', 'River', 'Female'],
+  ['af_sky', 'Sky', 'Female'], ['am_michael', 'Michael', 'Male'],
+  ['am_puck', 'Puck', 'Male'], ['am_fenrir', 'Fenrir', 'Male'],
+  ['am_adam', 'Adam', 'Male'], ['am_echo', 'Echo (Kokoro)', 'Male'],
+  ['am_eric', 'Eric', 'Male'], ['am_liam', 'Liam', 'Male'],
+  ['am_onyx', 'Onyx (Kokoro)', 'Male'], ['am_santa', 'Santa', 'Male'],
+  ['bm_george', 'George (UK)', 'Male'], ['bf_emma', 'Emma (UK)', 'Female'],
+  ['bf_alice', 'Alice (UK)', 'Female'], ['bf_isabella', 'Isabella (UK)', 'Female'],
+  ['bf_lily', 'Lily (UK)', 'Female'], ['bm_daniel', 'Daniel (UK)', 'Male'],
+  ['bm_fable', 'Fable (UK)', 'Male'], ['bm_lewis', 'Lewis (UK)', 'Male'],
+].map(([name, label, gender]) => ({
+  id: `kokoro:${name}`, label, provider: 'kokoro' as TTSProvider,
+  providerLabel: 'Kokoro local CPU', gender: gender as 'Male' | 'Female',
+  description: 'Local neural voice; no per-character provider charge',
+  edenaiProvider: 'openai' as EdenAITTSProvider,
+  edenaiOption: gender === 'Male' ? 'MALE' as TTSVoiceGender : 'FEMALE' as TTSVoiceGender,
+  edenaiVoiceModel: name,
+}));
+
+export const TTS_VOICE_OPTIONS = [...KOKORO_VOICE_OPTIONS, ...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
 export const DEFAULT_TTS_PROVIDER: TTSProvider = 'edenai';
 export const DEFAULT_TTS_VOICE = 'edenai:openai:nova';
 
@@ -245,7 +271,7 @@ const LEGACY_VOICE_MAP: Record<string, string> = {
 };
 
 export function normalizeTtsProvider(provider: unknown): TTSProvider {
-  return String(provider || '').trim().toLowerCase() === 'deepgram' ? 'deepgram' : DEFAULT_TTS_PROVIDER;
+  const value = String(provider || '').trim().toLowerCase(); return value === 'deepgram' || value === 'kokoro' ? value : DEFAULT_TTS_PROVIDER;
 }
 
 export function normalizeTtsVoice(voice: string | undefined | null, _provider: TTSProvider = DEFAULT_TTS_PROVIDER): string {
