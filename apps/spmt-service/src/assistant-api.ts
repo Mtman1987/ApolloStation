@@ -3,7 +3,7 @@ import { AuthDeniedError, type AuthService } from "@spmt/auth-core";
 import type { ControlService } from "@spmt/control-core";
 import type { ExecutionJobService } from "@spmt/execution-core";
 import type { SqliteMediaAssetStore } from "@spmt/platform-data-sqlite";
-import { StellarAssistantStore, StellarPrivateAssistant, StellarPublicMemory, StellarSpeechPresence, STELLAR_CHAT_CAPABILITY_ID, STELLAR_SPEECH_CAPABILITIES, STELLAR_SPEECH_SYNTHESIS_CAPABILITY, STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY, TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
+import { StellarAssistantStore, StellarPrivateAssistant, StellarPublicMemory, StellarSpeechPresence, STELLAR_CHAT_CAPABILITY_ID, STELLAR_SPEECH_CAPABILITIES, STELLAR_SPEECH_SYNTHESIS_CAPABILITY, STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY, KOKORO_VOICE_OPTIONS } from "@spmt/stellar-core";
 
 export class SpmtAssistantApi {
   constructor(private readonly options: { store: StellarAssistantStore; publicMemory?:StellarPublicMemory; speechPresence?:StellarSpeechPresence; privateAssistant?:StellarPrivateAssistant; auth: AuthService; control: ControlService; jobs: ExecutionJobService; assets: SqliteMediaAssetStore; enabled: boolean; accessToken(request: IncomingMessage): string | undefined }) {}
@@ -28,7 +28,7 @@ export class SpmtAssistantApi {
         });
         if(path==="public-memory"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can manage public memory"});return json(response,200,{memories:this.options.publicMemory?.list(tenant)??[]});}
         if(path==="streams"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect stream listeners"});return json(response,200,{listeners:this.options.speechPresence?.list(tenant)??[],widgets:this.options.control.listOverlayWidgets(tenant,"streamweaver").filter(w=>w.manifest.widgetId==="tts-player"),generatedAt:new Date().toISOString()});}
-        if (path === "preferences") return json(response,200,{preferences:this.options.store.preferences(tenant,user),voices:TTS_VOICE_OPTIONS.map(({id,label,description})=>({id,label,description}))});
+        if (path === "preferences") return json(response,200,{preferences:this.options.store.preferences(tenant,user),voices:KOKORO_VOICE_OPTIONS.map(({id,label,description})=>({id,label,description}))});
         if (path === "notes") return json(response,200,{notes:this.options.store.notes(tenant,user)});
         if (path === "conversation" && this.options.privateAssistant) return json(response,200,{thread:this.options.privateAssistant.read(tenant,user)});
         if(path==="conversation/feed"&&this.options.privateAssistant)return json(response,200,this.options.privateAssistant.feed(tenant,user,Number(url.searchParams.get("after")??0),url.searchParams.get("epoch")??undefined));
@@ -81,7 +81,7 @@ export class SpmtAssistantApi {
       if (path.endsWith("synthesize")) {
         if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 20_000) return json(response,400,{message:"Speech text must contain 1–20000 characters"});
         const voice = body.voice ?? this.options.store.preferences(tenant,user).voice;
-        if (!TTS_VOICE_OPTIONS.some(v=>v.id===voice)) return json(response,400,{message:"Choose a supported voice"});
+        if (!KOKORO_VOICE_OPTIONS.some(v=>v.id===voice)) return json(response,400,{message:"Choose a supported voice"});
         input.text = body.text; input.voice = voice;
       } else {
         const id = String(body.mediaAssetId ?? ""), asset = this.options.assets.get(id);
