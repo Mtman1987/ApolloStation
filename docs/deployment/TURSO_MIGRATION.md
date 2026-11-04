@@ -1,40 +1,88 @@
-# SQLite to Turso migration
+# Turso persistence and migration
 
-ApolloStation's existing runtime stores use Node's synchronous `DatabaseSync` API. This importer is a deliberately separate, one-way data-transfer adapter; it does **not** pretend that a remote asynchronous Turso connection can replace `DatabaseSync` at runtime.
+ApolloStation will use the user's Turso account as its persistent database destination. There are three distinct deliverables. All three are required before declaring the hostless release persistence-ready.
 
-## Requirements
+## Part 1 — Recovered-data migration adapter
 
-- Node.js with built-in `node:sqlite` support (the same runtime ApolloStation uses).
-- A Turso Cloud database created in advance.
-- A database auth token stored only in the shell environment or deployment secret manager. Never commit it or paste it into chat.
+The migration adapter transfers existing recovered application data into Turso without changing the source archives.
 
-## Configure the destination
+Current implementation:
+- `scripts/migrate-sqlite-to-turso.mjs` provides a Node.js Hrana HTTP adapter for Turso Cloud.
+- SQLite sources are opened read-only and checked with `PRAGMA quick_check`.
+- The destination must be empty; the importer refuses to overwrite an existing database.
+- Schema, rows, BLOBs, 64-bit integers, AUTOINCREMENT high-water marks, and `user_version` are copied and verified.
+- The importer is dry-run by default. `--apply` is an explicit write operation.
+- Credentials are read only from secure environment variables. Never commit or paste tokens into source, issues, logs, or chat.
 
-Set these variables in the shell that runs the migration:
+This SQLite importer is not sufficient for every recovered source. Chat Tag/Nebula is JSON state and needs a format-aware importer. StreamWeaver is a tenant-scoped JSON tree and must be staged/imported per tenant without flattening. Discord Stream Hub's SQLite database and Firestore export must remain separate until authority and overlap are reconciled.
 
-```bash
-export TURSO_DATABASE_URL='libsql://YOUR-DATABASE-YOUR-ORG.turso.io'
-export TURSO_AUTH_TOKEN='(set this securely; do not commit it)'
-```
+Migration order remains:
+1. Chat Tag/Nebula and StreamWeaver.
+2. Discord Stream Hub.
+3. OverlayBay/SpaceMountain and Lounge.
+4. HearMeOut last.
 
-## Inventory first (read-only)
+The legacy Chat Tag snapshot is shared/global. Do not split it by last-seen stream/channel. Resolve its ownership and Apollo tenant mapping explicitly before applying tenant-scoped records. StreamWeaver tenant directories must remain separate.
 
-```bash
-node scripts/migrate-sqlite-to-turso.mjs --source /absolute/path/to/source.sqlite
-```
+## Part 2 — Apollo runtime persistence adapter
 
-This checks the source with `PRAGMA quick_check`, inventories its tables/row counts, and confirms the destination is empty. It does not write to either database.
+This is the production read/write layer Apollo uses after release. It is separate from the one-time importer.
 
-## Copy and verify
+Apollo currently has synchronous `DatabaseSync` call sites and nested synchronous transaction patterns. A remote Turso connection is asynchronous; changing a database URL or swapping a connection object is not a valid integration.
 
-Stop the service that owns the source database first so the source cannot change during the copy. Keep an independent file backup. Then:
+Required work:
+- Define an asynchronous persistence contract for reads, writes, transactions, and health checks.
+- Implement and test a local SQLite backend and a Turso backend against the same contract.
+- Migrate domain stores and their callers service-by-service; do not block the event loop or hide asynchronous calls behind synchronous-looking wrappers.
+- Preserve transaction boundaries, uniqueness constraints, concurrency behavior, and existing domain invariants.
+- Add idempotency and retry handling for operations that may be retried over a network.
+- Keep migrations/versioning explicit and test schema upgrades.
+- Add parity tests that run the same store contract suite against both backends.
+- Add health/readiness checks that distinguish a reachable database from a fully usable persistence layer.
+- Keep local development/test support while making Turso the configured production backend.
 
-```bash
-node scripts/migrate-sqlite-to-turso.mjs --source /absolute/path/to/source.sqlite --apply
-```
+No production service should be switched to Turso until its store and callers have been migrated and its parity tests pass. Track this work in ApolloStation issue #414.
 
-The importer refuses a non-empty destination, never deletes or changes the source, copies table definitions and rows (including BLOB values and 64-bit integers), preserves `AUTOINCREMENT` sequence high-water marks and `user_version`, recreates indexes/views/triggers after data load, and verifies every table's row count plus `PRAGMA foreign_key_check`. It stops on the first SQL or verification error. Use one empty Turso database per independently owned SQLite file.
+## Part 3 — Hostless deployment connection and release verification
 
-## Runtime integration status
+The hostless Apollo deployment must connect to the same Turso database/account for ongoing application data. The deployment platform is responsible for injecting secrets; the application must never contain credentials.
 
-This importer transfers data; it is not the production runtime adapter. Apollo's current domain stores call synchronous methods and use nested synchronous transactions. Turso's remote API is asynchronous. Do not point existing `*_DATABASE_PATH` settings at a Turso URL or switch production services to remote storage until those store contracts have been refactored and tested. The next runtime phase is an async persistence interface with local SQLite and Turso implementations, migrated service-by-service behind feature flags.
+Required deployment configuration:
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+
+Set these in the hostless site's protected environment/secret settings, not in committed files, client-side bundles, build logs, or public configuration. The server runtime alone may access the token.
+
+Release verification:
+1. Confirm the hostless server runtime has both settings without printing their values.
+2. Run a non-destructive connectivity/readiness check.
+3. Confirm Apollo can read known migrated records with the expected tenant scope.
+4. Create a clearly identified test record through Apollo's normal application path.
+5. Read it back through a fresh request/process and verify it persisted in Turso.
+6. Verify tenant isolation and transaction behavior.
+7. Restart/redeploy the hostless app and verify the record still exists.
+8. Check logs for connection errors, retry storms, leaked secrets, and fallback-to-local behavior.
+9. Only then enable Turso-backed writes for the migrated production features.
+
+A successful one-time import does not prove the hostless runtime can save new data. A successful connection check does not prove tenant-safe reads/writes. Both must be tested.
+
+## Safety gates
+
+- Preserve original recovery ZIPs and nested source archives unchanged.
+- Keep source hashes, import manifests, record counts, and verification receipts.
+- Never overwrite a non-empty destination. Use a separate database or explicit namespace for each independent dataset where required.
+- Do not import ambiguous ownership data into live tenant stores.
+- Do not put credentials in GitHub source, workflow output, issue text, or chat.
+- Do not change or deploy anything through Fly.io.
+- Do not claim migration or runtime cutover complete until destination verification and hostless read/write/restart checks pass.
+
+## Current status
+
+| Part | Status |
+|---|---|
+| 1. SQLite migration adapter | Implemented on PR #413; CI passing. Live Turso transfer not run. |
+| 1. Chat Tag JSON + StreamWeaver tenant import | Planned/tracked in issue #415; not yet imported. |
+| 2. Apollo async runtime persistence contract | Tracked in issue #414; not complete. |
+| 3. Hostless Turso connection and release verification | Not configured or tested yet. |
+
+The current work is preparation and safe tooling. No Turso destination has been written and no production runtime has been switched.
