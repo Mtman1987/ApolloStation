@@ -37,10 +37,10 @@ export class SqliteStreamWeaverShoutoutStore {
   close(): void { this.db.close(); }
   settings(tenant:string):StreamWeaverShoutoutSettings {
     const saved=this.operation(safeId(tenant,"tenantId"),"settings")??{};
-    return {aiEnabled:false,prompt:"Give this streamer a warm, concise shoutout. Use only the supplied profile facts; do not invent their games or achievements.",greeting:"Welcome, @{user}! Glad you’re here!",cooldownMinutes:720,voice:normalizeKokoroVoice(saved?.voice??"kokoro:af_heart"),discordEnabled:true,...saved,excluded:this.excluded(tenant)} as StreamWeaverShoutoutSettings;
+    return {aiEnabled:false,prompt:"Give this streamer a warm, concise shoutout. Use only the supplied profile facts; do not invent their games or achievements.",greeting:"Welcome, @{user}! Glad you’re here!",cooldownMinutes:720,discordEnabled:true,...saved,voice:normalizeKokoroVoice(saved.voice??"kokoro:af_heart"),excluded:this.excluded(tenant)} as StreamWeaverShoutoutSettings;
   }
   saveSettings(tenant:string,input:Partial<StreamWeaverShoutoutSettings>){
-    const value={...this.settings(tenant),...input};
+    const current=this.settings(tenant);const value={...current,...input,voice:normalizeKokoroVoice(input.voice??current.voice)};
     if(typeof value.aiEnabled!=="boolean"||typeof value.discordEnabled!=="boolean")throw new Error("Choose valid shoutout toggles");
     for(const key of ["prompt","greeting"] as const)if(typeof value[key]!=="string"||!value[key].trim()||value[key].length>2000)throw new Error("Shoutout text must contain 1–2000 characters");
     if(!Number.isSafeInteger(value.cooldownMinutes)||value.cooldownMinutes<0||value.cooldownMinutes>10080)throw new Error("Cooldown must be 0–10080 minutes");
