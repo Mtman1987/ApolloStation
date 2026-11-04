@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { TTS_VOICE_OPTIONS, ATHENA_CANONICAL_TTS_VOICE } from "./speech-voices.js";
+import { KOKORO_VOICE_OPTIONS, DEFAULT_TTS_VOICE, normalizeTtsVoice } from "./speech-voices.js";
 
 export interface AssistantPreferences { voice: string; ttsEnabled: boolean; gifEnabled: boolean; gifAssetId?: string; remember: boolean; }
 export interface AssistantNote { id: string; subject: string; title: string; content: string; updatedAt: string; }
@@ -34,11 +34,11 @@ export class StellarAssistantStore {
   }
   preferences(tenant: string, user: string): AssistantPreferences {
     const row = this.db.prepare("SELECT body FROM stellar_preferences WHERE tenant=? AND user_id=?").get(tenant,user);
-    return row ? JSON.parse(String(row.body)) : { voice: ATHENA_CANONICAL_TTS_VOICE, ttsEnabled: false, gifEnabled: true, remember: false };
+    return row ? { ...JSON.parse(String(row.body)), voice: normalizeTtsVoice(JSON.parse(String(row.body)).voice) } : { voice: DEFAULT_TTS_VOICE, ttsEnabled: false, gifEnabled: true, remember: false };
   }
   savePreferences(tenant: string, user: string, input: Partial<AssistantPreferences>) {
     const next = this.preferences(tenant,user);
-    if (input.voice !== undefined) { if (!TTS_VOICE_OPTIONS.some(v => v.id === input.voice)) throw new Error("Choose a supported voice"); next.voice = input.voice; }
+    if (input.voice !== undefined) { if (!KOKORO_VOICE_OPTIONS.some(v => v.id === input.voice)) throw new Error("Choose a supported voice"); next.voice = input.voice; }
     for (const key of ["ttsEnabled","gifEnabled","remember"] as const) if (input[key] !== undefined) { if (typeof input[key] !== "boolean") throw new Error("Preference must be true or false"); next[key] = input[key]; }
     if(input.gifAssetId!==undefined){if(typeof input.gifAssetId!=="string"||(input.gifAssetId!==""&&!/^[a-f0-9-]{36}$/.test(input.gifAssetId)))throw new Error("Choose a valid private GIF");next.gifAssetId=input.gifAssetId;}
     this.db.prepare("INSERT INTO stellar_preferences VALUES(?,?,?) ON CONFLICT(tenant,user_id) DO UPDATE SET body=excluded.body").run(tenant,user,JSON.stringify(next)); return next;
