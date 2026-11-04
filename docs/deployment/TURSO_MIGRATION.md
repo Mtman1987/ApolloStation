@@ -121,6 +121,8 @@ With secure server-side environment variables present, `--apply` stages document
 - Other StreamWeaver JSON is staged under `__global__`.
 - Token/secret/credential path segments are excluded; sensitive JSON keys are redacted before payload staging.
 - Source and redacted-payload SHA-256 hashes are stored separately.
+- The raw-stage row also stores a detected top-level schema/version marker (when present) and shallow record counts for top-level arrays/object maps.
+- After inserts, the importer reads back every requested source/tenant/path and verifies both hashes plus schema/count metadata before returning `verified: true`.
 - Re-running identical input is idempotent. A changed source at an existing source/path key is rejected, never overwritten.
 - The raw stage preserves source documents for later mapping; it does not create players, points, tenant accounts, or live StreamWeaver domain rows.
 

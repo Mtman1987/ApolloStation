@@ -25,6 +25,18 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function recordMetadata(value) {
+  if (Array.isArray(value)) return { schemaVersion: null, recordCounts: { $root: value.length } };
+  if (!value || typeof value !== "object") return { schemaVersion: null, recordCounts: {} };
+  const version = value.schemaVersion ?? value.version ?? null;
+  const recordCounts = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (Array.isArray(child)) recordCounts[key] = child.length;
+    else if (child && typeof child === "object") recordCounts[key] = Object.keys(child).length;
+  }
+  return { schemaVersion: version === null ? null : String(version), recordCounts };
+}
+
 function isSensitiveKey(key) {
   const normalized = String(key).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
   return SENSITIVE_KEY.test(normalized);
@@ -81,12 +93,15 @@ async function collect(source, root) {
       throw new Error(`Invalid JSON in ${source}/${file.path}; refusing partial staging`);
     }
     const payload = JSON.stringify(redact(parsed));
+    const metadata = recordMetadata(parsed);
     records.push({
       source,
       tenant: tenantFor(source, file.path),
       path: file.path,
       sourceHash: sha256(raw),
       payloadHash: sha256(payload),
+      schemaVersion: metadata.schemaVersion,
+      recordCounts: metadata.recordCounts,
       payload,
     });
   }
@@ -116,6 +131,7 @@ export async function stageRecoveredJson({ records, adapter, apply = false, onPr
     bySource,
     streamWeaverTenants: tenants.length,
     redactedRecords: records.filter((r) => r.payload.includes("[REDACTED]")).length,
+    schemaVersionedFiles: records.filter((r) => r.schemaVersion !== null && r.schemaVersion !== undefined).length,
   };
   if (!apply) return { ...summary, applied: false };
 
@@ -125,51 +141,69 @@ export async function stageRecoveredJson({ records, adapter, apply = false, onPr
     source_path TEXT NOT NULL,
     source_sha256 TEXT NOT NULL,
     payload_sha256 TEXT NOT NULL,
+    source_schema_version TEXT,
+    record_counts_json TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     staged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(source, tenant_key, source_path)
   ) STRICT`);
 
   const existingResult = await adapter.execute(
-    `SELECT source, tenant_key, source_path, source_sha256, payload_sha256 FROM ${TABLE}`,
+    `SELECT source, tenant_key, source_path, source_sha256, payload_sha256, source_schema_version, record_counts_json FROM ${TABLE}`,
     [], true,
   );
   const existing = new Map(existingResult.rows.map((row) => [
     `${row[0]}\\0${row[1]}\\0${row[2]}`,
-    { sourceHash: row[3], payloadHash: row[4] },
+    { sourceHash: row[3], payloadHash: row[4], schemaVersion: row[5], recordCountsJson: row[6] },
   ]));
   const pending = [];
   for (const record of records) {
     const key = `${record.source}\\0${record.tenant}\\0${record.path}`;
     const prior = existing.get(key);
+    const schemaVersion = record.schemaVersion ?? null;
+    const recordCountsJson = JSON.stringify(record.recordCounts ?? {});
     if (prior) {
-      if (prior.sourceHash !== record.sourceHash || prior.payloadHash !== record.payloadHash) {
+      if (prior.sourceHash !== record.sourceHash || prior.payloadHash !== record.payloadHash ||
+          prior.schemaVersion !== schemaVersion || prior.recordCountsJson !== recordCountsJson) {
         throw new Error(`Conflicting staged source already exists: ${record.source}/${record.path}; refusing overwrite`);
       }
       continue;
     }
-    pending.push(record);
+    pending.push({ ...record, schemaVersion, recordCountsJson });
   }
   for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
     await insertBatch(adapter, pending.slice(offset, offset + BATCH_SIZE));
     onProgress({ phase: "stage", staged: Math.min(offset + BATCH_SIZE, pending.length), total: pending.length });
   }
-  const verification = await adapter.execute(
-    `SELECT source, COUNT(*) FROM ${TABLE} GROUP BY source`, [], true,
-  );
-  return {
-    ...summary,
-    applied: true,
-    verified: true,
-    destinationCounts: Object.fromEntries(verification.rows.map(([source, count]) => [source, Number(count)])),
-  };
+  const destinationCounts = {};
+  for (const source of Object.keys(bySource)) {
+    const verification = await adapter.execute(
+      `SELECT tenant_key, source_path, source_sha256, payload_sha256, source_schema_version, record_counts_json FROM ${TABLE} WHERE source=?`,
+      [source], true,
+    );
+    const verifiedRows = new Map(verification.rows.map((row) => [
+      `${row[0]}\\0${row[1]}`,
+      { sourceHash: row[2], payloadHash: row[3], schemaVersion: row[4], recordCountsJson: row[5] },
+    ]));
+    for (const record of records.filter((item) => item.source === source)) {
+      const stored = verifiedRows.get(`${record.tenant}\\0${record.path}`);
+      const schemaVersion = record.schemaVersion ?? null;
+      const recordCountsJson = JSON.stringify(record.recordCounts ?? {});
+      if (!stored || stored.sourceHash !== record.sourceHash || stored.payloadHash !== record.payloadHash ||
+          stored.schemaVersion !== schemaVersion || stored.recordCountsJson !== recordCountsJson) {
+        throw new Error(`Destination verification failed for ${source}/${record.path}`);
+      }
+    }
+    destinationCounts[source] = verification.rows.length;
+  }
+  return { ...summary, applied: true, verified: true, destinationCounts };
 }
 
 async function insertBatch(adapter, records) {
   const statements = records.map((record) => ({
-    sql: `INSERT INTO ${TABLE}(source,tenant_key,source_path,source_sha256,payload_sha256,payload_json)
-          VALUES(?,?,?,?,?,?)`,
-    args: [record.source, record.tenant, record.path, record.sourceHash, record.payloadHash, record.payload],
+    sql: `INSERT INTO ${TABLE}(source,tenant_key,source_path,source_sha256,payload_sha256,source_schema_version,record_counts_json,payload_json)
+          VALUES(?,?,?,?,?,?,?,?)`,
+    args: [record.source, record.tenant, record.path, record.sourceHash, record.payloadHash, record.schemaVersion ?? null, record.recordCountsJson ?? JSON.stringify(record.recordCounts ?? {}), record.payload],
   }));
   await adapter.pipeline(statements);
 }
