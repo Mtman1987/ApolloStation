@@ -62,7 +62,7 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
     },
     async execute(sql, args = [], wantRows = false) {
       calls.push(sql);
-      if (sql.startsWith("SELECT source_sha256")) {
+      if (sql.startsWith("SELECT source, tenant_key, source_path")) {
         const row = rows.get(args.join("|"));
         return { rows: row ? [[row.sourceHash, row.payloadHash]] : [] };
       }
