@@ -34,7 +34,8 @@ export class MountainViewCommanderTranscriptBuffer {
   }
 
   snapshot(at = this.nowMs()): MountainViewCommanderTranscriptSnapshotV1 {
-    this.prune(at);
+    const now = Number.isFinite(at) ? at : this.nowMs();
+    this.prune(now);
     const text = this.segments.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim();
     return {
       text: text.slice(-MOUNTAINVIEW_COMMANDER_POLICY_V1.maximumTranscriptChars),
@@ -44,7 +45,8 @@ export class MountainViewCommanderTranscriptBuffer {
   }
 
   takeCommand(at = this.nowMs()): MountainViewCommanderCommandV1 | undefined {
-    this.prune(at);
+    const now = Number.isFinite(at) ? at : this.nowMs();
+    this.prune(now);
     const combined = this.segments.map((item) => item.text).join(" ");
     const matcher = /\bcommander\s+mt\b[:,]?\s*/ig;
     let match: RegExpExecArray | null;
