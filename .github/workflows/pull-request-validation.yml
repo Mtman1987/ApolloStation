@@ -5,6 +5,12 @@ on:
   pull_request:
     paths:
       - "apps/spacemountain-web/**"
+      - "apps/nebula-arcade/**"
+      - "apps/streamweaver/**"
+      - "apps/chat-gateway/**"
+      - "apps/discord-stream-hub/**"
+      - "tests/*.test.mjs"
+      - "docs/deployment/**"
       - "tests/spacemountain-overlay-proxy.test.mjs"
       - "package.json"
       - "package-lock.json"
