@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { TursoHttpAdapter } from "../packages/turso-http/index.mjs";
-import { TursoJsonRecordStore } from "../packages/async-json-store/index.mjs";
+import { createAsyncJsonRecordStore } from "../packages/async-json-store/factory.mjs";
 
 const url = process.env.TURSO_DATABASE_URL;
 const authToken = process.env.TURSO_AUTH_TOKEN;
@@ -15,7 +14,7 @@ test("live Turso connection can write, read back, roll back, and survive a fresh
   const tenantId = `hostless-node-${process.env.HOSTLESS_APP_ID ?? "unknown"}`;
   const recordKey = randomUUID();
   const payload = { marker: "apollo-turso-live-smoke", createdAt: new Date().toISOString(), nonce: randomUUID() };
-  const makeStore = () => new TursoJsonRecordStore(new TursoHttpAdapter({ url, authToken }));
+  const makeStore = () => createAsyncJsonRecordStore({ service: "apollo-live-smoke", mode: "turso", url, authToken });
   const first = makeStore();
   let second;
   try {
