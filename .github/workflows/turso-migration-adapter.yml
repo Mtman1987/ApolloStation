@@ -1,0 +1,39 @@
+name: Turso migration adapter
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/migrate-sqlite-to-turso.mjs"
+      - "tests/turso-migration-adapter.test.mjs"
+      - "tests/turso-http-runtime.test.mjs"
+      - "tests/async-json-record-store.test.mjs"
+      - "packages/turso-http/**"
+      - "packages/async-json-store/**"
+      - ".github/workflows/turso-migration-adapter.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/migrate-sqlite-to-turso.mjs"
+      - "tests/turso-migration-adapter.test.mjs"
+      - "tests/turso-http-runtime.test.mjs"
+      - "tests/async-json-record-store.test.mjs"
+      - "packages/turso-http/**"
+      - "packages/async-json-store/**"
+      - ".github/workflows/turso-migration-adapter.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run focused adapter tests
+        run: node --test tests/turso-migration-adapter.test.mjs tests/turso-http-runtime.test.mjs tests/async-json-record-store.test.mjs
+      - name: Check migration CLI syntax
+        run: node --check scripts/migrate-sqlite-to-turso.mjs && node --check packages/turso-http/index.mjs && node --check packages/async-json-store/index.mjs

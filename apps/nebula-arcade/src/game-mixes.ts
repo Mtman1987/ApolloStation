@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import type { TursoHttpAdapter } from "@spmt/turso-http";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
 import { canonicalNebulaGameId, migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 import type { NebulaOverlayLayerV1 } from "./overlay-scenes.js";
@@ -98,6 +99,8 @@ export class SqliteNebulaGameMixStore {
 
   close(): void { this.db.close(); }
 
+  health(): { ready: boolean } { return { ready: Number(this.db.prepare("SELECT 1 AS ready").get()?.ready) === 1 }; }
+
   list(tenantId: string): NebulaGameMixV1[] {
     requireId(tenantId, "tenantId");
     const rows = this.db.prepare(`
@@ -160,6 +163,125 @@ export class SqliteNebulaGameMixStore {
     requireId(mixId, "mixId");
     return Number(this.db.prepare("DELETE FROM nebula_game_mixes WHERE tenant_id=? AND mix_id=?").run(tenantId, mixId).changes) > 0;
   }
+}
+
+
+/** Async facade over the existing local SQLite table for development and rollback. */
+export class AsyncSqliteNebulaGameMixStore {
+  private readonly store: SqliteNebulaGameMixStore;
+  constructor(path: string) { this.store = new SqliteNebulaGameMixStore(path); }
+  async initialize(): Promise<void> {}
+  async health(): Promise<{ ready: boolean }> { return this.store.health(); }
+  async list(tenantId: string): Promise<NebulaGameMixV1[]> { return this.store.list(tenantId); }
+  async get(tenantId: string, mixId: string): Promise<NebulaGameMixV1 | undefined> { return this.store.get(tenantId, mixId); }
+  async save(tenantId: string, input: SaveNebulaGameMixV1, now?: string): Promise<NebulaGameMixV1> { return this.store.save(tenantId, input, now); }
+  async delete(tenantId: string, mixId: string): Promise<boolean> { return this.store.delete(tenantId, mixId); }
+  close(): void { this.store.close(); }
+}
+
+/**
+ * Async Turso implementation using the existing nebula_game_mixes schema.
+ * The full Nebula SQLite database must be imported before enabling this backend;
+ * this store deliberately does not silently copy or discard legacy local rows.
+ */
+export class TursoNebulaGameMixStore {
+  constructor(private readonly adapter: TursoHttpAdapter) {}
+
+  async initialize(): Promise<void> {
+    await this.adapter.execute(`CREATE TABLE IF NOT EXISTS nebula_game_mixes (
+      tenant_id TEXT NOT NULL,
+      mix_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      rotation_seconds INTEGER NOT NULL,
+      active_game_id TEXT,
+      layers TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      activity_box INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (tenant_id, mix_id)
+    )`);
+    const info = await this.adapter.execute("PRAGMA table_info(nebula_game_mixes)", [], true);
+    if (!info.rows.some((row) => String(row[1]) === "activity_box")) {
+      await this.adapter.execute("ALTER TABLE nebula_game_mixes ADD COLUMN activity_box INTEGER NOT NULL DEFAULT 0");
+    }
+  }
+
+  async health(): Promise<{ ready: boolean }> {
+    const result = await this.adapter.execute("SELECT 1", [], true);
+    return { ready: Number(result.rows[0]?.[0]) === 1 };
+  }
+
+  async list(tenantId: string): Promise<NebulaGameMixV1[]> {
+    requireId(tenantId, "tenantId");
+    const result = await this.adapter.execute(`
+      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box
+      FROM nebula_game_mixes WHERE tenant_id=? ORDER BY updated_at DESC, mix_id
+    `, [tenantId], true);
+    return result.rows.map((row) => fromValues(row));
+  }
+
+  async get(tenantId: string, mixId: string): Promise<NebulaGameMixV1 | undefined> {
+    requireId(tenantId, "tenantId");
+    requireId(mixId, "mixId");
+    const result = await this.adapter.execute(`
+      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box
+      FROM nebula_game_mixes WHERE tenant_id=? AND mix_id=?
+    `, [tenantId, mixId], true);
+    return result.rows[0] ? fromValues(result.rows[0]) : undefined;
+  }
+
+  async save(tenantId: string, input: SaveNebulaGameMixV1, now = new Date().toISOString()): Promise<NebulaGameMixV1> {
+    requireId(tenantId, "tenantId");
+    requireId(input.id, "mixId");
+    const name = input.name.trim();
+    if (!name || name.length > 100) throw new Error("Nebula game mix name is invalid");
+    if (!Number.isFinite(Date.parse(now))) throw new Error("Nebula game mix timestamp is invalid");
+    if (input.activityBox !== undefined && typeof input.activityBox !== "boolean") throw new Error("Nebula activity box must be a boolean");
+    const activityBox = input.activityBox ?? false;
+    const mode = input.mode ?? "simultaneous";
+    if (!MODES.has(mode)) throw new Error("Nebula game mix mode is invalid");
+    const rotationSeconds = normalizeInteger(input.rotationSeconds ?? 20, 5, 300, "rotationSeconds");
+    const layers = normalizeLayers(input.layers, false);
+    const activeGameId = input.activeGameId?.trim() || undefined;
+    if (activeGameId && !GAME_IDS.has(activeGameId)) throw new Error("Nebula game mix active game is invalid");
+    if (mode === "manual" && activeGameId && !layers.some((layer) => layer.gameId === activeGameId && layer.enabled)) throw new Error("Nebula manual active game must be enabled in the mix");
+
+    return this.adapter.transaction(async (tx) => {
+      const prior = await tx.execute("SELECT created_at FROM nebula_game_mixes WHERE tenant_id=? AND mix_id=?", [tenantId, input.id], true);
+      const createdAt = prior.rows[0]?.[0] ? String(prior.rows[0][0]) : now;
+      const value: NebulaGameMixV1 = {
+        schemaVersion: 1, id: input.id, tenantId, name, mode, activityBox, rotationSeconds,
+        ...(activeGameId ? { activeGameId } : {}), layers, createdAt, updatedAt: now,
+      };
+      await tx.execute(`
+        INSERT INTO nebula_game_mixes(tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(tenant_id, mix_id) DO UPDATE SET
+          activity_box=excluded.activity_box, name=excluded.name, mode=excluded.mode,
+          rotation_seconds=excluded.rotation_seconds, active_game_id=excluded.active_game_id,
+          layers=excluded.layers, updated_at=excluded.updated_at
+      `, [tenantId, input.id, name, mode, rotationSeconds, activeGameId ?? null, JSON.stringify(layers), createdAt, now, activityBox ? 1 : 0]);
+      return value;
+    });
+  }
+
+  async delete(tenantId: string, mixId: string): Promise<boolean> {
+    requireId(tenantId, "tenantId");
+    requireId(mixId, "mixId");
+    const result = await this.adapter.execute("DELETE FROM nebula_game_mixes WHERE tenant_id=? AND mix_id=?", [tenantId, mixId]);
+    return result.affectedRows > 0;
+  }
+
+  close(): void {}
+}
+
+function fromValues(values: unknown[]): NebulaGameMixV1 {
+  return fromRow({
+    tenant_id: String(values[0]), mix_id: String(values[1]), name: String(values[2]), mode: String(values[3]),
+    rotation_seconds: Number(values[4]), active_game_id: values[5] === null ? null : String(values[5]),
+    layers: String(values[6]), created_at: String(values[7]), updated_at: String(values[8]), activity_box: Number(values[9] ?? 0),
+  });
 }
 
 interface GameMixRow {

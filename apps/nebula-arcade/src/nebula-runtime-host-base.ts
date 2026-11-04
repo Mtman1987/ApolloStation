@@ -14,7 +14,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
 import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-actions.js";
-import { SqliteNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js";
+import { AsyncSqliteNebulaGameMixStore, TursoNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js";
+import { TursoHttpAdapter } from "@spmt/turso-http";
 import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
@@ -34,7 +35,10 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const inputs = new SqliteNebulaGameInputStore(options.databasePath);
   const runtime = new SqliteNebulaGameRuntimeStore(options.databasePath);
   const actions = new SqliteNebulaGameActionStore(options.databasePath);
-  const mixes = new SqliteNebulaGameMixStore(options.databasePath);
+  if (Boolean(options.gameMixTursoDatabaseUrl) !== Boolean(options.gameMixTursoAuthToken)) throw new Error("Nebula Game Mix Turso URL and token must be configured together");
+  const mixes = options.gameMixTursoDatabaseUrl && options.gameMixTursoAuthToken
+    ? new TursoNebulaGameMixStore(new TursoHttpAdapter({ url: options.gameMixTursoDatabaseUrl, authToken: options.gameMixTursoAuthToken }))
+    : new AsyncSqliteNebulaGameMixStore(options.databasePath);
   const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
   const mosaics = new SqliteNebulaMosaicStore(options.databasePath);
@@ -48,6 +52,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       const url = new URL(request.url ?? "/", "http://nebula.green");
       if(request.method==="GET"&&url.pathname==="/health/ready"){
         runtime.integrityCheck();
+        if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
         return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
@@ -160,22 +165,22 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       }
       if (request.method === "GET" && url.pathname === "/v1/nebula/game-actions") return json(response, 200, { actions: actions.list(options.tenantId, { ...(url.searchParams.get("channel") ? { channel: url.searchParams.get("channel")! } : {}), ...(url.searchParams.getAll("gameId").length ? { gameIds: url.searchParams.getAll("gameId") } : {}), ...(url.searchParams.get("after") ? { after: url.searchParams.get("after")! } : {}), ...(url.searchParams.get("limit") ? { limit: Number(url.searchParams.get("limit")) } : {}) }) });
       if (request.method === "POST" && url.pathname === "/v1/nebula/game-actions") { requireSameOrigin(request); const body=await readJson(request); if(controls.network.blocked(options.tenantId,String(body.userId||""),String(body.username||""),options.channelId)||isNebulaChannelOptedOut(policy,options.tenantId,options.channelId,typeof body.channel === "string" ? body.channel : "")) throw new NebulaHostError(403,"This channel has opted out of Nebula Arcade"); return handleAction(response, body, options, runtime, actions, inputs, tabletop, activity); }
-      if (request.method === "GET" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) return json(response, 200, { mixes: mixes.list(options.tenantId) });
+      if (request.method === "GET" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) return json(response, 200, { mixes: await mixes.list(options.tenantId) });
       if (request.method === "POST" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) {
-        requireSameOrigin(request); const body = await readJson(request); const mix = mixes.save(options.tenantId, gameMixInput(body));
+        requireSameOrigin(request); const body = await readJson(request); const mix = await mixes.save(options.tenantId, gameMixInput(body));
         return json(response, 200, { mix, rendererUrl: `${APP_PATH}?surface=overlay&mix=${encodeURIComponent(mix.id)}` });
       }
       if (request.method === "DELETE" && (url.pathname.startsWith("/v1/nebula/game-mixes/") || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) {
         requireSameOrigin(request); const mixId = url.pathname.startsWith("/v1/nebula/game-mixes/") ? decodeURIComponent(url.pathname.slice("/v1/nebula/game-mixes/".length)) : url.searchParams.get("mix") ?? "";
-        return json(response, mixes.delete(options.tenantId, mixId) ? 200 : 404, { deleted: mixId });
+        return json(response, await mixes.delete(options.tenantId, mixId) ? 200 : 404, { deleted: mixId });
       }
       if (request.method === "GET" && url.pathname === "/v1/nebula/game-mix-state") {
-        const mix = mixes.get(options.tenantId, url.searchParams.get("mix") ?? ""); if (!mix) return json(response, 404, { error: "mix_not_found" });
+        const mix = await mixes.get(options.tenantId, url.searchParams.get("mix") ?? ""); if (!mix) return json(response, 404, { error: "mix_not_found" });
         return json(response, 200, gameMixState(options.tenantId, options.channelId, mix, runtime, actions, activity));
       }
       const directMix = request.method === "GET" && url.pathname.startsWith("/overlay/game-mix/") ? decodeURIComponent(url.pathname.slice("/overlay/game-mix/".length)) : undefined;
       const queryMix = request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("surface") === "overlay" ? url.searchParams.get("mix") ?? undefined : undefined;
-      if (directMix || queryMix) { const mix = mixes.get(options.tenantId, directMix ?? queryMix!); return mix ? html(response, 200, renderGameMix(mix, options.channelId)) : html(response, 404, "<!doctype html><meta charset=utf-8><title>Game Mix not found</title>"); }
+      if (directMix || queryMix) { const mix = await mixes.get(options.tenantId, directMix ?? queryMix!); return mix ? html(response, 200, renderGameMix(mix, options.channelId)) : html(response, 404, "<!doctype html><meta charset=utf-8><title>Game Mix not found</title>"); }
       if (request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("view") === "overlay" && url.searchParams.get("surface") !== "overlay") return html(response, 200, canonicalOverlayEditorPage());
       if (request.method === "GET" && (url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("surface") !== "overlay") return proxyCore(request, response, corePort, true);
       return proxyCore(request, response, corePort, false);
@@ -184,8 +189,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
 
   return {
     server,
-    async listen() { await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mosaics.close(); mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async listen() { await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
+    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
