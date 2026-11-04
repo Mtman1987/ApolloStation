@@ -95,3 +95,12 @@ test('profile lock requires the mounted-volume marker and prevents duplicate own
   const nextRelease = await acquireProfileLock(directory);
   await nextRelease();
 });
+
+test('browser controller rejects non-Restream destinations and temporary profile fallback', () => {
+  const { allowedRestreamHost, createRestreamControl } = require('../src/restream-control');
+  assert.equal(allowedRestreamHost('https://app.restream.io/channel'), true);
+  assert.equal(allowedRestreamHost('https://accounts.restream.io/login'), true);
+  assert.equal(allowedRestreamHost('https://restream.io.evil.example/'), false);
+  assert.equal(allowedRestreamHost('https://example.com/'), false);
+  assert.throws(() => createRestreamControl({ chromiumPath: '/usr/bin/chromium', puppeteer: {}, profileDir: '' }), /explicit absolute persistent-volume path/);
+});
