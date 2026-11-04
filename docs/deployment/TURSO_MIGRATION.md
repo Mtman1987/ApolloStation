@@ -82,11 +82,23 @@ A successful one-time import does not prove the hostless runtime can save new da
 |---|---|
 | 1. SQLite migration adapter | Implemented on PR #413; focused adapter CI is being revalidated after extracting the shared client. Live Turso transfer not run. |
 | 1. Chat Tag JSON + StreamWeaver tenant import | Redacted, tenant-preserving raw staging utility implemented; source-to-domain reconciliation and live import remain outstanding. |
-| 2. Apollo async runtime persistence contract | Shared async Turso client with baton-based interactive transactions implemented; application store/caller migrations and SQLite parity tests remain outstanding. |
+| 2. Apollo async runtime persistence contract | Shared async Turso client plus a tenant-scoped JSON record-store prototype with local SQLite parity are implemented; production domain-store/caller migrations remain outstanding. |
 | 3. Hostless Turso connection and release verification | Not configured or tested yet. |
 
 The current work is preparation and safe tooling. No Turso destination has been written and no production runtime has been switched.
 
+
+## First async runtime store slice
+
+`packages/turso-http/` is the reusable asynchronous Turso client. Interactive transactions keep one Hrana stream baton and execute sequentially; statement/callback failures trigger rollback attempts. Ambiguous network failures are surfaced and are never automatically replayed.
+
+`packages/async-json-store/` adds the first small async repository contract:
+- Tenant-scoped keys are isolated by namespace, tenant ID and record key.
+- The same async API has a local SQLite reference backend and a Turso backend.
+- Reads, upserts, deletes, ordered listing, health checks and transaction callbacks are covered by shared contract tests.
+- SQLite transactions are serialized locally; Turso transactions use the adapter's interactive transaction stream.
+
+This is a low-risk persistence prototype, **not yet wired into SPMT authority, Nebula gameplay, StreamWeaver, Chat Gateway or Discord Stream Hub**. It proves the async store boundary and transaction primitive; it does not make existing synchronous `DatabaseSync` stores remote-compatible. The next step is to select and migrate one real low-risk domain store, then proceed service-by-service with caller and tenant-isolation tests.
 
 ## Recovered Chat Tag and StreamWeaver JSON staging
 
