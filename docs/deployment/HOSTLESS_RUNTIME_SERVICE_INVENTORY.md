@@ -36,6 +36,19 @@ The supervisor currently passes local SPMT and local app URLs. Those must become
 | Nebula Arcade live server | `apps/nebula-arcade/dist/nebula-arcade-live-server.js` | Uses SPMT session/service-token APIs, but local SQLite network and Mosaic stores; requires tenant/channel, public origin, and service credential. |
 | Lounge / OverlayBay / Restream | To be mapped from actual package and runtime entrypoints | Do not claim parity or assign workloads until exact code and state ownership are inventoried. |
 
+## Additional app-owned SQLite state discovered
+
+A source scan found more persistent stores than the initial entrypoint-only inventory. This is an initial list, not a complete schema census:
+
+| Priority area | SQLite-backed store modules observed | State class |
+|---|---|---|
+| Chat Gateway | `apps/chat-gateway/src/index.ts` | Connection/provider and chat-gateway runtime state |
+| StreamWeaver | `apps/streamweaver/src/bic-store.ts`, `ride-store.ts`, `tiktok-store.ts` | Tenant counters, ride attempts/front-seat state, TikTok config/status/outbox |
+| Discord Stream Hub / Lounge | `apps/discord-stream-hub/src/live-monitor.ts`, `lounge-state.ts`, `lounge-host.ts` | Live member/spotlight/shoutout state, shared Lounge presentation state, Stella host state |
+| Nebula Arcade | `apps/nebula-arcade/src/mosaic-store.ts`, `game-runtime-store.ts`, `game-actions.ts`, `game-inputs.ts` | Mosaic artwork/queue, game runtime state, action history, provider-neutral game input feed |
+
+Other app-owned stores were also found in StreamWeaver, HearMeOut, Companion, MountainView, Commlink, and Nebula modules. Before moving any service, enumerate every store constructor and its actual path wiring; multiple stores may share one SQLite file, but that must be verified from the server composition rather than assumed. Each store needs an owner, durability classification, backup/restore plan, and cross-node access strategy. Do not delete or reset any of these files during portability work.
+
 ## Cross-node incompatibilities confirmed
 
 1. The Sprite supervisor assumes one host and wires most services through loopback origins.
