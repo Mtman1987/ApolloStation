@@ -48,7 +48,7 @@ export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:Nebu
 }
 export function awardNebulaCheckinBonus(state:NebulaGameRuntimeStateV1,input:{awardId:unknown;channel:unknown;userId:unknown;username?:unknown;displayName?:unknown},now=new Date()){
   const awardId=String(input.awardId??"").trim(),channel=normalizeNebulaChannel(input.channel),playerId=normalizeNebulaPlayerId(input.userId,input.username);
-  if(!awardId||awardId.length>180||/[\r\n\0].test(awardId)||!channel||!playerId)throw new Error("A valid channel, player and check-in award ID are required.");
+  if(!awardId||awardId.length>180||/[\r\n\0]/.test(awardId)||!channel||!playerId)throw new Error("A valid channel, player and check-in award ID are required.");
   state.checkinBonusReceipts??={};
   const receiptId=createHash("sha256").update(channel+":"+awardId).digest("hex"),prior=state.checkinBonusReceipts[receiptId];
   if(prior){if(prior.playerId!==playerId)throw new Error("This check-in bonus was already credited to another player.");return{...prior,duplicate:true};}
