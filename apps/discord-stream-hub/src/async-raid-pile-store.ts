@@ -47,7 +47,7 @@ export class AsyncDshRaidPileStore {
  }
 }
 function hydrate(db:DatabaseSync,s: RaidPileSnapshot){
- const insert=(table:string,rows:unknown[])=>{for(const row of rows){const value=row as Record<string,unknown>,keys=Object.keys(value);if(!keys.length)continue;const columns=keys.map(key=>'"'+key+'"').join(","),placeholders=keys.map(()=>"?").join(",");db.prepare(`INSERT OR REPLACE INTO ${table}(${columns}) VALUES(${placeholders})`).run(...keys.map(key=>value[key]??null));}};
+ const insert=(table:string,rows:unknown[])=>{for(const row of rows){const value=row as Record<string,unknown>,keys=Object.keys(value);if(!keys.length)continue;const columns=keys.map(key=>'"'+key+'"').join(","),placeholders=keys.map(()=>"?").join(",");db.prepare(`INSERT OR REPLACE INTO ${table}(${columns}) VALUES(${placeholders})`).run(...keys.map(key=>(value[key]??null) as string|number|bigint|null|Uint8Array));}};
  insert("raid_piles",s.piles);insert("raid_pile_profiles",s.profiles);insert("raid_pile_members",s.members);insert("raid_pile_targets",s.targets);insert("raid_pile_events",s.events);
 }
 function readSnapshot(db:DatabaseSync):RaidPileSnapshot{
