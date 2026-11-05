@@ -26,5 +26,5 @@ export class AsyncStreamWeaverBicStore {
 function safeId(value:unknown,field:string){const v=String(value??"").trim().replace(/[^A-Za-z0-9._:-]/g,"").slice(0,180);if(!v)throw new Error(`${field} is required`);return v;}
 function safeKey(value:unknown){const v=String(value??"").trim().replace(/[^A-Za-z0-9._:-]/g,"").slice(0,240);if(!v)throw new Error("idempotencyKey is required");return v;}
 function safeName(value:unknown){const v=String(value??"").trim().replace(/^@/,"").toLowerCase().replace(/[^a-z0-9_.-]/g,"").slice(0,80);if(!v)throw new Error("Bic target is required");return v;}
-function safeDisplay(value:unknown){return String(value??"").trim().replace(/[\\r\\n\\u0000-\\u001f]/g," ").slice(0,120)||"unknown";}
+function safeDisplay(value:unknown){return String(value??"").trim().replace(/[\r\n\u0000-\u001f]/g," ").slice(0,120)||"unknown";}
 function positiveInt(value:unknown){const n=Number(value);return Number.isSafeInteger(n)&&n>0?n:0;}
