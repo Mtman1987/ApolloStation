@@ -1,4 +1,5 @@
 import type { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
+import type { AsyncStreamWeaverBotActionReplies } from "./async-bot-action-replies.js";
 import { SPMT_SUITE_ACTION_CATALOG, type NormalizedChatDeliveryV1, type NormalizedChatMessageV1, type OutboundChatMessageV1, type SpmtSuiteActionActorRoleV1, type SpmtSuiteActionIdV1, type SpmtSuiteActionRiskV1 } from "@spmt/contracts";
 import { detectSpmtSuiteActionCommand, type SpmtClient } from "@spmt/sdk";
 
@@ -107,7 +108,7 @@ function detectStreamWeaverBotActionLegacy(message: string, now = new Date()): S
 
 export class StreamWeaverBotActionConsumer {
   readonly id = "streamweaver.bot-actions" as const;
-  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies, private readonly channelAllowed?: (message: NormalizedChatMessageV1) => boolean, private readonly allowMedia = true) {}
+  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies | AsyncStreamWeaverBotActionReplies, private readonly channelAllowed?: (message: NormalizedChatMessageV1) => boolean, private readonly allowMedia = true) {}
   accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && this.willHandle(message); }
   willHandle(message: NormalizedChatMessageV1): boolean { const request=detectStreamWeaverBotAction(message.text, new Date(message.occurredAt)); return (this.channelAllowed?.(message) ?? true) && Boolean(request) && (this.allowMedia || !request!.action.startsWith("hmo.media.")); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
@@ -119,20 +120,20 @@ export class StreamWeaverBotActionConsumer {
     const role = providerRole(delivery.message);
     const descriptor = STREAMWEAVER_BOT_ACTION_CATALOG.find((item) => item.id === request.action)!;
     const context: StreamWeaverBotActionContextV1 = { tenantId: delivery.message.tenantId, source: delivery.message.provider, connectionId: delivery.message.connectionId, ...(delivery.message.guildId ? { guildId: delivery.message.guildId } : {}), channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } };
-    let receipt = this.replies?.get(context);
+    let receipt = await this.replies?.get(context);
     if (!receipt) {
       const result = roleLevel(role) < roleLevel(descriptor.minimumRole)
         ? { response: `That ${descriptor.risk} action requires ${descriptor.minimumRole} access.` }
         : await this.executor.execute(request, context);
       const message: OutboundChatMessageV1 = { schemaVersion: 1, tenantId: delivery.message.tenantId, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, text: result.response.slice(0, 8_000), idempotencyKey: `streamweaver-bot-action:${delivery.deliveryId}`, replyToMessageId: delivery.message.messageId };
       receipt = { action: request.action, context, message, ...((result.result?.pending === true || request.action === "sw.image.generate") && typeof result.result?.jobId === "string" ? { jobId: result.result.jobId, completionReply: result.result.pending === true } : {}) };
-      receipt = this.replies?.remember(receipt) ?? receipt;
+      receipt = (await this.replies?.remember(receipt)) ?? receipt;
     }
     // Media requests may resolve asynchronously. The durable completion reply is
     // the only chat message we want for those actions; sending the provisional
     // queued acknowledgement creates the visible duplicate in Twitch chat.
     if (!request.action.startsWith("hmo.media.")) await this.egress.send(receipt.message);
-    this.replies?.acknowledge(context);
+    await this.replies?.acknowledge(context);
   }
 }
 
