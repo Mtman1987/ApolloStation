@@ -126,7 +126,7 @@ export class AsyncNebulaTagRecordStore {
   }
 
   async markDeliveryFailed(id: string, message: string): Promise<void> {
-    requireId(id, "deliveryId");
+    requireDeliveryId(id);
     const tenantId = outboxTenant(id);
     await this.records.transaction(async (tx) => {
       const item = await tx.get<PendingDelivery>("tag-outbox", tenantId, id);
