@@ -1,6 +1,8 @@
 build:
   system: auto
   command: "npm ci && npm run build"
+  max_cpu: 0.1
+  max_memory: 128
 working_directory: /
 build_context_directory: /
 start_command: "node scripts/hostless/start-node.mjs"
@@ -11,5 +13,5 @@ health_check:
 scaling:
   min_replicas: 1
   max_replicas: 1
-  max_cpu: 0.5
-  max_memory: 1024
+  max_cpu: 0.1
+  max_memory: 128
