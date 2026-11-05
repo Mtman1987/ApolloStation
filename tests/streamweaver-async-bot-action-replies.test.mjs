@@ -27,7 +27,6 @@ test("async bot-action receipts are idempotent, identity-locked, and survive res
   const duplicate=await t.store.remember(receipt(ctx,"different duplicate text"));
   assert.equal(duplicate.message.text,first.message.text);
   assert.deepEqual(await t.store.get(ctx),first);
-  await assert.rejects(t.store.get(context("tenant-a","request-2")),()=>false).catch(()=>{});
   await assert.rejects(t.store.get({...ctx,actor:{...ctx.actor,username:"mallory"}}),/identity mismatch/);
   await t.store.acknowledge(ctx);
   await t.store.close();
