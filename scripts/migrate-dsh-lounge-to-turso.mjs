@@ -24,9 +24,10 @@ export async function importDshLoungeSnapshot(store,snapshot,migrationId){
  return store.transaction(async tx=>{
   const prior=await tx.get(MIGRATIONS,"_index",migrationId);
   if(prior){if(prior.digest!==snapshot.digest)throw new Error("Migration ID already exists with a different DSH Lounge source digest");return{imported:false,duplicate:true,counts:snapshot.counts,digest:snapshot.digest};}
-  if((await tx.list(MIGRATIONS,"_index")).length)throw new Error("Turso DSH Lounge migration receipts are not empty");
+  if((await tx.list(MIGRATIONS,"_index")).length||(await tx.list("lounge-tenants","_index")).length)throw new Error("Turso DSH Lounge namespaces are not empty");
   for(const namespace of ["lounge-state","lounge-host","lounge-avatar","lounge-broadcast"])if((await tx.list(namespace,"_index")).length)throw new Error(`Turso DSH Lounge namespace ${namespace} is not empty`);
   for(const tenant of snapshot.tenants)for(const namespace of ["lounge-state","lounge-host","lounge-avatar","lounge-broadcast"])if(await tx.get(namespace,tenant,namespace==="lounge-avatar"?"manifest":"current"))throw new Error(`Turso DSH Lounge destination is not empty for ${namespace}/${tenant}`);
+  for(const tenant of snapshot.tenants)await tx.put("lounge-tenants","_index",tenant,{tenantId:tenant});
   for(const row of snapshot.records)await tx.put(row.namespace,row.tenant,row.key,row.value);
   const verified={};
   for(const tenant of snapshot.tenants)for(const namespace of ["lounge-state","lounge-host","lounge-avatar","lounge-broadcast"]){const expected=snapshot.records.filter(row=>row.tenant===tenant&&row.namespace===namespace).length,actual=await tx.get(namespace,tenant,namespace==="lounge-avatar"?"manifest":"current")?1:0;if(actual!==expected)throw new Error(`DSH Lounge verification failed for ${namespace}/${tenant}`);if(expected)verified[`${namespace}:${tenant}`]=actual;}
