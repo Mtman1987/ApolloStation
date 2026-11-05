@@ -83,19 +83,20 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if (!(await mosaics.health()).ready) throw new NebulaHostError(503, "Nebula Mosaic control persistence is unavailable");
         const requireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO==="1";
+        const requireFullTurso=process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO==="1";
         const gameRuntimeStoreMode=runtime instanceof AsyncNebulaGameRuntimeStore?"turso":"sqlite";
         const gameActionStoreMode=actions instanceof AsyncNebulaGameActionStore?"turso":"sqlite";
         const activityStoreMode=activity instanceof AsyncNebulaArcadeActivityStore?"turso":"sqlite";
         const gameInputStoreMode=inputs instanceof AsyncNebulaGameInputStore?"turso":"sqlite";
-        if(requireTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
-        if(requireTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
-        if(requireTurso&&gameInputStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game input feed must use Turso for production readiness");
-        if(requireTurso&&gameRuntimeStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game runtime must use Turso for production readiness");
+        if(requireFullTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
+        if(requireFullTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
+        if(requireFullTurso&&gameInputStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game input feed must use Turso for production readiness");
+        if(requireFullTurso&&gameRuntimeStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game runtime must use Turso for production readiness");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
         const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
         let tagBody:Record<string,unknown>={};try{tagBody=await tagResponse.json() as Record<string,unknown>;}catch{}
         if(!tagResponse.ok||tagBody.tagStoreReady!==true)throw new NebulaHostError(503,"Nebula Tag persistence is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireTurso,activityStoreReady:true,activityStoreMode,activityStoreRequired:requireTurso,gameInputStoreReady:true,gameInputStoreMode,gameInputStoreRequired:requireTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireFullTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireFullTurso,activityStoreReady:true,activityStoreMode,activityStoreRequired:requireFullTurso,gameInputStoreReady:true,gameInputStoreMode,gameInputStoreRequired:requireFullTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
