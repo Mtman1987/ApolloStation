@@ -187,3 +187,17 @@ These are logical target namespaces; an implementation may choose a different ph
 The async tabletop adapter must be wired into both NebulaArcadeProviderRuntime and the live HTTP host, including snapshot, command execution, success/receipt checks, transcript ingestion, trade endpoints, and shutdown. Extend NEBULA_ARCADE_REQUIRE_FULL_TURSO=1 to report tabletop readiness and return 503 unless this adapter is selected and healthy. The importer must open the SQLite source read-only, run integrity validation, export all four tabletop/outbox tables plus the coupled game-runtime state, compute a deterministic digest, refuse non-empty destination keys, import in one transaction, and verify per-namespace counts and digest.
 
 Until those conditions and restart/idempotency/rollback/recovery tests pass, tabletop remains SQLite-backed and the full Nebula Turso readiness gate must stay disabled. No source snapshot should be imported as part of code validation.
+
+### Tabletop caller inventory (verified against the current branch)
+
+The migration surface is wider than the provider ingress and live HTTP host. The current synchronous tabletop instance is also constructed or called by:
+
+- `apps/nebula-arcade/src/control-surface.ts`: browser state snapshot, trade snapshot, trade mutation, Bingo/Quackverse play, and command receipt validation. Its surrounding game-runtime reads currently use the synchronous SQLite store.
+- `apps/nebula-arcade/src/media-delivery.ts`: generated Bingo phrase completion writes through `execute()` and then checks `succeeded()`; this worker must await the selected tabletop backend.
+- `apps/chat-gateway/src/simulation-runtime.ts`: preview snapshots instantiate the SQLite tabletop store directly. This is a simulation/preview path and must remain explicitly SQLite/synthetic or be given a compatible async preview path; it must never silently read production data from a local file during a Turso cutover.
+- `apps/nebula-arcade/src/provider-runtime.ts`: provider ingress uses tabletop execution, receipt checks, Bingo observation/transcript ingestion, and media delivery; all readiness and shutdown paths must await tabletop initialization and close.
+- `apps/nebula-arcade/src/nebula-runtime-host-base.ts`: the HTTP host uses tabletop snapshot and action execution, and its health endpoint must include tabletop mode/health in the full-Turso gate.
+
+The async contract therefore needs async variants for `snapshot`, `execute`, `succeeded`, `tradeSnapshot`, `trade`, `ingestBingoTranscript`, `observeBingo`, `quackverseState`, and `importData` (or an explicit decision to keep migration-only import methods SQLite-only). The host and provider must await them at every call site. Keep the SQLite implementation as the default backend and parity oracle until all paths and migration tests pass.
+
+A further atomicity rule: avoid a separate game-runtime update after a tabletop command. The adapter must read and write the existing `game-runtime/default` record through the *same* record-store transaction as the tabletop state and receipt. The generic record-store transaction API supports this; the implementation still needs contention, rollback, and replay tests against the selected backend.
