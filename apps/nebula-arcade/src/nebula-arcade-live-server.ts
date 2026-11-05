@@ -58,10 +58,12 @@ export function createNebulaArcadeLiveHost(options:{databasePath:string;tenantId
     const gameMixStoreReady=body.gameMixStoreReady===true;
     const mosaicControlStoreMode=body.mosaicControlStoreMode==='turso'?'turso':'sqlite';
     const mosaicControlStoreReady=body.mosaicControlStoreReady===true;
-    const storeModeReady=!requireTurso||(mosaicHealth.mode==='turso'&&mosaicControlStoreMode==='turso'&&gameMixStoreMode==='turso');
-    const status=ready.status===200&&mosaicHealth.ready&&storeModeReady?200:503;
+    const tagStoreMode=body.tagStoreMode==='turso'?'turso':'sqlite';
+    const tagStoreReady=body.tagStoreReady===true;
+    const storeModeReady=!requireTurso||(mosaicHealth.mode==='turso'&&mosaicControlStoreMode==='turso'&&gameMixStoreMode==='turso'&&tagStoreMode==='turso');
+    const status=ready.status===200&&mosaicHealth.ready&&tagStoreReady&&storeModeReady?200:503;
     response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});
-    response.end(JSON.stringify({...body,ready:status===200,mosaicStoreReady:mosaicHealth.ready,mosaicStoreMode:mosaicHealth.mode,mosaicControlStoreReady,mosaicControlStoreMode,gameMixStoreMode,gameMixStoreReady,storesRequiredByTursoGate:requireTurso,mosaicStoreRequired:requireTurso,mosaicControlStoreRequired:requireTurso,gameMixStoreRequired:requireTurso}));return;
+    response.end(JSON.stringify({...body,ready:status===200,tagStoreReady,tagStoreMode,mosaicStoreReady:mosaicHealth.ready,mosaicStoreMode:mosaicHealth.mode,mosaicControlStoreReady,mosaicControlStoreMode,gameMixStoreMode,gameMixStoreReady,storesRequiredByTursoGate:requireTurso,tagStoreRequired:requireTurso,mosaicStoreRequired:requireTurso,mosaicControlStoreRequired:requireTurso,gameMixStoreRequired:requireTurso}));return;
   }
   if(url.pathname.startsWith('/v1/nebula-arcade/support')){const principal=await authenticate(request);if(!principal.moderator)throw new Error('Moderator permission required');}
   const proxyHeaders={...request.headers};if(rewritten)delete proxyHeaders["transfer-encoding"];
