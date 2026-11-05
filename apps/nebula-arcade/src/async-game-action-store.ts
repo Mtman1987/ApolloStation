@@ -69,7 +69,7 @@ export class AsyncNebulaGameActionStore {
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 function cleanGame(value: string) { const id = String(value ?? "").trim().toLowerCase(); if (!GAME_IDS.has(id)) throw new Error("Unknown Nebula game"); return id; }
 function cleanChannel(value: string) { const result = String(value ?? "").trim().toLowerCase().replace(/^#/, "").slice(0, 80); if (!result) throw new Error("Nebula channel is required"); return result; }
-function cleanId(value: string, name: string) { const result = String(value ?? "").trim(); if (!result || result.length > 200 || /[\\r\\n\\0]/.test(result)) throw new Error(`${name} is invalid`); return result; }
-function cleanText(value: string, max: number) { const result = String(value ?? "").trim().slice(0, max); if (!result || /[\\r\\n\\0]/.test(result)) throw new Error("Nebula action text is invalid"); return result; }
+function cleanId(value: string, name: string) { const result = String(value ?? "").trim(); if (!result || result.length > 200 || [0,10,13].some((code) => result.includes(String.fromCharCode(code)))) throw new Error(`${name} is invalid`); return result; }
+function cleanText(value: string, max: number) { const result = String(value ?? "").trim().slice(0, max); if (!result || [0,10,13].some((code) => result.includes(String.fromCharCode(code)))) throw new Error("Nebula action text is invalid"); return result; }
 function cleanIso(value: string) { if (!Number.isFinite(Date.parse(value))) throw new Error("Nebula action timestamp is invalid"); return value; }
 function normalizeArgs(value: readonly string[]) { if (!Array.isArray(value)) return []; return value.map((item) => String(item ?? "").trim().slice(0, 80)).filter(Boolean).slice(0, 8); }
