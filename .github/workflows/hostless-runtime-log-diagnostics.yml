@@ -1,0 +1,87 @@
+name: Hostless runtime log diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which Apollo Hostless node to inspect
+        required: true
+        type: choice
+        options:
+          - both
+          - node1
+          - node2
+        default: both
+      since:
+        description: Recent log window (for example 30m or 2h)
+        required: true
+        type: string
+        default: 2h
+      deployment_id:
+        description: Optional exact Hostless deployment ID (leave blank for recent runtime errors)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    name: Collect ${{ matrix.label }} logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: node1
+            label: Node 1
+            app: apollo-node-1
+            hostless_secret: HOSTLESS_NODE1_TOKEN
+          - node: node2
+            label: Node 2
+            app: apollo-node-2
+            hostless_secret: HOSTLESS_NODE2_TOKEN
+    if: $'{{ inputs.target == 'both' || inputs.target == matrix.node }}
+    steps:
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+
+      - name: Collect runtime and deployment logs
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
+          APP: ${{ matrix.app }}
+          SINCE: ${{ inputs.since }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        run: |
+          set +e
+          mkdir -p hostless-diagnostics
+          {
+            echo "App: $APP"
+            echo "Window: $SINCE"
+            echo "Timestamp (UTC): $(date -u +%FT%TZ)"
+            echo
+            echo "===== RECENT ERROR LOGS ====="
+          } | tee hostless-diagnostics/summary.txt
+
+          hostless logs --app "$APP" --since "$SINCE" --level error 2>&1 | tee hostless-diagnostics/recent-errors.log
+          RECENT_STATUS=${PIPESTATUS[0]}
+          echo "Recent log command exit code: $RECENT_STATUS" | tee -a hostless-diagnostics/summary.txt
+
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            echo "===== DEPLOYMENT LOGS: $DEPLOYMENT_ID =====" | tee -a hostless-diagnostics/summary.txt
+            hostless logs --app "$APP" --deployment "$DEPLOYMENT_ID" 2>&1 | tee hostless-diagnostics/deployment.log
+            echo "Deployment log command exit code: ${PIPESTATUS[0]}" | tee -a hostless-diagnostics/summary.txt
+          fi
+          exit 0
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostless-${{ matrix.node }}-diagnostics-${{ github.run_id }}
+          path: hostless-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
