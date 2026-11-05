@@ -7,6 +7,7 @@ import { basename, isAbsolute } from "node:path";
 import type { ExecutionTargetV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
 import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-actions.js";
+import { AsyncNebulaGameActionStore } from "./async-game-action-store.js";
 import { NEBULA_ARCADE_GAMES, parseNebulaMessage, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
 import { NEBULA_CONTINUATION_GAMES, nebulaGuideReplies } from "./game-guide.js";
 import { SqliteNebulaArcadeActivityStore } from "./arcade-activity.js";
@@ -73,7 +74,8 @@ export class NebulaArcadeProviderRuntime {
   private readonly experienceStore: SqliteNebulaTagExperienceStore;
   private readonly gameStore: SqliteNebulaGameRuntimeStore | AsyncNebulaGameRuntimeStore;
   private readonly gameStoreReady: Promise<void>;
-  private readonly actionStore: SqliteNebulaGameActionStore;
+  private readonly actionStore: SqliteNebulaGameActionStore | AsyncNebulaGameActionStore;
+  private readonly actionStoreReady: Promise<void>;
   private readonly mosaicRuntime: NebulaMosaicRuntime;
   private readonly mosaicReady: Promise<void>;
   private readonly dashboardStore?: SqliteNebulaDiscordDashboardStore;
@@ -113,7 +115,9 @@ export class NebulaArcadeProviderRuntime {
     const asyncGameStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaGameRuntimeStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
     this.gameStore = asyncGameStore ?? new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.gameStoreReady = asyncGameStore ? asyncGameStore.initialize() : Promise.resolve();
-    this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
+    const asyncActionStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaGameActionStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
+    this.actionStore = asyncActionStore ?? new SqliteNebulaGameActionStore(options.databasePath);
+    this.actionStoreReady = asyncActionStore ? asyncActionStore.initialize() : Promise.resolve();
     this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath, createStreamWeaverMosaicGenerator(), { requestXpCost: Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0))), spendXp: (tenantId, userId, amount, eventType, idempotencyKey, metadata) => options.client.spendXp(tenantId, userId, amount, eventType, idempotencyKey, metadata), awardXp: (tenantId, userId, delta, reason, idempotencyKey, awardOptions) => options.client.awardXp(tenantId, userId, delta, reason, idempotencyKey, awardOptions) });
     this.mosaicReady = this.mosaicRuntime.initialize();
     if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
@@ -142,7 +146,7 @@ export class NebulaArcadeProviderRuntime {
     return result;
   }
   async reconcile() {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady]);
     const delivery = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenant of this.options.config.tenants) {
       await this.flushAnnouncements(tenant.tenantId);
@@ -175,11 +179,11 @@ export class NebulaArcadeProviderRuntime {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady]);
-    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady]);
+    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); await this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady]);
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
     const message=delivery.message, channel=this.channels.get(messageKey(message)), experience=this.experiences.get(message.tenantId);
     if (!channel || !experience || message.actor.isBot) return;
@@ -333,7 +337,7 @@ export class NebulaArcadeProviderRuntime {
       return true;
     })).result;
     if (changed && !["start","stop"].includes(checked.action)) this.activity.membership(message.tenantId,channel.stateChannelId,actor,target.gameId,checked.action!=="leave",Date.parse(message.occurredAt));
-    this.actionStore.record({ id: commandId, tenantId: message.tenantId, channel: channel.stateChannelId, gameId: target.gameId, actorId: actor, username, displayName, action: checked.action, args: checked.args, message: message.text, occurredAt: message.occurredAt });
+    await this.actionStore.record({ id: commandId, tenantId: message.tenantId, channel: channel.stateChannelId, gameId: target.gameId, actorId: actor, username, displayName, action: checked.action, args: checked.args, message: message.text, occurredAt: message.occurredAt });
     const stats = getNebulaGameStats(await this.gameStore.get(message.tenantId), target.gameId);
     return changed ? `${gameName(target.gameId)} accepted ${checked.action} for ${displayName}. ${stats.players.length} active.` : `${gameName(target.gameId)} already accepted that command.`;
   }
