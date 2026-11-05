@@ -74,3 +74,5 @@ export * from "./async-tag-record-store.js";
 export * from "./async-nebula-tag-runtime.js";
 
 export * from "./async-game-runtime-store.js";
+
+export * from "./async-game-action-store.js";
