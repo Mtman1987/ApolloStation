@@ -21,6 +21,9 @@ on:
         description: Optional exact Hostless deployment ID (leave blank for recent runtime errors)
         required: false
         type: string
+  workflow_run:
+    workflows: ["ApolloStation Hostless two-node release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -42,7 +45,7 @@ jobs:
             label: Node 2
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
-    if: $'{{ inputs.target == 'both' || inputs.target == matrix.node }}
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure') || (github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == matrix.node)) }}
     steps:
       - name: Install Hostless CLI
         run: |
@@ -53,20 +56,21 @@ jobs:
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
           APP: ${{ matrix.app }}
-          SINCE: ${{ inputs.since }}
+          SINCE: ${{ inputs.since || '2h' }}
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}
         run: |
           set +e
           mkdir -p hostless-diagnostics
+          WINDOW="${SINCE:-2h}"
           {
             echo "App: $APP"
-            echo "Window: $SINCE"
+            echo "Window: $WINDOW"
             echo "Timestamp (UTC): $(date -u +%FT%TZ)"
             echo
             echo "===== RECENT ERROR LOGS ====="
           } | tee hostless-diagnostics/summary.txt
 
-          hostless logs --app "$APP" --since "$SINCE" --level error 2>&1 | tee hostless-diagnostics/recent-errors.log
+          hostless logs --app "$APP" --since "$WINDOW" --level error 2>&1 | tee hostless-diagnostics/recent-errors.log
           RECENT_STATUS=${PIPESTATUS[0]}
           echo "Recent log command exit code: $RECENT_STATUS" | tee -a hostless-diagnostics/summary.txt
 
