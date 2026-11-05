@@ -134,6 +134,32 @@ async function resolveNode1Origin() {
   return origin;
 }
 
+async function clearDeferredNebulaRuntime(appName) {
+  // A previous deployment may have left write-only Nebula values on Hostless.
+  // Remove them explicitly while no real workspace tenant/config has been provisioned.
+  const response = await request(`/apps/${encodeURIComponent(appName)}/environment-variables`);
+  const variables = rows(response, ["environmentVariables", "variables", "items", "data"]);
+  if (!variables) fail("Hostless environment-variable endpoint returned an unexpected response shape; refusing to deploy Node 2 with possibly stale Nebula settings.");
+  const existing = new Set(variables.map((item) => item?.name ?? item?.key).filter((value) => typeof value === "string"));
+  const deferredKeys = [
+    "NEBULA_ARCADE_WORKER_CREDENTIAL",
+    "NEBULA_ARCADE_DATABASE_PATH",
+    "NEBULA_ARCADE_RUNTIME_CONFIG_PATH",
+    "NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED",
+    "NEBULA_ARCADE_TENANT_ID",
+    "NEBULA_ARCADE_CHANNEL_ID",
+    "NEBULA_ARCADE_PUBLIC_ORIGIN",
+    "NEBULA_GAMEPLAY_PUBLIC_ORIGIN",
+    "NEBULA_ARCADE_AVATAR_URL",
+    "NEBULA_ARCADE_WEBHOOK_NAME",
+  ];
+  for (const key of deferredKeys) {
+    if (!existing.has(key)) continue;
+    runCli(["env", "unset", key, "--app", appName, "--project", String(idOf(project))], `Remove deferred Node 2 setting ${key}`);
+  }
+  console.log("Cleared stale Nebula runtime settings; Node 2 will defer Nebula until workspace provisioning.");
+}
+
 function syncRuntimeSecrets(projectId, appName) {
   let bundle = {};
   if (secretBundle) { try { bundle = JSON.parse(secretBundle); } catch { fail("APOLLO_GH_SECRETS_JSON is not valid JSON."); } }
@@ -183,6 +209,7 @@ if (matching.length === 0) {
     `Create ${node.app}`,
   );
 }
+if (nodeKey === "node2") await clearDeferredNebulaRuntime(node.app);
 if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
   process.env.SPMT_ORIGIN = await resolveNode1Origin();
   process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN = process.env.SPMT_ORIGIN;
