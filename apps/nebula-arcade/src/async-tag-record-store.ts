@@ -15,7 +15,6 @@ import {
 import type {
   StoredNebulaTagStateV1,
   StoredNebulaTagCommandV1,
-  NebulaTagDeliveryReportV1,
 } from "./nebula-tag-runtime.js";
 
 interface PendingDelivery {
@@ -95,7 +94,7 @@ export class AsyncNebulaTagRecordStore {
       await tx.put("tag-state", command.tenantId, "current", { revision, state: applied.state });
       await tx.put("tag-commands", command.tenantId, command.commandId, applied.result);
       if (applied.result.event || applied.result.xpAward) {
-        const id = `nebula-arcade:tag-outbox:${command.tenantId}:${command.commandId}`;
+        const id = `nebula-arcade:tag-outbox:${encodeURIComponent(command.tenantId)}:${encodeURIComponent(command.commandId)}`;
         await tx.put<PendingDelivery>("tag-outbox", command.tenantId, id, {
           id,
           tenantId: command.tenantId,
@@ -170,7 +169,7 @@ function outboxTenant(id: string): string {
   const remainder = id.slice(prefix.length);
   const split = remainder.indexOf(":");
   if (split < 1) throw new Error("deliveryId is invalid");
-  return remainder.slice(0, split);
+  return decodeURIComponent(remainder.slice(0, split));
 }
 
 function requireId(value: string, name: string): void {
