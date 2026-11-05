@@ -46,7 +46,7 @@ export class StreamWeaverCommunityRuntime {
     return result.state==="complete"?result.text:`Reward declined: ${result.message}`;
   }
   async redeemReward(input:{tenantId:string;requestId:string;rewardId:string;userId:string;displayName:string;currency:"streamer"|"spmt";maxSpmtCost?:number;channel?:string}){
-    if(this.store.rides.settings(input.tenantId).rewardId===input.rewardId)return this.ride({tenantId:input.tenantId,actorId:input.userId,displayName:input.displayName,source:"reward",requestId:input.requestId,currency:input.currency,rewardId:input.rewardId,...(input.channel?{channel:input.channel}:{}),...(input.maxSpmtCost===undefined?{}:{maxSpmtCost:input.maxSpmtCost})});
+    if((await this.store.rides.settings(input.tenantId)).rewardId===input.rewardId)return this.ride({tenantId:input.tenantId,actorId:input.userId,displayName:input.displayName,source:"reward",requestId:input.requestId,currency:input.currency,rewardId:input.rewardId,...(input.channel?{channel:input.channel}:{}),...(input.maxSpmtCost===undefined?{}:{maxSpmtCost:input.maxSpmtCost})});
     const reward=this.store.redeems(input.tenantId).find(r=>r.id===input.rewardId);
     if(!reward)throw new Error("This reward has not been configured by the streamer");
     const target=this.store.bindRewardCheckin(input.tenantId,input.userId,reward.id,input.requestId);
