@@ -320,7 +320,7 @@ export class NebulaArcadeProviderRuntime {
     const actor = gameActorId(message), username = message.actor.username, displayName = message.actor.displayName ?? username;
     const moderator = message.actor.roles.some((role) => role === "moderator" || role === "broadcaster");
     if ((checked.action === "start" || checked.action === "stop") && !moderator) return `Only the broadcaster or a moderator can ${checked.action} ${gameName(target.gameId)}.`;
-    const changed = await this.gameStore.update(message.tenantId, (state) => {
+    const changed = (await this.gameStore.update(message.tenantId, (state) => {
       if (!claimNebulaGameCommand(state, commandId)) return false;
       if (checked.action === "start" || checked.action === "stop") {
         setNebulaChannelGameRunning(state, channel.stateChannelId, target.gameId, checked.action === "start", new Date(message.occurredAt));
