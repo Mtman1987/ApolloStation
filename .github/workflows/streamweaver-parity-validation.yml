@@ -11,6 +11,10 @@ on:
       - apps/streamweaver/src/stream-presentation-runtime.ts
       - apps/streamweaver/src/web-controls.ts
       - apps/streamweaver/src/provider-runtime.ts
+      - apps/streamweaver/src/social-reaction-store.ts
+      - apps/streamweaver/src/async-social-reaction-store.ts
+      - apps/streamweaver/src/donor-social-actions.ts
+      - tests/streamweaver-async-social-reaction-store.test.mjs
       - apps/streamweaver/src/stella-lounge-host.ts
       - apps/streamweaver/src/stream-operations-client.ts
       - apps/streamweaver/src/web-client.ts
@@ -99,7 +103,7 @@ jobs:
         run: python3 -m py_compile apps/stellar-core/kokoro/server.py
       - name: Run focused pull-request regressions
         if: github.event_name == 'pull_request'
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-voice-auto-send.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-hosted-readiness.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/hosted-worker-target.test.mjs tests/streamweaver-avatar-pipeline.test.mjs tests/dsh-channel-cleanup-parity.test.mjs tests/nebula-arcade-provider-runtime.test.mjs tests/functional-foundation-api.test.mjs tests/streamweaver-checkin-presentation.test.mjs tests/streamweaver-flow-author-e2e.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-async-social-reaction-store.test.mjs tests/streamweaver-voice-auto-send.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-hosted-readiness.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/hosted-worker-target.test.mjs tests/streamweaver-avatar-pipeline.test.mjs tests/dsh-channel-cleanup-parity.test.mjs tests/nebula-arcade-provider-runtime.test.mjs tests/functional-foundation-api.test.mjs tests/streamweaver-checkin-presentation.test.mjs tests/streamweaver-flow-author-e2e.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
       - name: Run full manual StreamWeaver regressions
         if: github.event_name == 'workflow_dispatch'
         run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
