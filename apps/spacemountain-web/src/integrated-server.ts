@@ -25,7 +25,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
   for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
-    if (previewPassword && !["/health/ready", "/health/live"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
+    if (previewPassword && !["/health/ready", "/health/live", "/sandbox/health"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
       response.writeHead(401, { "www-authenticate": 'Basic realm="ApolloStation private preview", charset="UTF-8"', "cache-control": "no-store" });
       response.end("Private preview — sign in to continue.");
       return;
