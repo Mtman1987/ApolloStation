@@ -44,6 +44,7 @@
     "db:test:turso:live": "node --test tests/turso-live-runtime.test.mjs",
     "db:migrate:nebula-tag:turso": "node scripts/migrate-nebula-tag-to-turso.mjs",
     "db:migrate:streamweaver-social-reactions:turso": "node scripts/migrate-streamweaver-social-reactions-to-turso.mjs",
+    "db:migrate:streamweaver-bot-action-replies:turso": "node scripts/migrate-streamweaver-bot-action-replies-to-turso.mjs",
     "db:migrate:streamweaver-bic:turso": "node scripts/migrate-streamweaver-bic-to-turso.mjs"
   },
   "devDependencies": {
