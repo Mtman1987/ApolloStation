@@ -46,6 +46,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Validate Hostless automation helper syntax
+        run: node --check scripts/hostless/ensure-node-app.mjs
       - name: Install media test tools
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
