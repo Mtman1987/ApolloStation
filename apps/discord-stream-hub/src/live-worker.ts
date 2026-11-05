@@ -40,6 +40,7 @@ import { DshTenantSettingsStore } from './settings.js';
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { dshSystemLiveChannelByLogin } from "./system-live-channels.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js";
+import { AsyncDshRaidPileStore } from "./async-raid-pile-store.js";
 import { DshPointsEventRouter, type DshProviderPointsEventV1 } from "./points-event-router.js";
 import { DshPointsService } from "./points.js";
 import { DshSpmtIdentityResolver } from "./provider-identity.js";
@@ -214,7 +215,8 @@ export class SupervisedDshLiveService {
   private readonly clipAcquisition:DshClipAcquisitionWorker;
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
-  private readonly raidPile: DshRaidPileStore;
+  private readonly raidPile: DshRaidPileStore | AsyncDshRaidPileStore;
+  private readonly raidPileReady:Promise<void>;
   private readonly identities: DshSpmtIdentityResolver;
   private readonly pointsRouter: DshPointsEventRouter;
   private readonly directory: ConfigDirectory;
@@ -238,7 +240,12 @@ export class SupervisedDshLiveService {
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
-    this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
+    const raidPileSettings=(tenantId:string)=>{const saved=this.settings.read(tenantId);return{maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};};
+     const raidPileMode=process.env.DSH_RAID_PILE_STORE??"sqlite";
+     if(raidPileMode!=="sqlite"&&raidPileMode!=="turso")throw new Error("DSH_RAID_PILE_STORE must be sqlite or turso");
+     if(raidPileMode==="turso"&&(!process.env.DSH_TURSO_DATABASE_URL||!process.env.DSH_TURSO_AUTH_TOKEN))throw new Error("DSH_RAID_PILE_STORE=turso requires DSH_TURSO_DATABASE_URL and DSH_TURSO_AUTH_TOKEN");
+     this.raidPile=raidPileMode==="turso"?new AsyncDshRaidPileStore({mode:"turso",url:process.env.DSH_TURSO_DATABASE_URL!,authToken:process.env.DSH_TURSO_AUTH_TOKEN!,settings:raidPileSettings,now}):new DshRaidPileStore(options.databasePath,raidPileSettings,now);
+     this.raidPileReady=this.raidPile instanceof AsyncDshRaidPileStore?this.raidPile.initialize():Promise.resolve();
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = this.liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
     const mtFixItMode=process.env.DSH_MTFIXIT_STORE??"sqlite";
@@ -339,9 +346,9 @@ export class SupervisedDshLiveService {
           const result=await this.pointsRouter.handle(input);
           if(eventType==="raid"&&target&&typeof target.providerUserId==="string"){
             const targetIdentity=await this.identities.resolveOrGrandfather({tenantId,provider:"twitch",providerUserId:target.providerUserId,...(typeof target.displayName==="string"?{displayName:target.displayName}:{})});
-            const outcome=this.raidPile.recordRaidOut(tenantId,result.identity.userId,targetIdentity.userId,activityId);
+            await this.raidPileReady;const outcome=await this.raidPile.recordRaidOut(tenantId,result.identity.userId,targetIdentity.userId,activityId);
             if(outcome.member&&outcome.compliant&&outcome.canonicalTarget){
-              const reward=this.raidPile.settingsForTenant(tenantId).pointsReward;
+              const reward=(await this.raidPile.settingsForTenant(tenantId)).pointsReward;
               if(reward>0){const key=buildXpIdempotencyKey({sourceApp:"discord-stream-hub",eventType:"dsh-raid-pile-compliant",upstreamEventId:activityId,userId:result.identity.userId});await this.client.awardXp(tenantId,result.identity.userId,reward,"dsh-raid-pile-compliant",key,{eventType:"dsh-raid-pile-compliant",metadata:{raidEventId:activityId,pileId:outcome.canonicalTarget.pileId,targetUserId:targetIdentity.userId}});}
             }
           }
@@ -352,7 +359,7 @@ export class SupervisedDshLiveService {
     }
   }
   private async processRaidPileHandoffs(tenantId:string){
-    for(const pile of this.raidPile.piles(tenantId))for(const member of pile.members){const stream=this.monitor.getLiveStream(tenantId,member.userId);this.raidPile.updatePresence(tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
+    await this.raidPileReady;for(const pile of await this.raidPile.piles(tenantId))for(const member of pile.members){const stream=this.monitor.getLiveStream(tenantId,member.userId);await this.raidPile.updatePresence(tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
     this.raidPile.ensureTargets(tenantId);
     const handoffs=this.raidPile.dueHandoffs(tenantId);
     for(const handoff of handoffs){const nextAt=handoff.nextTarget.lastRaidedAt??this.now();const action={schemaVersion:1 as const,type:"raid-pile.handoff" as const,tenantId,pileId:handoff.pileId,priorTargetName:handoff.priorTarget.displayName,nextTargetName:handoff.nextTarget.displayName,nextTargetLogin:handoff.nextTarget.twitchLogin,heldHours:handoff.heldHours,message:handoff.message,idempotencyKey:"dsh:raid-pile:"+tenantId+":"+handoff.pileId+":"+handoff.nextTarget.userId+":"+nextAt};this.monitor.enqueueAction(action,this.now());}
@@ -370,7 +377,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
-      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
+      this.memberDirectory.close();this.settings.close();await this.raidPileReady.catch(()=>undefined);await this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       await this.mtFixItReady.catch(()=>undefined);await this.mtFixIt.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
