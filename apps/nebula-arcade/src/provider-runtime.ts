@@ -90,16 +90,17 @@ export class NebulaArcadeProviderRuntime {
     const tagStoreMode = process.env.NEBULA_ARCADE_TAG_STORE ?? "sqlite";
     if (tagStoreMode !== "sqlite" && tagStoreMode !== "turso") throw new Error("NEBULA_ARCADE_TAG_STORE must be sqlite or turso");
     if (tagStoreMode === "turso" && (!process.env.NEBULA_ARCADE_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_TAG_STORE=turso requires NEBULA_ARCADE_TURSO_DATABASE_URL and NEBULA_ARCADE_TURSO_AUTH_TOKEN");
-    this.tagStore = tagStoreMode === "turso"
-      ? new AsyncNebulaTagRecordStore({ mode: "turso", url: process.env.NEBULA_ARCADE_TURSO_DATABASE_URL, authToken: process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN })
-      : new SqliteNebulaTagStore(options.databasePath);
-    this.tagReady = this.tagStore instanceof AsyncNebulaTagRecordStore
-      ? this.tagStore.initialize().then(async () => {
+    const asyncTagStore = tagStoreMode === "turso"
+      ? new AsyncNebulaTagRecordStore({ mode: "turso", url: process.env.NEBULA_ARCADE_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN! })
+      : undefined;
+    this.tagStore = asyncTagStore ?? new SqliteNebulaTagStore(options.databasePath);
+    this.tagReady = asyncTagStore
+      ? asyncTagStore.initialize().then(async () => {
           for (const tenant of options.config.tenants) {
             const legacy = this.network.settings(tenant.tenantId, "@arcade", "tag");
             const keys = ["tagSuccessPoints", "taggedPenaltyPoints", "immunityMinutes", "rotateMinutes", "forceMinutes"] as const;
             const settings = Object.fromEntries(keys.filter((key) => Number.isSafeInteger(legacy[key])).map((key) => [key, Number(legacy[key])])) as AsyncNebulaTagSettings;
-            if (Object.keys(settings).length) await this.tagStore.importSettings(tenant.tenantId, settings, "sqlite-nebula-tag-settings-v1");
+            if (Object.keys(settings).length) await asyncTagStore.importSettings(tenant.tenantId, settings, "sqlite-nebula-tag-settings-v1");
           }
         })
       : Promise.resolve();
@@ -109,9 +110,9 @@ export class NebulaArcadeProviderRuntime {
     this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath, createStreamWeaverMosaicGenerator(), { requestXpCost: Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0))), spendXp: (tenantId, userId, amount, eventType, idempotencyKey, metadata) => options.client.spendXp(tenantId, userId, amount, eventType, idempotencyKey, metadata), awardXp: (tenantId, userId, delta, reason, idempotencyKey, awardOptions) => options.client.awardXp(tenantId, userId, delta, reason, idempotencyKey, awardOptions) });
     this.mosaicReady = this.mosaicRuntime.initialize();
     if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
-    this.tagRuntime = this.tagStore instanceof AsyncNebulaTagRecordStore
-      ? new AsyncNebulaTagRuntime(this.tagStore, options.client)
-      : new NebulaTagRuntime(this.tagStore, options.client);
+    this.tagRuntime = asyncTagStore
+      ? new AsyncNebulaTagRuntime(asyncTagStore, options.client)
+      : new NebulaTagRuntime(this.tagStore as SqliteNebulaTagStore, options.client);
     for (const tenant of options.config.tenants) {
       this.experiences.set(tenant.tenantId, new NebulaTagExperienceService(this.tagRuntime, this.experienceStore, tenant.pinUserId, options.now));
       for (const channel of tenant.channels) {
