@@ -9,6 +9,7 @@ import {StreamWeaverTikTokStore} from "./tiktok-store.js";
 import { SqliteStreamWeaverShoutoutStore, type StreamWeaverShoutoutSettings } from "./shoutout-store.js";
 import { TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
 import { StreamWeaverGenerationStore, GENERATION_TEMPLATES, type StreamWeaverGenerationSettings } from "./generation-settings.js";
+import { AsyncStreamWeaverGenerationStore } from "./async-generation-settings.js";
 import { StreamWeaverCommunityRuntime } from "./community-runtime.js";
 import { calculateStreamWeaverSupplyRate } from "./economy.js";
 import { StreamWeaverCommunityStore, STREAM_EVENT_AWARDS, type StreamEventAward, type StreamPartner, type StreamRedeem, type StreamEventBinding } from "./community-store.js";
@@ -45,7 +46,7 @@ export class StreamWeaverWebControls {
   private readonly testRooms?:StreamWeaverFlowTestRoom;
   private readonly authorWorker?:StreamWeaverFlowAuthorWorker;
   private readonly shoutoutStore?:SqliteStreamWeaverShoutoutStore;
-  private readonly generation?:StreamWeaverGenerationStore;
+  private readonly generation?:StreamWeaverGenerationStore|AsyncStreamWeaverGenerationStore;
   private readonly community?:StreamWeaverCommunityStore;
   private readonly pokemon?: StreamWeaverPokemonStore;
   private readonly persona?: StreamWeaverPersonaSettingsStore;
@@ -62,7 +63,7 @@ export class StreamWeaverWebControls {
     this.operationMode = options.operationMode ?? "active";
     this.avatarBuildEnabled = options.avatarBuildEnabled ?? this.operationMode === "active";
     if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
-    if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
+    if(options.databasePath){const mode=this.operationMode==="active"?(process.env.STREAMWEAVER_GENERATION_STORE??"sqlite"):"sqlite";if(mode!=="sqlite"&&mode!=="turso")throw new Error("STREAMWEAVER_GENERATION_STORE must be sqlite or turso");if(mode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_GENERATION_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");this.generation=mode==="turso"?new AsyncStreamWeaverGenerationStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}):new StreamWeaverGenerationStore(options.databasePath);}
     if (options.databasePath) {
       const rideStoreMode=this.operationMode==="active"?(process.env.STREAMWEAVER_RIDE_STORE??"sqlite"):"sqlite";
       if(rideStoreMode!=="sqlite"&&rideStoreMode!=="turso")throw new Error("STREAMWEAVER_RIDE_STORE must be sqlite or turso");
@@ -80,7 +81,7 @@ export class StreamWeaverWebControls {
     if(options.openAiKey&&this.client&&this.flows&&this.testRooms){this.authorWorker=new StreamWeaverFlowAuthorWorker(this.client,this.flows,new OpenAiToolAuthor({apiKey:options.openAiKey,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}),this.testRooms);this.authorWorker.start();}
   }
 
-  async close() { this.tiktok?.close(); this.shoutoutStore?.close(); this.generation?.close(); await this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  async close() { this.tiktok?.close(); this.shoutoutStore?.close(); await this.generation?.close(); await this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
@@ -103,16 +104,16 @@ export class StreamWeaverWebControls {
       if(url.pathname==="/api/streamweaver/control/generation") {
         if(!this.generation)throw new Error("Generation settings are unavailable");
         const scope=`private:${this.actor(context).id}`;
-        if(request.method==="GET")return sendJson(response,200,{tenantId:context.tenantId,owner:this.role(context)==="owner",settings:this.generation.read(context.tenantId,scope),publicSettings:this.generation.read(context.tenantId),templates:GENERATION_TEMPLATES,catalog:this.generation.catalog()});
+        if(request.method==="GET")return sendJson(response,200,{tenantId:context.tenantId,owner:this.role(context)==="owner",settings:await this.generation.read(context.tenantId,scope),publicSettings:await this.generation.read(context.tenantId),templates:GENERATION_TEMPLATES,catalog:await this.generation.catalog()});
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});
         requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="settings") {
           if(body.surface==="public")this.requireOwner(context);
-          return sendJson(response,200,this.generation.save(context.tenantId,body.surface==="public"?"public":scope,body.settings as Partial<StreamWeaverGenerationSettings>));
+          return sendJson(response,200,await this.generation.save(context.tenantId,body.surface==="public"?"public":scope,body.settings as Partial<StreamWeaverGenerationSettings>));
         }
         if(body.action!=="generate")throw new Error("Unknown generation action");
         if(this.operationMode!=="active")throw new Error("External image generation is disabled in this environment");
-        const prompt=text(body.prompt,"prompt",3000),settings=this.generation.read(context.tenantId,scope);
+        const prompt=text(body.prompt,"prompt",3000),settings=await this.generation.read(context.tenantId,scope);
         const mediaAssetIds=body.mediaAssetIds??[];
         if(!Array.isArray(mediaAssetIds)||mediaAssetIds.length>4||mediaAssetIds.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/.test(id)))throw Error("Choose at most four reference images");
         if(mediaAssetIds.length&&(settings.provider!=="cloudflare"||!settings.cloudflareModel?.includes("/flux-2-klein-")))throw Error("Save Cloudflare Klein as your private image model before attaching references");
