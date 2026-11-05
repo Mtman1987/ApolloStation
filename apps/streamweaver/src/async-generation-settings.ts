@@ -1,6 +1,6 @@
 import {createAsyncJsonRecordStore} from "@spmt/async-json-store/factory";
 import type {AsyncJsonRecordStore} from "@spmt/async-json-store";
-import {CLOUDFLARE_IMAGE_MODELS,CLOUDFLARE_PRIVATE_IMAGE_MODEL} from "./cloudflare-image-provider.js";
+import {CLOUDFLARE_PRIVATE_IMAGE_MODEL} from "./cloudflare-image-provider.js";
 import {GENERATION_TEMPLATES,normalizeGenerationSettings,type StreamWeaverGenerationSettings} from "./generation-settings.js";
 const SETTINGS="generation-settings",CATALOG="generation-model-catalog",CHECKPOINTS="generated-checkpoints",TENANTS="generation-tenants";
 export class AsyncStreamWeaverGenerationStore {
