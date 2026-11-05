@@ -15,7 +15,7 @@ export class NebulaMediaDelivery {
  const networkItems=this.network.pending(tenantId).map(item=>({...item,source:"network" as const}));
  const tabletopItems=this.options.tabletop?(await this.options.tabletop.pendingOutbox(tenantId)).map(item=>({...item,source:"tabletop" as const})):[];
  for(const item of [...networkItems,...tabletopItems]){
-  const updateJob=(status:string,body:unknown,updatedAt=now)=>item.source==="tabletop"?this.options.tabletop!.updateOutbox(tenantId,item.id,status,body,updatedAt):await updateJob(tenantId,item.id,status,body,updatedAt);
+  const updateJob=(status:string,body:unknown,updatedAt=now)=>item.source==="tabletop"?this.options.tabletop!.updateOutbox(tenantId,item.id,status,body,updatedAt):this.network.updateJob(tenantId,item.id,status,body,updatedAt);
   if(item.body.retryAt&&item.body.retryAt>now)continue;
   const body=item.body as Record<string,any>;try{
    if(item.kind==='bingo-generate'){
