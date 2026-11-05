@@ -80,6 +80,7 @@ export class AsyncDshLoungeOverlayWeb {
       const host=await this.records.get<DshLoungeHostStateV1>("lounge-host",tenantId,"current")??defaultLoungeHost(tenantId,this.now());
       const avatar=await this.records.get<DshLoungeAvatarManifestV1>("lounge-avatar",tenantId,"manifest");
       const broadcast=await this.records.transaction(async tx=>{
+        await tx.put("lounge-tenants","_index",tenantId,{tenantId});
         const current=await tx.get<{startedAt:string;targetHours:number}>("lounge-broadcast",tenantId,"current");
         if(current)return current;
         const value={startedAt:this.now(),targetHours:DSH_LOUNGE_RECOMMENDED_RESTART_HOURS};
