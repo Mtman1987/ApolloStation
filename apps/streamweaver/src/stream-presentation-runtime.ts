@@ -67,7 +67,7 @@ export class StreamWeaverPresentationRuntime {
         if(!this.options.awardNebulaCheckinBonus)throw new Error("Nebula Arcade check-in bonus service is unavailable");
         const award=await this.options.awardNebulaCheckinBonus({tenantId:task.tenant,awardId:String(task.body.awardId),channel:String(task.body.channel),userId:String(task.body.userId),username:String(task.body.username),displayName:String(task.body.displayName)});
         if(award.amount!==100)throw new Error("Nebula Arcade did not confirm the full front-seat bonus");
-        this.options.store.rides.markNebulaBonus(task.tenant,String(task.body.rideId),award.amount);
+        await this.options.store.rides.markNebulaBonus(task.tenant,String(task.body.rideId),award.amount);
       }else if(task.body.action==="create-twitch-reward") {
         const reward=store.redeems(task.tenant).find(r=>r.id===task.body.rewardId);if(!reward)throw new Error("Reward was removed before Twitch creation");
         if(!reward.rewardId){const entry=await twitch.createRewardEntry(task.tenant,reward.title.slice(0,45),`Requires ${reward.price} streamer points. Awards ${reward.award} streamer points.`);store.saveRedeem(task.tenant,{...reward,rewardId:entry.id});}

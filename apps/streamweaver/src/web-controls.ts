@@ -63,7 +63,12 @@ export class StreamWeaverWebControls {
     this.avatarBuildEnabled = options.avatarBuildEnabled ?? this.operationMode === "active";
     if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
-    if (options.databasePath) this.community=new StreamWeaverCommunityStore(options.databasePath);
+    if (options.databasePath) {
+      const rideStoreMode=this.operationMode==="active"?(process.env.STREAMWEAVER_RIDE_STORE??"sqlite"):"sqlite";
+      if(rideStoreMode!=="sqlite"&&rideStoreMode!=="turso")throw new Error("STREAMWEAVER_RIDE_STORE must be sqlite or turso");
+      if(rideStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_RIDE_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
+      this.community=new StreamWeaverCommunityStore(options.databasePath,rideStoreMode==="turso"?{mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}:{});
+    }
     if (options.databasePath) this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
     if (options.databasePath) { this.runtimeSettings=new StreamWeaverRuntimeSettingsStore(options.databasePath); this.relay=new SqliteStreamWeaverBotRelayStore(options.databasePath); }
@@ -75,7 +80,7 @@ export class StreamWeaverWebControls {
     if(options.openAiKey&&this.client&&this.flows&&this.testRooms){this.authorWorker=new StreamWeaverFlowAuthorWorker(this.client,this.flows,new OpenAiToolAuthor({apiKey:options.openAiKey,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}),this.testRooms);this.authorWorker.start();}
   }
 
-  close() { this.tiktok?.close(); this.shoutoutStore?.close(); this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  async close() { this.tiktok?.close(); this.shoutoutStore?.close(); this.generation?.close(); await this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
@@ -133,7 +138,7 @@ export class StreamWeaverWebControls {
           let pricing:Record<string,unknown>={available:false,localSupply,message:"SPMT pricing is unavailable"};
           try {if(this.client){const spmt=await this.client.getXpSupply(context.tenantId);const rate=calculateStreamWeaverSupplyRate(localSupply,spmt.spendableSupply);pricing={available:true,localSupply,spmtSupply:spmt.spendableSupply,localPerSpmt:rate.localPerSpmt,spmtPerLocal:rate.spmtPerLocal,measuredAt:spmt.measuredAt,rounding:"up to the next whole XP",prices:Object.fromEntries(this.community.redeems(context.tenantId).map(r=>[r.id,rate.localCostInSpmt(r.price)]))};}}
           catch{pricing.message=localSupply===0?"SPMT pricing requires a nonzero streamer-point supply":"SPMT pricing is temporarily unavailable";}
-          return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{checkinSettings:this.community.checkinSettings(context.tenantId),shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),rideSettings:this.community.rides.settings(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
+          return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{checkinSettings:this.community.checkinSettings(context.tenantId),shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),rideSettings:await this.community.rides.settings(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
         }
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="ride")return sendJson(response,200,await this.communityRuntime().ride({tenantId:context.tenantId,actorId:this.actor(context).id,displayName:this.actor(context).displayName,source:"web",requestId:String(body.requestId??""),currency:body.currency==="spmt"?"spmt":"streamer",...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
@@ -158,7 +163,7 @@ export class StreamWeaverWebControls {
         }
         if(body.action==="ride-settings"){
           const rewardId=String(body.rewardId??"");if(body.enabled===true&&(!this.community.redeems(context.tenantId).some(r=>r.id===rewardId&&r.enabled)||this.community.partners(context.tenantId).some(p=>p.rewardId===rewardId)))throw Error("Choose an enabled reward that is not assigned to an individual check-in");
-          return sendJson(response,200,this.community.rides.configure(context.tenantId,{enabled:body.enabled as boolean,rewardId}));
+          return sendJson(response,200,await this.community.rides.configure(context.tenantId,{enabled:body.enabled as boolean,rewardId}));
         }
         if(body.action==="checkin-settings"){
           if(!TTS_VOICE_OPTIONS.some(v=>v.id===body.voice))throw new Error("Choose a supported voice");
@@ -170,7 +175,7 @@ export class StreamWeaverWebControls {
           const settings={aiEnabled:body.aiEnabled,prompt:body.prompt,greeting:body.greeting,cooldownMinutes:body.cooldownMinutes,voice:body.voice,discordEnabled:body.discordEnabled,excluded:typeof body.excluded==="string"?body.excluded.split(/[\n,]/).map(v=>v.trim()).filter(Boolean):body.excluded} as StreamWeaverShoutoutSettings;
           return sendJson(response,200,this.shoutoutStore.saveSettings(context.tenantId,settings));
         }
-        if(body.action==="partner")return sendJson(response,200,this.community.savePartner(context.tenantId,body as unknown as StreamPartner));
+        if(body.action==="partner")return sendJson(response,200,await this.community.savePartner(context.tenantId,body as unknown as StreamPartner));
         if(body.action==="remove-partner"){this.community.removePartner(context.tenantId,String(body.id));return sendJson(response,200,{removed:true});}
         if(body.action==="redeem")return sendJson(response,200,this.community.saveRedeem(context.tenantId,body as unknown as StreamRedeem));
         if(body.action==="event-award")return sendJson(response,200,this.community.saveAward(context.tenantId,body as unknown as StreamEventAward));
