@@ -2,6 +2,7 @@ import { NebulaMediaDelivery } from "./media-delivery.js";
 import { SqliteNebulaNetwork } from "./arcade-network.js";
 import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
 import { AsyncNebulaTabletopRuntime } from "./async-tabletop-runtime.js";
+const isNebulaTabletopTursoMode = (mode: string): boolean => mode === "turso";
 import { SqliteNebulaGameInputStore } from "./game-inputs.js";
 import { AsyncNebulaGameInputStore } from "./async-game-input-store.js";
 import { readFileSync } from "node:fs";
@@ -98,7 +99,7 @@ export class NebulaArcadeProviderRuntime {
     if (gameRuntimeStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE=turso requires NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL and NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN");
     const tabletopStoreMode = process.env.NEBULA_ARCADE_TABLETOP_STORE ?? "sqlite";
     if (tabletopStoreMode !== "sqlite" && tabletopStoreMode !== "turso") throw new Error("NEBULA_ARCADE_TABLETOP_STORE must be sqlite or turso");
-    if(tabletopStoreMode==="turso")throw new Error("Nebula tabletop Turso mode is gated until the coupled arcade-network outbox and blacklist transactions are migrated; enabling tabletop alone would split durable state");
+    if (isNebulaTabletopTursoMode(tabletopStoreMode)) throw new Error("Nebula tabletop Turso mode is gated until the coupled arcade-network outbox and blacklist transactions are migrated; enabling tabletop alone would split durable state");
     if (tabletopStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_TABLETOP_STORE=turso requires the Nebula game-runtime Turso URL and token");
     const asyncTabletopStore = tabletopStoreMode === "turso" ? new AsyncNebulaTabletopRuntime({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
     this.tabletop = asyncTabletopStore ?? new SqliteNebulaTabletopRuntime(options.databasePath);
