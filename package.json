@@ -54,7 +54,9 @@
     "db:migrate:streamweaver-bic:turso": "node scripts/migrate-streamweaver-bic-to-turso.mjs",
     "db:migrate:streamweaver-rides:turso": "node scripts/migrate-streamweaver-rides-to-turso.mjs",
     "db:migrate:streamweaver-generation:turso": "node scripts/migrate-streamweaver-generation-to-turso.mjs",
-    "hostless:node1": "node scripts/hostless/run-private-preview.mjs"
+    "hostless:node1": "node scripts/hostless/start-node.mjs",
+    "hostless:node2": "node scripts/hostless/start-node.mjs",
+    "hostless:node3": "node scripts/hostless/start-node.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
