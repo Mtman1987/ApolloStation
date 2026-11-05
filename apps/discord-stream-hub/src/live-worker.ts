@@ -360,8 +360,8 @@ export class SupervisedDshLiveService {
   }
   private async processRaidPileHandoffs(tenantId:string){
     await this.raidPileReady;for(const pile of await this.raidPile.piles(tenantId))for(const member of pile.members){const stream=this.monitor.getLiveStream(tenantId,member.userId);await this.raidPile.updatePresence(tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
-    this.raidPile.ensureTargets(tenantId);
-    const handoffs=this.raidPile.dueHandoffs(tenantId);
+    await this.raidPile.ensureTargets(tenantId);
+    const handoffs=await this.raidPile.dueHandoffs(tenantId);
     for(const handoff of handoffs){const nextAt=handoff.nextTarget.lastRaidedAt??this.now();const action={schemaVersion:1 as const,type:"raid-pile.handoff" as const,tenantId,pileId:handoff.pileId,priorTargetName:handoff.priorTarget.displayName,nextTargetName:handoff.nextTarget.displayName,nextTargetLogin:handoff.nextTarget.twitchLogin,heldHours:handoff.heldHours,message:handoff.message,idempotencyKey:"dsh:raid-pile:"+tenantId+":"+handoff.pileId+":"+handoff.nextTarget.userId+":"+nextAt};this.monitor.enqueueAction(action,this.now());}
     await this.runtime.flush(tenantId);
   }
