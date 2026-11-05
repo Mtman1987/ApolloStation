@@ -144,6 +144,47 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
   assert.equal(bootstrapped.greenAppOrigins, undefined);
 });
 
+test("integrated gateway proxies the full SPMT API for remote workers", async () => {
+  const received = [];
+  const upstream = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    received.push({ method: request.method, url: request.url, body: Buffer.concat(chunks).toString("utf8") });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise((done) => upstream.listen(0, "127.0.0.1", done));
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: origin(upstream),
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const token = await fetch(`${origin(web.server)}/v1/auth/service-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ serviceId: "chat-gateway", credential: "test-credential" }),
+    });
+    assert.equal(token.status, 200);
+    assert.deepEqual(received[0], {
+      method: "POST",
+      url: "/v1/auth/service-token",
+      body: JSON.stringify({ serviceId: "chat-gateway", credential: "test-credential" }),
+    });
+    const worker = await fetch(`${origin(web.server)}/v1/jobs/workers/report`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workerId: "test-worker" }),
+    });
+    assert.equal(worker.status, 200);
+    assert.equal(received[1].url, "/v1/jobs/workers/report");
+  } finally {
+    await web.close();
+    await new Promise((done) => upstream.close(done));
+  }
+});
+
 test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS node", async () => {
   const web = createIntegratedSpaceMountainWebHost({
     spmtOrigin: "http://127.0.0.1:1",
