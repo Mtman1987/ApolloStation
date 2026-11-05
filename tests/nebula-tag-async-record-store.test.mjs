@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AsyncNebulaTagRecordStore } from "../apps/nebula-arcade/dist/index.js";
+import { AsyncNebulaTagRecordStore, AsyncNebulaTagRuntime } from "../apps/nebula-arcade/dist/index.js";
+import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 8, minute)).toISOString();
 const command = (tenantId, kind, commandId, actorUserId, minute, extra = {}) => ({
@@ -78,6 +79,37 @@ test("async Tag store rolls back state and command receipt together on transacti
     const replay = await store.applyCommand(command("tenant-a", "join", "good-command", "player-a", 1, { username: "Alpha" }));
     assert.equal(replay.duplicate, true);
     assert.equal(replay.revision, 1);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("async Tag runtime awaits state, executes commands, and flushes durable SPMT delivery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "nebula-tag-async-runtime-"));
+  const databasePath = join(directory, "tag.sqlite");
+  const store = new AsyncNebulaTagRecordStore({ databasePath });
+  const calls = [];
+  const client = new SpmtClient({
+    baseUrl: "https://spmt.example",
+    appId: "nebula-arcade",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
+      return Response.json({ ok: true });
+    },
+  });
+  const runtime = new AsyncNebulaTagRuntime(store, client);
+  try {
+    await store.initialize();
+    await runtime.execute(command("runtime-tenant", "join", "join-one", "player-one", 0, { username: "One" }));
+    await runtime.execute(command("runtime-tenant", "join", "join-two", "player-two", 1, { username: "Two" }));
+    const tagged = await runtime.execute(command("runtime-tenant", "tag", "tag-one-two", "player-one", 2, { targetUserId: "player-two" }));
+    assert.equal(tagged.result.status, "applied");
+    assert.equal(tagged.delivery.attempted, 3);
+    assert.equal(tagged.delivery.delivered, 3);
+    assert.equal((await runtime.getState("runtime-tenant")).state.currentItUserId, "player-two");
+    assert.equal((await store.listPendingDeliveries("runtime-tenant")).length, 0);
+    assert.equal(calls.filter((call) => call.headers["idempotency-key"] === "nebula-arcade:tag:tag-one-two").length, 3);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });
