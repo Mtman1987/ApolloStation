@@ -90,7 +90,10 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const gameInputStoreMode=inputs instanceof AsyncNebulaGameInputStore?"turso":"sqlite";
         // Tabletop remains SQLite until its atomic async adapter and importer land.
         const tabletopStoreMode: string="sqlite";
+        // Enrollment, blacklist, settings, presence and media outbox remain SQLite-backed.
+        const networkStoreMode: string="sqlite";
         if(requireFullTurso&&tabletopStoreMode!=="turso")throw new NebulaHostError(503,"Nebula tabletop state, Bingo rewards, Quackverse trades, receipts, and media outbox must use Turso for production readiness");
+        if(requireFullTurso&&networkStoreMode!=="turso")throw new NebulaHostError(503,"Nebula network enrollment, blacklist, settings, presence, and shared media outbox must use Turso for production readiness");
         if(requireFullTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
         if(requireFullTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
         if(requireFullTurso&&gameInputStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game input feed must use Turso for production readiness");
@@ -99,7 +102,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
         let tagBody:Record<string,unknown>={};try{tagBody=await tagResponse.json() as Record<string,unknown>;}catch{}
         if(!tagResponse.ok||tagBody.tagStoreReady!==true)throw new NebulaHostError(503,"Nebula Tag persistence is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireFullTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireFullTurso,activityStoreReady:true,activityStoreMode,activityStoreRequired:requireFullTurso,gameInputStoreReady:true,gameInputStoreMode,gameInputStoreRequired:requireFullTurso,tabletopStoreReady:true,tabletopStoreMode,tabletopStoreRequired:requireFullTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireFullTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireFullTurso,activityStoreReady:true,activityStoreMode,activityStoreRequired:requireFullTurso,gameInputStoreReady:true,gameInputStoreMode,gameInputStoreRequired:requireFullTurso,tabletopStoreReady:true,tabletopStoreMode,tabletopStoreRequired:requireFullTurso,networkStoreReady:true,networkStoreMode,networkStoreRequired:requireFullTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
