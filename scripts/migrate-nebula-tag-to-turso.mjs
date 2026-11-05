@@ -74,6 +74,7 @@ async function main() {
     if (check.length !== 1 || check[0].quick_check !== "ok") throw new Error("Source SQLite quick_check failed; refusing to import");
     snapshots = readLegacyTagSnapshots(source);
   } finally { source.close(); }
+  for (const snapshot of snapshots) if (snapshot.outbox.length > 500) throw new Error(`Tenant ${snapshot.tenantId} has more than 500 pending Tag deliveries; drain the outbox before importing`);
   const sourceSha256 = digest(snapshots);
   const summary = snapshots.map((item) => ({ tenantId: item.tenantId, revision: item.revision, players: Object.keys(item.state.players ?? {}).length, commands: item.commands.length, outbox: item.outbox.length }));
   if (!options.apply) {
