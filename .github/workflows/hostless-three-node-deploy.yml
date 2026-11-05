@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-release-${{ github.ref }}
+  group: apollo-hostless-release-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
