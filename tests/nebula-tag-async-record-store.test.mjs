@@ -35,6 +35,15 @@ test("async Tag store atomically persists state, command dedupe and outbox acros
     assert.equal(restored.revision, applied.revision);
     assert.equal(restored.state.players["player-a"].score, 100);
     assert.ok((await reopened.listPendingDeliveries("tenant-a")).length > 0);
+    const encodedTenantStore = new AsyncNebulaTagRecordStore({ databasePath });
+    await encodedTenantStore.initialize();
+    await encodedTenantStore.applyCommand(command("tenant:encoded", "join", "join-encoded", "player-c", 3, { username: "Gamma" }));
+    await encodedTenantStore.applyCommand(command("tenant:encoded", "join", "join-encoded-b", "player-d", 4, { username: "Delta" }));
+    const encodedResult = await encodedTenantStore.applyCommand(command("tenant:encoded", "tag", "tag-encoded", "player-c", 5, { targetUserId: "player-d" }));
+    const encodedPending = await encodedTenantStore.listPendingDeliveries("tenant:encoded");
+    assert.ok(encodedPending.length > 0);
+    await assert.doesNotReject(encodedTenantStore.markDeliveryFailed(encodedPending[0].id, "Bearer do-not-store"));
+    await encodedTenantStore.close();
     const pending = await reopened.listPendingDeliveries("tenant-a");
     await reopened.markDeliveryFailed(pending[0].id, "Bearer do-not-store");
     await reopened.markDeliveryComplete(pending[0].id);
