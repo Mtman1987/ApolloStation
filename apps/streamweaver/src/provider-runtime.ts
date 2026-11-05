@@ -110,7 +110,10 @@ export class StreamWeaverProviderRuntime {
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   private closePromise?:Promise<void>;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
-    this.community=new StreamWeaverCommunityStore(options.databasePath);
+    const rideStoreMode=options.simulation===true?"sqlite":process.env.STREAMWEAVER_RIDE_STORE??"sqlite";
+    if(rideStoreMode!=="sqlite"&&rideStoreMode!=="turso")throw new Error("STREAMWEAVER_RIDE_STORE must be sqlite or turso");
+    if(rideStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_RIDE_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
+    this.community=new StreamWeaverCommunityStore(options.databasePath,rideStoreMode==="turso"?{mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}:{});
     this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     this.settings = new StreamWeaverPersonaSettingsStore(options.databasePath, options.now);
@@ -353,7 +356,7 @@ export class StreamWeaverProviderRuntime {
     this.closePromise=(async()=>{
       this.stellaLoungeHost?.close();
       await this.botActionReplies.close();
-      this.shoutoutStore.close();this.eventsub?.close();this.community.close();this.pokemon.close();
+      this.shoutoutStore.close();this.eventsub?.close();await this.community.close();this.pokemon.close();
       this.secureChoices.close();this.research.close();this.translations.close();this.runtimeSettings.close();
       this.flows.close();this.relayStore.close();this.economy.close();this.commandState.close();this.summons.close();this.settings.close();
       await Promise.all([
