@@ -3,7 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 REPO="Mtman1987/ApolloStation"
-SOURCE_DIR="${APOLLO_SECRETS_DIR:-/root/.apollo-secrets}"
+SOURCE_DIR="${APOLLO_SECRETS_DIR:-$HOME/.apollo-secrets}"
 MODE="${1:---dry-run}"
 
 case "$MODE" in
