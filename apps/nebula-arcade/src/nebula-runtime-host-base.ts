@@ -232,7 +232,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if (request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("view") === "overlay" && url.searchParams.get("surface") !== "overlay") return html(response, 200, canonicalOverlayEditorPage());
       if (request.method === "GET" && (url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("surface") !== "overlay") return proxyCore(request, response, corePort, true);
       return proxyCore(request, response, corePort, false);
-    } catch (error) { const unavailable=error instanceof Error&&/corrupted|integrity|unavailable/i.test(error.message);return json(response, error instanceof NebulaHostError ? error.status : error instanceof Error&&/permission|excluded|sign.in/i.test(error.message)?403:unavailable?503:400, { ready:urlReady(request)?false:undefined,error: error instanceof NebulaHostError ? "invalid_request" : unavailable?"unavailable":"invalid_request", message: error instanceof Error ? error.message : "unknown error" }); }
+    } catch (error) { const unavailable=error instanceof NebulaHostError&&error.status===503||error instanceof Error&&/corrupted|integrity|unavailable/i.test(error.message);return json(response, error instanceof NebulaHostError ? error.status : error instanceof Error&&/permission|excluded|sign.in/i.test(error.message)?403:unavailable?503:400, { ready:urlReady(request)?false:undefined,error: unavailable?"unavailable":"invalid_request", message: error instanceof Error ? error.message : "unknown error" }); }
   });
 
   return {
