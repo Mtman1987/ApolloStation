@@ -119,9 +119,7 @@ jobs:
       ${{ needs.full-test-suite.result == 'success' &&
           github.ref == 'refs/heads/main' &&
           (github.event_name == 'push' ||
-           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) &&
-          ((matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
-           (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true')) }}
+           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: production
@@ -199,6 +197,9 @@ jobs:
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
       - name: Deploy only this node using its own Hostless token
+        if: >-
+          ${{ (matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
+              (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true') }}
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
