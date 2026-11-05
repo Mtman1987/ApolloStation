@@ -47,7 +47,10 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Validate Hostless automation helper syntax
-        run: node --check scripts/hostless/ensure-node-app.mjs
+        run: |
+          node --check scripts/hostless/ensure-node-app.mjs
+          node --check scripts/hostless/run-private-preview.mjs
+          node --check scripts/hostless/deploy-private-preview.mjs
       - name: Install media test tools
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
