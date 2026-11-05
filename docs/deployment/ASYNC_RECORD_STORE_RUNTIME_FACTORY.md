@@ -243,3 +243,9 @@ This does **not** complete the network migration. `SqliteNebulaNetwork` still ow
 ### Tabletop source importer
 
 Added `npm run db:migrate:nebula-tabletop:turso -- --source <sqlite-path> --tenant <tenant-id>`. It is dry-run by default, opens the source read-only, runs `PRAGMA integrity_check`, and reports a deterministic digest/counts for tabletop state, command receipts, Quackverse trade receipts, media outbox, and the coupled default game-runtime row. `--apply` requires the server-side Nebula game-runtime Turso URL/token, refuses populated destination namespaces, refuses a conflicting pre-imported game-runtime record, writes all namespaces and a migration receipt in one record-store transaction, and verifies destination counts. No production credentials or player data have been used in this work. The importer and its empty-destination/mismatch tests are now in the Nebula CI suite.
+
+
+
+### Safety fence on partial tabletop activation
+
+Although the async tabletop adapter is wired through provider, browser, live-host and media-delivery callers, `NEBULA_ARCADE_TABLETOP_STORE=turso` is now rejected at startup until the coupled arcade-network outbox and blacklist transactions are also migrated. This prevents a partial cutover where Quackverse pack writes land in Turso but blacklist seat updates or other media jobs remain on SQLite. The full-Turso readiness gate independently requires both `tabletopStoreMode=turso` and `networkStoreMode=turso`. Remove the startup fence only after the async network adapter and its cross-domain transaction tests are complete.
