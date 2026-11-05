@@ -95,4 +95,3 @@ function clean(value: string) { const result = String(value ?? "").trim(); if (!
 function cleanChannel(value: string) { const result = clean(value).toLowerCase().replace(/^#/, "").slice(0, 80); if (!result) throw new Error("Nebula channel is required"); return result; }
 function memberKey(channel: string, actor: string, game: string) { return [channel, actor, game].map(encodeURIComponent).join("|"); }
 function choiceKey(channel: string, actor: string) { return [channel, actor].map(encodeURIComponent).join("|"); }
-function cleanGame(value: string) { const result = clean(value).toLowerCase(); if (!NEBULA_ARCADE_GAMES.some((game) => game.id === result)) throw new Error("Unknown Nebula game"); return result; }
