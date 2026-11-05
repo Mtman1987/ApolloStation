@@ -49,7 +49,6 @@ jobs:
             label: Node 2
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
-    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure') || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == matrix.node)) }}
     steps:
       - name: Install Hostless CLI
         run: |
@@ -60,12 +59,19 @@ jobs:
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
           APP: ${{ matrix.app }}
+          NODE: ${{ matrix.node }}
+          TARGET: ${{ inputs.target }}
+          EVENT_NAME: ${{ github.event_name }}
           SINCE: ${{ inputs.since || '2h' }}
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}
         run: |
           set +e
           mkdir -p hostless-diagnostics
           WINDOW="${SINCE:-2h}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$TARGET" ] && [ "$TARGET" != "both" ] && [ "$TARGET" != "$NODE" ]; then
+            echo "Skipping $NODE because target is $TARGET."
+            exit 0
+          fi
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
