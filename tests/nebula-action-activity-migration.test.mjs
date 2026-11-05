@@ -16,24 +16,27 @@ test("Nebula action/activity importer is read-only by default and verifies tenan
     CREATE TABLE nebula_arcade_channels(tenant_id TEXT,channel_id TEXT,game_ids TEXT,last_spmt_at INTEGER);
     CREATE TABLE nebula_arcade_members(tenant_id TEXT,channel_id TEXT,actor_id TEXT,game_id TEXT,joined INTEGER,last_seen_at INTEGER);
     CREATE TABLE nebula_arcade_choices(tenant_id TEXT,channel_id TEXT,actor_id TEXT,targets TEXT,expires_at INTEGER);
+    CREATE TABLE nebula_game_inputs(sequence INTEGER PRIMARY KEY AUTOINCREMENT,tenant_id TEXT NOT NULL,input_id TEXT NOT NULL,channel_id TEXT NOT NULL,body TEXT NOT NULL,UNIQUE(tenant_id,input_id));
     INSERT INTO nebula_game_actions VALUES('tenant-a','action-1','room','bingo','spmt:alice','alice','Alice','claim','["1"]','spmt bingo claim 1','2026-11-05T10:00:00.000Z');
     INSERT INTO nebula_arcade_channels VALUES('tenant-a','room','["bingo"]',1000);
     INSERT INTO nebula_arcade_members VALUES('tenant-a','room','spmt:alice','bingo',1,2000);
     INSERT INTO nebula_arcade_choices VALUES('tenant-a','room','spmt:alice','[{"gameId":"bingo","command":"join","args":[]}]',30000);
+    INSERT INTO nebula_game_inputs(tenant_id,input_id,channel_id,body) VALUES('tenant-a','twitch:conn:message-1','room','{"id":"twitch:conn:message-1","channelId":"room","message":"spmt bingo claim 1","username":"Alice","provider":"twitch","roles":["member"],"gameIds":["bingo"],"occurredAt":"2026-11-05T10:00:00.000Z"}');
   `);
   source.close();
   const readOnly = new DatabaseSync(sourcePath, { readOnly: true });
   let snapshot;
   try { snapshot = readNebulaActionActivitySnapshot(readOnly); assert.equal(readOnly.prepare("SELECT COUNT(*) AS n FROM nebula_game_actions").get().n, 1); }
   finally { readOnly.close(); }
-  assert.deepEqual(snapshot.counts, { actions: 1, channels: 1, members: 1, choices: 1 });
+  assert.deepEqual(snapshot.counts, { actions: 1, channels: 1, members: 1, choices: 1, inputs: 1 });
   const target = createAsyncJsonRecordStore({ service: "nebula-arcade", mode: "sqlite", databasePath: targetPath });
   try {
     await target.initialize();
     const result = await importNebulaActionActivitySnapshot(target, snapshot);
-    assert.equal(result.imported, 4);
+    assert.equal(result.imported, 5);
     assert.equal((await target.list("game-actions", "tenant-a")).length, 1);
     assert.equal((await target.list("arcade-activity-members", "tenant-a"))[0].value.joined, true);
+    assert.equal((await target.list("game-inputs", "tenant-a"))[0].value.input.username, "Alice");
     await assert.rejects(importNebulaActionActivitySnapshot(target, snapshot), /destination is not empty/);
   } finally { await target.close(); await rm(dir, { recursive: true, force: true }); }
 });
