@@ -26,6 +26,13 @@ export function readLegacyTagSnapshots(db) {
     return [];
   }
   const states = db.prepare("SELECT tenant_id,revision,body FROM nebula_tag_state ORDER BY tenant_id").all();
+  const knownTenants = new Set(states.map((row) => String(row.tenant_id)));
+  for (const table of ["nebula_tag_commands", "nebula_tag_outbox"]) {
+    if (!exists(db, table)) continue;
+    for (const row of db.prepare(`SELECT DISTINCT tenant_id FROM ${table}`).all()) {
+      if (!knownTenants.has(String(row.tenant_id))) throw new Error(`Source ${table} contains records without a Tag state row for tenant ${row.tenant_id}`);
+    }
+  }
   return states.map((row) => {
     const tenantId = String(row.tenant_id);
     const state = parse(row.body, "nebula_tag_state.body");
