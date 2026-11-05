@@ -94,6 +94,8 @@ jobs:
           API="https://api.hostless.cloud/v1/apps/$APP"
           curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API" -o hostless-diagnostics/app-detail.json
           curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/deployments" -o hostless-diagnostics/deployments.json
+          curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/metrics/cpu-usage" -o hostless-diagnostics/cpu-usage.json
+          curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/metrics/memory-usage" -o hostless-diagnostics/memory-usage.json
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
@@ -102,8 +104,11 @@ jobs:
             echo "===== HOSTLESS APP STATE ====="
             node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/app-detail.json","utf8")); const a=d.app??d; const pick=(o,keys)=>Object.fromEntries(keys.filter(k=>o?.[k]!==undefined).map(k=>[k,o[k]])); console.log(JSON.stringify({...pick(a,["id","name","status","state","appState","url","appUrl","publicUrl","defaultDomain","domains","containerPort"]),...pick(d,["status","state"])},null,2));'
             echo
+            echo "===== RESOURCE METRICS ====="
+            for metric in cpu-usage memory-usage; do echo "$metric:"; head -c 4000 "hostless-diagnostics/$metric.json"; echo; done
+            echo
             echo "===== RECENT DEPLOYMENTS ====="
-            node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/deployments.json","utf8")); const rows=Array.isArray(d)?d:(d.deployments??d.data??[]); console.log(JSON.stringify(rows.slice(0,8).map(x=>({id:x.id??x._id,status:x.status,trigger:x.trigger,commit:x.commitSha??x.commit??x.gitCommit,createdAt:x.createdAt??x.created_at})),null,2));'
+            node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/deployments.json","utf8")); const rows=Array.isArray(d)?d:(d.items??d.deployments??d.data??[]); console.log(JSON.stringify(rows.slice(0,8).map(x=>({id:x.id??x._id,status:x.status,trigger:x.trigger,commit:x.commitSha??x.commit??x.gitCommit,createdAt:x.createdAt??x.created_at})),null,2));'
             echo
             echo "===== RECENT ERROR LOGS ====="
           } | tee hostless-diagnostics/summary.txt
