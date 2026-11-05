@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 import {DatabaseSync} from "node:sqlite";
 import {resolve} from "node:path";
 import {createAsyncJsonRecordStore} from "@spmt/async-json-store/factory";
-const RECORDS="mtfixit-reports",MIGRATIONS="mtfixit-migrations";
+const RECORDS="mtfixit-reports",TENANTS="mtfixit-report-tenants",MIGRATIONS="mtfixit-migrations";
 export function readDshMtFixItSnapshot(db){
  const integrity=db.prepare("PRAGMA integrity_check").all().map(row=>Object.values(row)[0]);
  if(integrity.length!==1||integrity[0]!=="ok")throw new Error("Source SQLite integrity_check failed");
@@ -19,8 +19,8 @@ export async function importDshMtFixItSnapshot(store,snapshot,migrationId){
   const prior=await tx.get(MIGRATIONS,"_index",migrationId);
   if(prior){if(prior.digest!==snapshot.digest)throw new Error("Migration ID already exists with a different MtFixIt source digest");return{imported:false,duplicate:true,counts:snapshot.counts,digest:snapshot.digest};}
   if((await tx.list(MIGRATIONS,"_index")).length)throw new Error("Turso MtFixIt migration receipts are not empty");
-  for(const tenant of snapshot.tenants)if((await tx.list(RECORDS,tenant)).length)throw new Error(`Turso MtFixIt destination is not empty for ${tenant}`);
-  for(const row of snapshot.reports)await tx.put(RECORDS,row.tenant,row.key,row.value);
+  if((await tx.list(TENANTS,"_index")).length)throw new Error("Turso MtFixIt destination tenant index is not empty");
+  for(const tenant of snapshot.tenants){await tx.put(TENANTS,"_index",tenant,{tenantId:tenant});for(const row of snapshot.reports.filter(item=>item.tenant===tenant))await tx.put(RECORDS,tenant,row.key,row.value);}
   const verified={};
   for(const tenant of snapshot.tenants){const expected=snapshot.reports.filter(row=>row.tenant===tenant).length,actual=(await tx.list(RECORDS,tenant)).length;if(actual!==expected)throw new Error(`MtFixIt import verification failed for ${tenant}: expected ${expected}, received ${actual}`);verified[tenant]=actual;}
   await tx.put(MIGRATIONS,"_index",migrationId,{digest:snapshot.digest,counts:snapshot.counts,importedAt:new Date().toISOString()});
