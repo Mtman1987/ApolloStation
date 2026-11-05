@@ -172,7 +172,12 @@ export type NebulaTagExperienceOutcomeV1 =
   | { kind: "reply"; code: string; message: string; route: "chat" | "overlay" }
   | { kind: "executed"; code: string; message: string; route: "chat" | "overlay"; execution: StoredNebulaTagCommandV1 & { kind: "result"; delivery: NebulaTagDeliveryReportV1 } };
 
-export interface NebulaTagExperienceRuntime {\n  getState(tenantId: string): StoredNebulaTagStateV1 | Promise<StoredNebulaTagStateV1>;\n  ingest(message: NebulaTagInboundMessageV1): ReturnType<NebulaTagRuntime["ingest"]>;\n}\n\nexport class NebulaTagExperienceService {
+export interface NebulaTagExperienceRuntime {
+  getState(tenantId: string): StoredNebulaTagStateV1 | Promise<StoredNebulaTagStateV1>;
+  ingest(message: NebulaTagInboundMessageV1): ReturnType<NebulaTagRuntime["ingest"]>;
+}
+
+export class NebulaTagExperienceService {
   private readonly cursors = new Map<string, { kind: "players" | "live"; page: number; expiresAt: number }>();
   constructor(private readonly runtime: NebulaTagExperienceRuntime, private readonly experience: NebulaTagExperienceStore, private readonly pinUserId: string, private readonly now: () => string = () => new Date().toISOString()) {}
 
