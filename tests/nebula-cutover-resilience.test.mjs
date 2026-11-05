@@ -35,6 +35,14 @@ test('production readiness checks the internal runtime and persisted state',asyn
     }finally{
       if(previousRequireTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_TURSO=previousRequireTurso;
     }
+    const previousRequireFullTurso=process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO;
+    try{
+      process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO='1';
+      response=await fetch(origin+'/health/ready');assert.equal(response.status,503);
+      const blocked=await response.json();assert.equal(blocked.ready,false);assert.match(blocked.message,/Nebula tabletop state, Bingo rewards, Quackverse trades/);
+    }finally{
+      if(previousRequireFullTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO=previousRequireFullTurso;
+    }
     const db=new DatabaseSync(t.path);db.prepare("INSERT INTO nebula_game_runtime VALUES('broken','default','{','2026-01-01T00:00:00.000Z')").run();db.close();
     response=await fetch(origin+'/health/ready');assert.equal(response.status,503);assert.equal((await response.json()).ready,false);
   }finally{await host.close();t.close();}
