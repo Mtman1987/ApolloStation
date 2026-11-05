@@ -31,6 +31,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install media test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - run: npm ci
       - name: Verify preview launcher syntax
         run: node --check scripts/hostless/run-private-preview.mjs && node --check scripts/hostless/deploy-private-preview.mjs
