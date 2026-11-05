@@ -195,11 +195,11 @@ export class NebulaArcadeProviderRuntime {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
-    this.media.close();this.network.close();this.tabletop.close(); await this.inputStore.close(); await this.activity.close(); this.dashboardStore?.close(); await this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady, this.tabletopReady]);
+    this.media.close();this.network.close();await this.tabletop.close(); await this.inputStore.close(); await this.activity.close(); this.dashboardStore?.close(); await this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady, this.tabletopReady]);
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
     const message=delivery.message, channel=this.channels.get(messageKey(message)), experience=this.experiences.get(message.tenantId);
     if (!channel || !experience || message.actor.isBot) return;
