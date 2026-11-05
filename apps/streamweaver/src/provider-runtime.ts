@@ -108,6 +108,7 @@ export class StreamWeaverProviderRuntime {
   private readonly botActionReplies: StreamWeaverBotActionReplies | AsyncStreamWeaverBotActionReplies;
   private readonly botActionRepliesReady:Promise<void>;
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
+  private closed = false;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
     this.community=new StreamWeaverCommunityStore(options.databasePath);
     this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
@@ -347,5 +348,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  async close() { this.stellaLoungeHost?.close(); await this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); const closeBic=()=>this.bic instanceof AsyncStreamWeaverBicStore?this.bic.close():this.bic.close(); if(this.bic instanceof AsyncStreamWeaverBicStore||this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return Promise.all([this.bicReady.catch(()=>undefined).then(closeBic),this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close())]).then(()=>undefined);this.bic.close();this.socialReactions.close(); }
+  async close() { if(this.closed)return;this.closed=true;this.stellaLoungeHost?.close(); await this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); const closeBic=()=>this.bic instanceof AsyncStreamWeaverBicStore?this.bic.close():this.bic.close(); if(this.bic instanceof AsyncStreamWeaverBicStore||this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return Promise.all([this.bicReady.catch(()=>undefined).then(closeBic),this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close())]).then(()=>undefined);this.bic.close();this.socialReactions.close(); }
 }
