@@ -1,0 +1,97 @@
+name: ApolloStation Hostless Node 2 retry
+
+on:
+  workflow_dispatch:
+    inputs:
+      validated_run_id:
+        description: "Successful validation + Node 1 deployment run ID"
+        required: true
+        type: string
+      validated_sha:
+        description: "Exact commit SHA from that run"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: apollo-hostless-release
+  cancel-in-progress: false
+
+jobs:
+  verify-prior-release:
+    name: Verify prior full validation and Node 1 success
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - name: Verify prior run and exact commit
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.validated_run_id }}
+          EXPECTED_SHA: ${{ inputs.validated_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          node --input-type=module - <<'NODE'
+          const { GH_TOKEN, RUN_ID, EXPECTED_SHA, REPOSITORY, GITHUB_OUTPUT } = process.env;
+          if (!/^\\d+$/.test(RUN_ID ?? "")) throw new Error("A numeric prior Actions run ID is required.");
+          if (!/^[0-9a-f]{40}$/i.test(EXPECTED_SHA ?? "")) throw new Error("A full 40-character commit SHA is required.");
+          const headers = { authorization: `Bearer ${GH_TOKEN}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" };
+          async function get(path) {
+            const r = await fetch(`https://api.github.com/repos/${REPOSITORY}${path}`, { headers });
+            if (!r.ok) throw new Error(`GitHub API ${path} returned HTTP ${r.status}`);
+            return r.json();
+          }
+          const run = await get(`/actions/runs/${RUN_ID}`);
+          if (run.head_sha?.toLowerCase() !== EXPECTED_SHA.toLowerCase()) throw new Error("The supplied SHA does not match the prior run.");
+          if (run.head_branch !== "main" || run.event === "pull_request") throw new Error("Only a main-branch release run can authorize this retry.");
+          const jobs = await get(`/actions/runs/${RUN_ID}/jobs?per_page=100`);
+          const validation = jobs.jobs?.find(j => j.name === "Full ApolloStation validation");
+          const node1 = jobs.jobs?.find(j => j.name.startsWith("Deploy Node 1"));
+          if (validation?.conclusion !== "success") throw new Error("The prior full validation job did not succeed.");
+          if (node1?.conclusion !== "success") throw new Error("The prior Node 1 deployment job did not succeed.");
+          console.log(`Verified full validation and Node 1 success for ${EXPECTED_SHA} (run ${RUN_ID}).`);
+          const fs = await import("node:fs");
+          fs.appendFileSync(GITHUB_OUTPUT, `sha=${EXPECTED_SHA}\n`);
+          NODE
+
+  deploy-node2:
+    name: Deploy Node 2 only — Chat Gateway / StreamWeaver
+    needs: verify-prior-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - name: Check out the exact previously validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-prior-release.outputs.sha }}
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify Node 2 production launcher
+        run: |
+          node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
+          node --check scripts/hostless/ensure-node-app.mjs
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Deploy only Node 2 using its own Hostless token
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
+          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          APOLLO_NODE_ROLE: node2
+        run: node scripts/hostless/ensure-node-app.mjs node2 "${{ needs.verify-prior-release.outputs.sha }}"
