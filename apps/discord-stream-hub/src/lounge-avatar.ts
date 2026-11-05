@@ -116,7 +116,7 @@ export class AsyncDshLoungeAvatarStore implements DshLoungeAvatarStoreV1 {
   }
   async put(value:DshLoungeAvatarManifestV1):Promise<DshLoungeAvatarManifestV1>{
     const checked=validateManifest(value);
-    await this.records.put("lounge-avatar",checked.tenantId,"manifest",checked);
+    await this.records.transaction(async tx=>{await tx.put("lounge-tenants","_index",checked.tenantId,{tenantId:checked.tenantId});await tx.put("lounge-avatar",checked.tenantId,"manifest",checked);});
     return checked;
   }
 }
