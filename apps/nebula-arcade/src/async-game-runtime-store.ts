@@ -54,6 +54,24 @@ export class AsyncNebulaGameRuntimeStore {
     return structuredClone(normalized);
   }
 
+  async importState(tenantId: string, stateValue: NebulaGameRuntimeStateV1, migrationId: string, runtimeKey = "default", updatedAt = new Date().toISOString()): Promise<{ imported: boolean; duplicate: boolean }> {
+    const tenant = cleanId(tenantId, "tenantId");
+    const key = cleanId(runtimeKey, "runtimeKey");
+    const migration = cleanId(migrationId, "migrationId");
+    if (!Number.isFinite(Date.parse(updatedAt))) throw new Error("Nebula game runtime migration timestamp is invalid");
+    const state = normalizeNebulaGameRuntimeState(stateValue);
+    return this.records.transaction(async (tx) => {
+      const receiptKey = migration + ":" + key;
+      const receipt = await tx.get("game-runtime-migrations", tenant, receiptKey);
+      if (receipt) return { imported: false, duplicate: true };
+      const existing = await tx.get("game-runtime", tenant, key);
+      if (existing) throw new Error("Nebula game runtime destination is not empty for tenant " + tenant);
+      await tx.put("game-runtime", tenant, key, { state, updatedAt });
+      await tx.put("game-runtime-migrations", tenant, receiptKey, { importedAt: new Date().toISOString() });
+      return { imported: true, duplicate: false };
+    });
+  }
+
   async update<T>(
     tenantId: string,
     mutate: (state: NebulaGameRuntimeStateV1) => T,
