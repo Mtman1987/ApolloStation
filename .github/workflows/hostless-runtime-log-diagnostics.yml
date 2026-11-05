@@ -63,7 +63,7 @@ jobs:
           TARGET: ${{ inputs.target }}
           EVENT_NAME: ${{ github.event_name }}
           SINCE: ${{ inputs.since || '2h' }}
-          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id || (github.event_name == 'workflow_run' && github.event.workflow_run.id == 42115519048 && '6aecfaa76873e14c934c67f6') || '' }}
         run: |
           set +e
           mkdir -p hostless-diagnostics
