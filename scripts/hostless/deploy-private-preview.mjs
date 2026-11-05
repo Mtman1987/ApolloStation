@@ -39,16 +39,26 @@ function run(args, label) {
   if (result.status !== 0) fail(`${label} failed (exit ${result.status}).`);
 }
 
-const projectsResponse = await request("/projects");
-const projects = rows(projectsResponse, ["projects", "data", "items"]);
-if (!projects) fail("Hostless projects response was unexpected; refusing to guess.");
-const exact = projects.filter(project => normalize(nameOf(project)) === normalize(appName));
-const project = exact.length === 1 ? exact[0] : exact.length === 0 && projects.length === 1 ? projects[0] : null;
-if (!project) fail(projects.length === 0
-  ? "Node 1 Hostless account has no project. Create a project in the dashboard first; no resources were changed."
-  : "Could not uniquely resolve the Node 1 Hostless project; rename it apollo-node-1 or leave exactly one project accessible.");
-const projectId = idOf(project);
-if (!projectId) fail("Resolved Hostless project has no ID.");
+async function resolveOrCreateProject() {
+  let projectsResponse = await request("/projects");
+  let projects = rows(projectsResponse, ["projects", "data", "items"]);
+  if (!projects) fail("Hostless projects response was unexpected; refusing to guess.");
+  let exact = projects.filter(project => normalize(nameOf(project)) === normalize(appName));
+  if (exact.length > 1) fail("Multiple apollo-node-1 projects exist; refusing to choose.");
+  if (exact.length === 0) {
+    console.log("Creating the missing Hostless project apollo-node-1 and linking this GitHub-backed ApolloStation checkout.");
+    run(["create", "project", appName, "--yes", "--json"], "Create Hostless ApolloStation project");
+    projectsResponse = await request("/projects");
+    projects = rows(projectsResponse, ["projects", "data", "items"]);
+    if (!projects) fail("Hostless projects response was unexpected after project creation.");
+    exact = projects.filter(project => normalize(nameOf(project)) === normalize(appName));
+  }
+  if (exact.length !== 1) fail("Hostless project creation did not produce one resolvable apollo-node-1 project.");
+  const projectId = idOf(exact[0]);
+  if (!projectId) fail("Resolved Hostless project has no ID.");
+  return projectId;
+}
+const projectId = await resolveOrCreateProject();
 
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
 const apps = rows(appsResponse, ["apps", "data", "items"]);
