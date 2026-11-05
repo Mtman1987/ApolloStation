@@ -29,4 +29,4 @@ jobs:
             echo "::error::HOSTLESS_NODE3_TOKEN is missing"
             exit 1
           fi
-          hostless create app Node3 --repo Mtman1987/ApolloStation --branch main --yes --wait --json
+          hostless create app Node3 --repo Mtman1987/ApolloStation --platform Github --branch main --yes --wait --json
