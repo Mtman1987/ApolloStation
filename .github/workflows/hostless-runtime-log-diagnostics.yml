@@ -26,7 +26,7 @@ on:
         required: false
         type: string
   workflow_run:
-    workflows: ["ApolloStation Hostless two-node release"]
+    workflows: ["ApolloStation Hostless two-node release", "ApolloStation Hostless Node 2 retry", "ApolloStation Hostless Node 2 fast deploy"]
     types: [completed]
 
 permissions:
