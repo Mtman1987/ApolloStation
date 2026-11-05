@@ -369,7 +369,7 @@ export class SupervisedDshLiveService {
       let failure: unknown;
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
-      this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
+      await this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
       this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       await this.mtFixItReady.catch(()=>undefined);await this.mtFixIt.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }

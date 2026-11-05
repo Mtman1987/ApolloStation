@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { createAsyncJsonRecordStore } from "@spmt/async-json-store/factory";
+import type { AsyncJsonRecordStore } from "@spmt/async-json-store";
 import { parseExecutionTargetV1, type ExecutionJobV1, type ExecutionTargetV1 } from "@spmt/contracts";
 
 export const DSH_LOUNGE_AVATAR_RENDER_CAPABILITY = "dsh.lounge-avatar.render.v1";
@@ -95,7 +97,31 @@ export class DshStellaGestureBag {
   reset() { this.seen.clear(); }
 }
 
-export class SqliteDshLoungeAvatarStore {
+export interface DshLoungeAvatarStoreV1 {
+  get(tenantId:string):DshLoungeAvatarManifestV1|undefined|Promise<DshLoungeAvatarManifestV1|undefined>;
+  put(value:DshLoungeAvatarManifestV1):DshLoungeAvatarManifestV1|Promise<DshLoungeAvatarManifestV1>;
+  close():void|Promise<void>;
+}
+export class AsyncDshLoungeAvatarStore implements DshLoungeAvatarStoreV1 {
+  private readonly records:AsyncJsonRecordStore;
+  constructor(options:{databasePath?:string;mode?:"sqlite"|"turso";url?:string;authToken?:string}={}){
+    this.records=createAsyncJsonRecordStore({service:"discord-stream-hub",...(options.databasePath?{databasePath:options.databasePath}:{}),...(options.mode?{mode:options.mode}:{}),...(options.url?{url:options.url}:{}),...(options.authToken?{authToken:options.authToken}:{})});
+  }
+  initialize(){return this.records.initialize();}
+  health(){return this.records.health();}
+  close(){return this.records.close();}
+  async get(tenantId:string):Promise<DshLoungeAvatarManifestV1|undefined>{
+    const value=await this.records.get<DshLoungeAvatarManifestV1>("lounge-avatar",clean(tenantId,"tenantId"),"manifest");
+    return value?validateManifest(value):undefined;
+  }
+  async put(value:DshLoungeAvatarManifestV1):Promise<DshLoungeAvatarManifestV1>{
+    const checked=validateManifest(value);
+    await this.records.transaction(async tx=>{await tx.put("lounge-tenants","_index",checked.tenantId,{tenantId:checked.tenantId});await tx.put("lounge-avatar",checked.tenantId,"manifest",checked);});
+    return checked;
+  }
+}
+
+export class SqliteDshLoungeAvatarStore implements DshLoungeAvatarStoreV1 {
   private readonly db: DatabaseSync;
   constructor(path: string) {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
@@ -128,7 +154,7 @@ export interface DshLoungeAvatarExecutionClientV1 {
 }
 
 export class DshLoungeAvatarExecutionWorker {
-  constructor(private readonly client: DshLoungeAvatarExecutionClientV1, private readonly source: DshLoungeAvatarSourceV1, private readonly renderer: DshLoungeAvatarRendererV1, private readonly publisher: DshLoungeAvatarPublisherV1, private readonly store: SqliteDshLoungeAvatarStore, private readonly workerId: string, private readonly now: () => string = () => new Date().toISOString(), private readonly executionTarget: ExecutionTargetV1 = parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET)) {}
+  constructor(private readonly client: DshLoungeAvatarExecutionClientV1, private readonly source: DshLoungeAvatarSourceV1, private readonly renderer: DshLoungeAvatarRendererV1, private readonly publisher: DshLoungeAvatarPublisherV1, private readonly store: DshLoungeAvatarStoreV1, private readonly workerId: string, private readonly now: () => string = () => new Date().toISOString(), private readonly executionTarget: ExecutionTargetV1 = parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET)) {}
   async runOnce() {
     const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "discord-stream-hub", capabilityIds: [DSH_LOUNGE_AVATAR_RENDER_CAPABILITY], leaseMs: 20 * 60_000 });
     if (!job) return undefined;
@@ -153,7 +179,7 @@ export class DshLoungeAvatarExecutionWorker {
         completed += 1;
         await this.client.heartbeatExecutionJob(...lease, { percent: 25 + Math.floor(65 * completed / entries.length), message: `Published Stella ${state}` }, 20 * 60_000);
       }
-      const manifest = this.store.put({ schemaVersion: 1, tenantId: job.tenantId, source: "athena-robot-pet", fps: 30, animations, renderedAt: new Date(this.now()).toISOString() });
+      const manifest = await this.store.put({ schemaVersion: 1, tenantId: job.tenantId, source: "athena-robot-pet", fps: 30, animations, renderedAt: new Date(this.now()).toISOString() });
       await this.client.succeedExecutionJob(...lease, { schemaVersion: 1, source: manifest.source, fps: manifest.fps, animations: manifest.animations, renderedAt: manifest.renderedAt });
     } catch (error) {
       const message = safeError(error), retryable = /temporar|timeout|unavailable|network|load|publish/i.test(message);
