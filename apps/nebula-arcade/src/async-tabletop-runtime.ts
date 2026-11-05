@@ -61,7 +61,7 @@ export class AsyncNebulaTabletopRuntime {
     await this.initialize();
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("outbox limit must be from 1 to 100");
     const rows = await this.records.list<{ kind: string; body: Record<string, any>; status: string; updatedAt: string }>("tabletop-media-outbox", tenant);
-    return rows.map((row) => ({ id: row.key, ...row.value }))
+    return rows.map((row) => ({ id: row.key, kind: row.value.kind, body: row.value.body, status: row.value.status, updated_at: row.value.updatedAt }))
       .filter((row) => !["done", "failed", "cancelled"].includes(row.status))
       .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id.localeCompare(b.id))
       .slice(0, limit);
