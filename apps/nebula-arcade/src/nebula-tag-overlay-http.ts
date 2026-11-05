@@ -1,4 +1,4 @@
-import type { NebulaTagStore } from "./nebula-tag-runtime.js";
+import type { StoredNebulaTagStateV1 } from "./nebula-tag-runtime.js";
 import type { NebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { buildNebulaTagOverlaySnapshot } from "./nebula-tag-overlay.js";
 
@@ -29,10 +29,14 @@ const ROOT = "/v1/nebula-arcade/tag/overlay";
  * gateway. The gateway owns grants and passes only a verified principal here;
  * Nebula never accepts provider tokens, app headers, or tenant IDs from URLs.
  */
-export class NebulaTagOverlayHttpAdapter {
-  constructor(private readonly store: NebulaTagStore, private readonly now: () => string = () => new Date().toISOString(), private readonly experience?: NebulaTagExperienceStore) {}
+export interface NebulaTagOverlayStateStore {
+  getState(tenantId: string): StoredNebulaTagStateV1 | Promise<StoredNebulaTagStateV1>;
+}
 
-  handle(request: NebulaTagOverlayHttpRequestV1, principal?: NebulaTagOverlayPrincipalV1): NebulaTagOverlayHttpResponseV1 {
+export class NebulaTagOverlayHttpAdapter {
+  constructor(private readonly store: NebulaTagOverlayStateStore, private readonly now: () => string = () => new Date().toISOString(), private readonly experience?: NebulaTagExperienceStore) {}
+
+  handle(request: NebulaTagOverlayHttpRequestV1, principal?: NebulaTagOverlayPrincipalV1): NebulaTagOverlayHttpResponseV1 | Promise<NebulaTagOverlayHttpResponseV1> {
     if (!principal) return response(401, "text/plain; charset=utf-8", "Authenticated overlay principal required");
     if (principal.schemaVersion !== 1 || principal.appId !== "nebula-arcade" || principal.widgetId !== "tag" || !validId(principal.tenantId)) {
       return response(403, "text/plain; charset=utf-8", "Overlay principal is not authorized for Nebula Arcade tag game");
@@ -50,11 +54,8 @@ export class NebulaTagOverlayHttpAdapter {
     if (request.path === ROOT + "/styles.css") return response(200, "text/css; charset=utf-8", NEBULA_TAG_OVERLAY_CSS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
     if (request.path === ROOT + "/state") {
       const stored = this.store.getState(principal.tenantId);
-      const snapshot = buildNebulaTagOverlaySnapshot(stored.state, { ...(principal.viewerUserId ? { viewerUserId: principal.viewerUserId } : {}), generatedAt: this.now() });
-      return response(200, "application/json; charset=utf-8", JSON.stringify({ revision: stored.revision, snapshot }), {
-        "cache-control": "no-store",
-        "x-content-type-options": "nosniff",
-      });
+      if (stored instanceof Promise) return stored.then((value) => this.stateResponse(value, principal));
+      return this.stateResponse(stored, principal);
     }
     if (request.path.startsWith(ROOT + "/messages")) {
       if (!this.experience || !principal.channelId || !validId(principal.channelId)) return response(404, "text/plain; charset=utf-8", "Not found");
@@ -65,6 +66,14 @@ export class NebulaTagOverlayHttpAdapter {
     }
     return response(404, "text/plain; charset=utf-8", "Not found");
   }
+  private stateResponse(stored: StoredNebulaTagStateV1, principal: NebulaTagOverlayPrincipalV1): NebulaTagOverlayHttpResponseV1 {
+    const snapshot = buildNebulaTagOverlaySnapshot(stored.state, { ...(principal.viewerUserId ? { viewerUserId: principal.viewerUserId } : {}), generatedAt: this.now() });
+    return response(200, "application/json; charset=utf-8", JSON.stringify({ revision: stored.revision, snapshot }), {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    });
+  }
+
 }
 
 export function renderNebulaTagOverlayHtml(simulation = false): string {
