@@ -20,6 +20,7 @@ export async function importDshMtFixItSnapshot(store,snapshot,migrationId){
   if(prior){if(prior.digest!==snapshot.digest)throw new Error("Migration ID already exists with a different MtFixIt source digest");return{imported:false,duplicate:true,counts:snapshot.counts,digest:snapshot.digest};}
   if((await tx.list(MIGRATIONS,"_index")).length)throw new Error("Turso MtFixIt migration receipts are not empty");
   if((await tx.list(TENANTS,"_index")).length)throw new Error("Turso MtFixIt destination tenant index is not empty");
+  for(const tenant of snapshot.tenants)if((await tx.list(RECORDS,tenant)).length)throw new Error(`Turso MtFixIt destination is not empty for ${tenant}`);
   for(const tenant of snapshot.tenants){await tx.put(TENANTS,"_index",tenant,{tenantId:tenant});for(const row of snapshot.reports.filter(item=>item.tenant===tenant))await tx.put(RECORDS,tenant,row.key,row.value);}
   const verified={};
   for(const tenant of snapshot.tenants){const expected=snapshot.reports.filter(row=>row.tenant===tenant).length,actual=(await tx.list(RECORDS,tenant)).length;if(actual!==expected)throw new Error(`MtFixIt import verification failed for ${tenant}: expected ${expected}, received ${actual}`);verified[tenant]=actual;}
