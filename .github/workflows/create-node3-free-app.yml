@@ -1,6 +1,10 @@
 name: Create Node 3 free Hostless app
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-node3-free-app.yml"
   workflow_dispatch:
 
 permissions:
