@@ -32,13 +32,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install media test dependencies
-        timeout-minutes: 12
+      - name: Install verified static media test binaries
+        timeout-minutes: 8
         run: |
-          sudo timeout 5m apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-          sudo timeout 5m apt-get install --yes -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 ffmpeg
-          ffmpeg -version
-          ffprobe -version
+          package="ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1"
+          archive="$RUNNER_TEMP/ffmpeg.tar.xz"
+          media_dir="$RUNNER_TEMP/ffmpeg/bin"
+          curl -fsSL --retry 2 --connect-timeout 20 --max-time 300 "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/$package.tar.xz" -o "$archive"
+          echo "c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b  $archive" | sha256sum --check --strict
+          mkdir -p "$media_dir"
+          tar -xJf "$archive" -C "$media_dir" --strip-components=2 "$package/bin/ffmpeg" "$package/bin/ffprobe"
+          chmod +x "$media_dir/ffmpeg" "$media_dir/ffprobe"
+          echo "$media_dir" >> "$GITHUB_PATH"
+          "$media_dir/ffmpeg" -version
+          "$media_dir/ffprobe" -version
       - run: npm ci
       - name: Verify preview launcher syntax
         run: node --check scripts/hostless/run-private-preview.mjs && node --check scripts/hostless/deploy-private-preview.mjs
