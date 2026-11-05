@@ -724,7 +724,9 @@ function requireSandboxPublicUrl(value: string | undefined) {
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("SPMT_PUBLIC_URL must be an absolute URL"); }
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-  if ((!local && url.protocol !== "https:") || (!local && !url.hostname.endsWith(".sprites.app"))) throw new Error("SPMT_PUBLIC_URL must be the private Sprite HTTPS URL or localhost");
+  const hostlessDomain = url.hostname.endsWith(".hostless.app") || url.hostname.endsWith(".apps.hostless.cloud");
+  const spriteDomain = url.hostname.endsWith(".sprites.app");
+  if ((!local && url.protocol !== "https:") || (!local && !hostlessDomain && !spriteDomain)) throw new Error("SPMT_PUBLIC_URL must be a supported private HTTPS app URL or localhost");
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_PUBLIC_URL must be a credential-free origin");
   return url.origin;
 }
