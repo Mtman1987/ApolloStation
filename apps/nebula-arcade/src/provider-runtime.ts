@@ -90,11 +90,15 @@ export class NebulaArcadeProviderRuntime {
   constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; onLiveChannels?: (tenantId:string,channels:string[])=>Promise<Array<{connectionId:string;channelId:string}>>; presence?: (tenantId:string,players:Array<{userId:string;username:string}>)=>Promise<{liveUserIds:string[];channelByUserId:Record<string,string>;observedAt:string}>; simulation?: boolean; executionTarget?: ExecutionTargetV1; publicOrigin?: string; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
     this.media=new NebulaMediaDelivery({databasePath:options.databasePath,client:options.client,...(options.executionTarget?{executionTarget:options.executionTarget}:{}),...((options.publicOrigin??options.discordDashboard?.publicOrigin)?{publicOrigin:options.publicOrigin??options.discordDashboard!.publicOrigin}:{}),...(options.discordDashboard?{egress:options.discordDashboard.egress}:{}),...(options.now?{now:options.now}:{})});
     this.network = new SqliteNebulaNetwork(options.databasePath);
+    const gameRuntimeStoreMode = process.env.NEBULA_ARCADE_GAME_RUNTIME_STORE ?? "sqlite";
+    if (gameRuntimeStoreMode !== "sqlite" && gameRuntimeStoreMode !== "turso") throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE must be sqlite or turso");
+    if (gameRuntimeStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE=turso requires NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL and NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN");
     this.tabletop = new SqliteNebulaTabletopRuntime(options.databasePath);
     this.inputStore = new SqliteNebulaGameInputStore(options.databasePath);
     const asyncActivityStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaArcadeActivityStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
-    this.activity = asyncActivityStore ?? new SqliteNebulaArcadeActivityStore(options.databasePath);
-    this.activityReady = (async () => { if (asyncActivityStore) await asyncActivityStore.initialize(); for (const tenant of options.config.tenants) for (const channel of tenant.channels) await this.activity.configure(tenant.tenantId, channel.stateChannelId, channel.enabledGameIds); })();
+    const activityStore = asyncActivityStore ?? new SqliteNebulaArcadeActivityStore(options.databasePath);
+    this.activity = activityStore;
+    this.activityReady = (async () => { if (asyncActivityStore) await asyncActivityStore.initialize(); for (const tenant of options.config.tenants) for (const channel of tenant.channels) await activityStore.configure(tenant.tenantId, channel.stateChannelId, channel.enabledGameIds); })();
     const tagStoreMode = process.env.NEBULA_ARCADE_TAG_STORE ?? "sqlite";
     if (tagStoreMode !== "sqlite" && tagStoreMode !== "turso") throw new Error("NEBULA_ARCADE_TAG_STORE must be sqlite or turso");
     if (tagStoreMode === "turso" && (!process.env.NEBULA_ARCADE_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_TAG_STORE=turso requires NEBULA_ARCADE_TURSO_DATABASE_URL and NEBULA_ARCADE_TURSO_AUTH_TOKEN");
@@ -113,9 +117,6 @@ export class NebulaArcadeProviderRuntime {
         })
       : Promise.resolve();
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
-    const gameRuntimeStoreMode = process.env.NEBULA_ARCADE_GAME_RUNTIME_STORE ?? "sqlite";
-    if (gameRuntimeStoreMode !== "sqlite" && gameRuntimeStoreMode !== "turso") throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE must be sqlite or turso");
-    if (gameRuntimeStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE=turso requires NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL and NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN");
     const asyncGameStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaGameRuntimeStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
     this.gameStore = asyncGameStore ?? new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.gameStoreReady = asyncGameStore ? asyncGameStore.initialize() : Promise.resolve();
