@@ -213,3 +213,9 @@ The Bingo phrase-generation worker in `media-delivery.ts` currently opens a fres
 ### Browser control game-runtime cutover follow-up
 
 The browser control surface now selects `AsyncNebulaGameRuntimeStore` when `NEBULA_ARCADE_GAME_RUNTIME_STORE=turso`, initializes it before handling requests, awaits browser state/player reads and running/spend updates, and closes the selected store on shutdown. SQLite remains the default. This closes the game-runtime split described above, but **does not** make browser tabletop/Bingo/Quackverse state Turso-backed: the control surface still uses `SqliteNebulaTabletopRuntime`, and the tabletop atomicity/import/caller work remains a deployment blocker.
+
+
+
+### Full-Turso readiness now fails closed on tabletop
+
+The live host's `NEBULA_ARCADE_REQUIRE_FULL_TURSO=1` gate now explicitly checks tabletop persistence before the other newly migrated Nebula stores. Until an async tabletop adapter is implemented and selected, readiness returns HTTP 503 with a tabletop-specific reason; it must not report full persistence readiness while Bingo rewards, Quackverse trades, command receipts, and the media outbox still use SQLite. The health payload also reports `tabletopStoreReady`, `tabletopStoreMode`, and `tabletopStoreRequired`. A regression test exercises this failure mode. This is a safety gate, not a completed tabletop migration.
