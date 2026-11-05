@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "scripts/hostless/create-node3-app.sh"
       - ".github/workflows/create-node3-free-app.yml"
   workflow_dispatch:
 
@@ -12,21 +13,17 @@ permissions:
 
 jobs:
   create-node3:
-    name: Create Node3 only
+    name: Create Node3 app only
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
+      - name: Check out ApolloStation
+        uses: actions/checkout@v4
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
-
-      - name: Create the free Node3 app
+      - name: Create Node3 app
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
-        run: |
-          if [ -z "$HOSTLESS_TOKEN" ]; then
-            echo "::error::HOSTLESS_NODE3_TOKEN is missing"
-            exit 1
-          fi
-          hostless create app Node3 --repo Mtman1987/ApolloStation --platform Github --branch main --yes --wait --json
+        run: bash scripts/hostless/create-node3-app.sh
