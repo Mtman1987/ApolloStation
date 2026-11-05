@@ -52,36 +52,47 @@ test("async tabletop keeps Bingo claim, Game Points ledger, and receipt in one d
 });
 
 test("async tabletop preserves Quackverse trade idempotency and durable pack outbox across restart", async () => {
-  const t = await fixture();
-  const records = createAsyncJsonRecordStore({ service: "nebula-arcade", mode: "sqlite", databasePath: t.databasePath });
-  await records.initialize();
+  const directory = await mkdtemp(join(tmpdir(), "nebula-tabletop-restart-"));
+  const databasePath = join(directory, "records.sqlite");
+  let runtime = new AsyncNebulaTabletopRuntime({ mode: "sqlite", databasePath });
+  let records = createAsyncJsonRecordStore({ service: "nebula-arcade", mode: "sqlite", databasePath });
+  await runtime.initialize(); await records.initialize();
   try {
-    await t.runtime.importData("tenant-a", { collections: { alice: { cards: [1, 1] }, bob: { cards: [2, 2] } } });
+    await runtime.importData("tenant-a", { collections: { alice: { cards: [1, 1] }, bob: { cards: [2, 2] } } });
     const input = { action: "offer", toId: "bob", giveCardId: 1, wantCardId: 2, requestId: "offer-once" };
-    const first = await t.runtime.trade("tenant-a", "alice", "Alice", input);
-    const replay = await t.runtime.trade("tenant-a", "alice", "Alice", input);
+    const first = await runtime.trade("tenant-a", "alice", "Alice", input);
+    const replay = await runtime.trade("tenant-a", "alice", "Alice", input);
     assert.deepEqual(replay, first);
-    assert.equal((await t.runtime.tradeSnapshot("tenant-a", "alice")).offers.length, 1);
-    await assert.rejects(t.runtime.trade("tenant-a", "alice", "Alice", { ...input, requestId: "invalid-offer", giveCardId: 999 }));
-    assert.equal((await t.runtime.tradeSnapshot("tenant-a", "alice")).offers.length, 1);
+    assert.equal((await runtime.tradeSnapshot("tenant-a", "alice")).offers.length, 1);
+    await assert.rejects(runtime.trade("tenant-a", "alice", "Alice", { ...input, requestId: "invalid-offer", giveCardId: 999 }));
+    assert.equal((await runtime.tradeSnapshot("tenant-a", "alice")).offers.length, 1);
 
     const pack = message({ messageId: "pack-once", text: "spmt quackverse pack", userId: "carol" });
-    const response = await t.runtime.execute(pack);
+    const response = await runtime.execute(pack);
     assert.match(response, /opened:/i);
-    assert.equal(await t.runtime.execute(pack), response);
+    assert.equal(await runtime.execute(pack), response);
     const outbox = await records.list("tabletop-media-outbox", "tenant-a");
     assert.equal(outbox.length, 1);
     assert.equal(outbox[0].key, "twitch:connection-a:pack-once");
     assert.equal(outbox[0].value.status, "pending");
   } finally {
     await records.close();
-    await t.close();
+    await runtime.close();
   }
 
-  const reopened = new AsyncNebulaTabletopRuntime({ mode: "sqlite", databasePath: t.databasePath });
-  // The fixture directory is removed on close, so restart persistence is exercised
-  // by a separate retained-database fixture below instead of this closed fixture.
-  await reopened.close();
+  runtime = new AsyncNebulaTabletopRuntime({ mode: "sqlite", databasePath });
+  records = createAsyncJsonRecordStore({ service: "nebula-arcade", mode: "sqlite", databasePath });
+  await runtime.initialize(); await records.initialize();
+  try {
+    const board = await runtime.snapshot("tenant-a", "room-a", "carol");
+    assert.ok(board.collection.cards.length > 0);
+    assert.equal((await records.list("tabletop-media-outbox", "tenant-a")).length, 1);
+    assert.equal((await runtime.tradeSnapshot("tenant-a", "alice")).offers.length, 1);
+  } finally {
+    await records.close();
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("async tabletop serializes concurrent commands and retains command receipts", async () => {
