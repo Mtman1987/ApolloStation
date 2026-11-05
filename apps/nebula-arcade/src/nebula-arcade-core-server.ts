@@ -32,22 +32,23 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const tagStoreMode = process.env.NEBULA_ARCADE_TAG_STORE ?? "sqlite";
   if (tagStoreMode !== "sqlite" && tagStoreMode !== "turso") throw new Error("NEBULA_ARCADE_TAG_STORE must be sqlite or turso");
   if (tagStoreMode === "turso" && (!process.env.NEBULA_ARCADE_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN)) throw new Error("Turso Tag mode requires its database URL and auth token");
-  const gameStore = tagStoreMode === "turso"
-    ? new AsyncNebulaTagRecordStore({ mode: "turso", url: process.env.NEBULA_ARCADE_TURSO_DATABASE_URL, authToken: process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN })
-    : new SqliteNebulaTagStore(options.databasePath);
+  const asyncTagStore = tagStoreMode === "turso"
+    ? new AsyncNebulaTagRecordStore({ mode: "turso", url: process.env.NEBULA_ARCADE_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN! })
+    : undefined;
+  const gameStore = asyncTagStore ?? new SqliteNebulaTagStore(options.databasePath);
   const settingsSource = new SqliteNebulaNetwork(options.databasePath);
-  const tagReady = gameStore instanceof AsyncNebulaTagRecordStore
-    ? gameStore.initialize().then(async () => {
+  const tagReady = asyncTagStore
+    ? asyncTagStore.initialize().then(async () => {
         const legacy = settingsSource.settings(options.tenantId, "@arcade", "tag");
         const keys = ["tagSuccessPoints", "taggedPenaltyPoints", "immunityMinutes", "rotateMinutes", "forceMinutes"] as const;
         const settings = Object.fromEntries(keys.filter((key) => Number.isSafeInteger(legacy[key])).map((key) => [key, Number(legacy[key])])) as AsyncNebulaTagSettings;
-        if (Object.keys(settings).length) await gameStore.importSettings(options.tenantId, settings, "sqlite-nebula-tag-settings-v1");
+        if (Object.keys(settings).length) await asyncTagStore.importSettings(options.tenantId, settings, "sqlite-nebula-tag-settings-v1");
       })
     : Promise.resolve();
   const experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
   const sceneStore = new SqliteNebulaOverlaySceneStore(options.databasePath);
   const spmt = options.client ?? new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
-  const runtime = gameStore instanceof AsyncNebulaTagRecordStore ? new AsyncNebulaTagRuntime(gameStore, spmt) : new NebulaTagRuntime(gameStore, spmt);
+  const runtime = asyncTagStore ? new AsyncNebulaTagRuntime(asyncTagStore, spmt) : new NebulaTagRuntime(gameStore as SqliteNebulaTagStore, spmt);
   const experience = new NebulaTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
   const overlay = new NebulaTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);
   const principal = { schemaVersion: 1 as const, tenantId: options.tenantId, appId: "nebula-arcade" as const, widgetId: "tag" as const, channelId: options.channelId };
