@@ -1,6 +1,7 @@
 import { NebulaMediaDelivery } from "./media-delivery.js";
 import { SqliteNebulaNetwork } from "./arcade-network.js";
 import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
+import { AsyncNebulaTabletopRuntime } from "./async-tabletop-runtime.js";
 import { SqliteNebulaGameInputStore } from "./game-inputs.js";
 import { AsyncNebulaGameInputStore } from "./async-game-input-store.js";
 import { readFileSync } from "node:fs";
@@ -69,7 +70,8 @@ export class NebulaArcadeProviderRuntime {
   readonly consumers;
   private readonly media:NebulaMediaDelivery;
   private readonly network:SqliteNebulaNetwork;
-  private readonly tabletop: SqliteNebulaTabletopRuntime;
+  private readonly tabletop: SqliteNebulaTabletopRuntime | AsyncNebulaTabletopRuntime;
+  private readonly tabletopReady: Promise<void>;
   private readonly inputStore: SqliteNebulaGameInputStore | AsyncNebulaGameInputStore;
   private readonly inputStoreReady: Promise<void>;
   private readonly activity: SqliteNebulaArcadeActivityStore | AsyncNebulaArcadeActivityStore;
@@ -90,12 +92,17 @@ export class NebulaArcadeProviderRuntime {
   private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
   constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; onLiveChannels?: (tenantId:string,channels:string[])=>Promise<Array<{connectionId:string;channelId:string}>>; presence?: (tenantId:string,players:Array<{userId:string;username:string}>)=>Promise<{liveUserIds:string[];channelByUserId:Record<string,string>;observedAt:string}>; simulation?: boolean; executionTarget?: ExecutionTargetV1; publicOrigin?: string; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
-    this.media=new NebulaMediaDelivery({databasePath:options.databasePath,client:options.client,...(options.executionTarget?{executionTarget:options.executionTarget}:{}),...((options.publicOrigin??options.discordDashboard?.publicOrigin)?{publicOrigin:options.publicOrigin??options.discordDashboard!.publicOrigin}:{}),...(options.discordDashboard?{egress:options.discordDashboard.egress}:{}),...(options.now?{now:options.now}:{})});
     this.network = new SqliteNebulaNetwork(options.databasePath);
     const gameRuntimeStoreMode = process.env.NEBULA_ARCADE_GAME_RUNTIME_STORE ?? "sqlite";
     if (gameRuntimeStoreMode !== "sqlite" && gameRuntimeStoreMode !== "turso") throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE must be sqlite or turso");
     if (gameRuntimeStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE=turso requires NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL and NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN");
-    this.tabletop = new SqliteNebulaTabletopRuntime(options.databasePath);
+    const tabletopStoreMode = process.env.NEBULA_ARCADE_TABLETOP_STORE ?? "sqlite";
+    if (tabletopStoreMode !== "sqlite" && tabletopStoreMode !== "turso") throw new Error("NEBULA_ARCADE_TABLETOP_STORE must be sqlite or turso");
+    if (tabletopStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_TABLETOP_STORE=turso requires the Nebula game-runtime Turso URL and token");
+    const asyncTabletopStore = tabletopStoreMode === "turso" ? new AsyncNebulaTabletopRuntime({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
+    this.tabletop = asyncTabletopStore ?? new SqliteNebulaTabletopRuntime(options.databasePath);
+    this.tabletopReady = asyncTabletopStore ? asyncTabletopStore.initialize() : Promise.resolve();
+    this.media=new NebulaMediaDelivery({databasePath:options.databasePath,client:options.client,...(asyncTabletopStore?{tabletop:asyncTabletopStore}:{}),...(options.executionTarget?{executionTarget:options.executionTarget}:{}),...((options.publicOrigin??options.discordDashboard?.publicOrigin)?{publicOrigin:options.publicOrigin??options.discordDashboard!.publicOrigin}:{}),...(options.discordDashboard?{egress:options.discordDashboard.egress}:{}),...(options.now?{now:options.now}:{})});
     const asyncInputStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaGameInputStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
     this.inputStore = asyncInputStore ?? new SqliteNebulaGameInputStore(options.databasePath);
     this.inputStoreReady = asyncInputStore ? asyncInputStore.initialize() : Promise.resolve();
@@ -283,15 +290,15 @@ export class NebulaArcadeProviderRuntime {
       const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!(target.gameId==="bingo"&&["center","reset","edit","generate","share","phrases","claim","card","shared","suggest","flip","free","shared-status"].includes(target.command)));
       if(continuation){
         if(!joined.includes(target.gameId)){replies.push(`Join ${game.name} first with spmt ${game.id} join.`);continue;}
-        if(target.gameId==="bingo"){const reply=this.tabletop.observeBingo({...message,channelId:channel.stateChannelId});if(!reply)continue;replies.push(reply);}
+        if(target.gameId==="bingo"){const reply=await this.tabletop.observeBingo({...message,channelId:channel.stateChannelId});if(!reply)continue;replies.push(reply);}
         await this.gameStore.update(message.tenantId,state=>joinNebulaGame(state,{userId:actor,username:message.actor.username,displayName:message.actor.displayName,gameId:target.gameId},new Date(message.occurredAt)));
         await this.activity.membership(message.tenantId,channel.stateChannelId,actor,target.gameId,true,now);accepted.push(target.gameId);continue;
       }
       if(["bingo","quackverse"].includes(target.gameId)&&!["start","stop"].includes(target.command)&&!(target.gameId==="bingo"&&target.command==="leave")){
         const command=target.command==="quackpack"?"pack":target.command;
         const normalized={...message,channelId:channel.stateChannelId,text:`spmt ${target.gameId} ${command} ${target.args.join(" ")}`.trim()};
-        const result=this.tabletop.execute(normalized);if(result!==undefined)replies.push(result);
-        if(this.tabletop.succeeded(normalized)){
+        const result=await this.tabletop.execute(normalized);if(result!==undefined)replies.push(result);
+        if(await this.tabletop.succeeded(normalized)){
           if(!["status","phrases","reset","collection","deck","hand","decks","savedeck","activatedeck","deletedeck","leave"].includes(command))replies.push(await this.applyTarget(message,delivery.deliveryId,channel,{gameId:target.gameId,command:"join",args:[]}));
           if(command==="leave"){await this.activity.membership(message.tenantId,channel.stateChannelId,actor,target.gameId,false,now);await this.gameStore.update(message.tenantId,state=>leaveNebulaGame(state,actor,target.gameId,new Date(message.occurredAt)));}
           else accepted.push(target.gameId);
