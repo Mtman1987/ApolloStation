@@ -18,8 +18,9 @@ export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpa
 }
 
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
-  const previewPassword = process.env.SPMT_RUNTIME_MODE === "sandbox" ? process.env.APOLLO_PREVIEW_PASSWORD : undefined;
-  if (process.env.SPMT_RUNTIME_MODE === "sandbox" && (!previewPassword || previewPassword.length < 8)) throw new Error("APOLLO_PREVIEW_PASSWORD (at least 8 characters) is required for the private sandbox preview");
+  const privatePreview = process.env.APOLLO_PRIVATE_PREVIEW === "1";
+  const previewPassword = privatePreview ? process.env.APOLLO_PREVIEW_PASSWORD : undefined;
+  if (privatePreview && (!previewPassword || previewPassword.length < 8)) throw new Error("APOLLO_PREVIEW_PASSWORD (at least 8 characters) is required for the private sandbox preview");
   if(options.hearMeOutActivityClientId&&!/^\d{5,30}$/.test(options.hearMeOutActivityClientId))throw new Error("Invalid HearMeOut Activity client ID");
   const activityOrigin=options.hearMeOutActivityClientId?`https://${options.hearMeOutActivityClientId}.discordsays.com`:undefined;
   for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
