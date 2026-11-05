@@ -85,19 +85,18 @@ export class AsyncNebulaTabletopRuntime {
     await this.initialize();
     if (!tenant || tenant.trim() !== tenant || tenant.length > 180 || /[\r\n\0]/.test(tenant)) throw new Error("tenantId is invalid");
     return this.records.transaction(async (tx) => {
-      const [tabletop, receipts, trades, outbox, gameRuntime] = await Promise.all([
-        tx.list<Record<string, unknown>>("tabletop-state", tenant),
-        tx.list<{ result: string }>("tabletop-command-receipts", tenant),
-        tx.list<{ result: unknown }>("quackverse-trade-receipts", tenant),
-        tx.list<{ kind: string; body: unknown; status: string; updatedAt: string }>("tabletop-media-outbox", tenant),
-        tx.get<{ state?: unknown; updatedAt?: string } | Record<string, unknown>>("game-runtime", tenant, "default"),
-      ]);
+      const tabletop = await tx.list<Record<string, unknown>>("tabletop-state", tenant);
+      const receipts = await tx.list<{ result: string }>("tabletop-command-receipts", tenant);
+      const trades = await tx.list<{ result: unknown }>("quackverse-trade-receipts", tenant);
+      const outbox = await tx.list<{ kind: string; body: unknown; status: string; updatedAt: string }>("tabletop-media-outbox", tenant);
+      const gameRuntime = await tx.get<{ state?: unknown; updatedAt?: string } | Record<string, unknown>>("game-runtime", tenant, "default");
       const directory = mkdtempSync(join(tmpdir(), "nebula-tabletop-scratch-"));
       const databasePath = join(directory, "execution.sqlite");
       let runtime: SqliteNebulaTabletopRuntime | undefined;
       let db: DatabaseSync | undefined;
       try {
-        runtime = new SqliteNebulaTabletopRuntime(databasePath);
+        const engine = new SqliteNebulaTabletopRuntime(databasePath);
+        runtime = engine;
         db = new DatabaseSync(databasePath, { timeout: 5_000 });
         db.exec("CREATE TABLE IF NOT EXISTS nebula_media_outbox(tenant_id TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,id))");
         const putTabletop = db.prepare("INSERT OR REPLACE INTO nebula_tabletop(tenant_id,channel_id,game_id,body) VALUES(?,?,?,?)");
@@ -121,7 +120,7 @@ export class AsyncNebulaTabletopRuntime {
         }
         db.close(); db = undefined;
 
-        const result = work(runtime);
+        const result = work(engine);
         if (persist) {
           db = new DatabaseSync(databasePath, { timeout: 5_000 });
           await writeTabletopRecords(tx, tenant, db, tabletop);
