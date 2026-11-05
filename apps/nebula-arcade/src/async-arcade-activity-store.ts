@@ -91,7 +91,7 @@ export class AsyncNebulaArcadeActivityStore {
     return { channelId: channel, lastSpmtAt, visibleUntil, visible: now < visibleUntil, remainingMs: Math.max(0, Math.min(NEBULA_ACTIVITY_VISIBLE_MS, visibleUntil - now)), activeWindowSeconds: NEBULA_CHAT_ACTIVE_MS / 1000, games };
   }
 }
-function clean(value: string) { const result = String(value ?? "").trim(); if (!result || result.length > 300 || /[\\r\\n\\0]/.test(result)) throw new Error("Nebula activity key is invalid"); return result; }
+function clean(value: string) { const result = String(value ?? "").trim(); if (!result || result.length > 300 || [0,10,13].some((code) => result.includes(String.fromCharCode(code)))) throw new Error("Nebula activity key is invalid"); return result; }
 function cleanChannel(value: string) { const result = clean(value).toLowerCase().replace(/^#/, "").slice(0, 80); if (!result) throw new Error("Nebula channel is required"); return result; }
 function memberKey(channel: string, actor: string, game: string) { return [channel, actor, game].map(encodeURIComponent).join("|"); }
 function choiceKey(channel: string, actor: string) { return [channel, actor].map(encodeURIComponent).join("|"); }
