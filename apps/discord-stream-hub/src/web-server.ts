@@ -75,13 +75,13 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
     extraCss: DSH_CONTROL_CSS,
     browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS
       + (applications ? DSH_APPLICATION_BROWSER_JS + DSH_PROPOSAL_BROWSER_JS : ""),
-    handleApi: async (request, response, url) => Boolean(handleGameplay(request,response,url)) || Boolean(media?.handle(request, response, url))
+    handleApi: async (request, response, url) => Boolean(handleGameplay(request,response,url)) || Boolean(await media?.handle(request, response, url))
       || Boolean(await interactions?.handle(request, response, url))
       || Boolean(await applications?.handle(request, response, url))
       || Boolean(await proposals?.handle(request, response, url))
       || await controls.handle(request, response, url) || await snapshot(request, response, url),
     close: async () => {
-      media?.close();gameplayStore?.close(); await interactions?.close(); applicationStore?.close();
+      await media?.close();gameplayStore?.close(); await interactions?.close(); applicationStore?.close();
       applications?.close(); proposals?.close(); controls.close();
     },
   });
