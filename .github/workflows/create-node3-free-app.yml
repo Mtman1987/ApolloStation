@@ -1,0 +1,28 @@
+name: Create Node 3 free Hostless app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-node3:
+    name: Create Node3 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+
+      - name: Create the free Node3 app
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
+        run: |
+          if [ -z "$HOSTLESS_TOKEN" ]; then
+            echo "::error::HOSTLESS_NODE3_TOKEN is missing"
+            exit 1
+          fi
+          hostless create app Node3 --branch main --yes --wait --json
