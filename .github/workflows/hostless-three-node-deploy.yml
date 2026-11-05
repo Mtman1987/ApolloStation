@@ -118,7 +118,6 @@ jobs:
           CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
           STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
           NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
-          SPMT_ORIGIN: ${{ secrets.SPMT_ORIGIN }}
           NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
           NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
           NEBULA_ARCADE_PUBLIC_ORIGIN: ${{ secrets.NEBULA_ARCADE_PUBLIC_ORIGIN }}
@@ -127,7 +126,7 @@ jobs:
           const role = process.env.NODE_ROLE;
           const required = role === "node1"
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
-            : ["SPMT_ORIGIN", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"];
+            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"];
           const missing = required.filter((name) => !process.env[name]?.trim());
           if (missing.length) {
             console.error("Missing ApolloStation Actions secrets required by " + role + ": " + missing.join(", "));
@@ -144,13 +143,6 @@ jobs:
             process.exit(1);
           }
           if (role === "node2") {
-            let origin;
-            try { origin = new URL(process.env.SPMT_ORIGIN); }
-            catch { console.error("SPMT_ORIGIN must be a valid URL."); process.exit(1); }
-            if (!["https:", "http:"].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
-              console.error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin.");
-              process.exit(1);
-            }
           }
           console.log("Required runtime configuration is present; values were not printed.");
           NODE
@@ -161,6 +153,7 @@ jobs:
       - name: Deploy only this node using its own Hostless token
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
           APOLLO_RUNTIME_NODE1_SPMT_WEBHOOK_KEY: ${{ secrets.SPMT_WEBHOOK_KEY }}
           APOLLO_RUNTIME_NODE1_SPMT_RUNTIME_MODE: "production"
           APOLLO_RUNTIME_NODE1_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
