@@ -3,12 +3,12 @@ set -euo pipefail
 
 : "${HOSTLESS_TOKEN:?HOSTLESS_NODE3_TOKEN is required}"
 
-# Create only the Node 3 Hostless app from ApolloStation's main branch.
-# Hostless reads hostless.yaml for the app's free runtime configuration.
+# Create only Node 3 in the project resolved for the Node 3 token.
+# Do not wait for or run a separate deployment/test workflow here.
 hostless create app Node3 \
+  --project 6aeb3dff5e8f6800ea0f67b8 \
   --repo Mtman1987/ApolloStation \
   --platform Github \
   --branch main \
   --yes \
-  --wait \
   --json
