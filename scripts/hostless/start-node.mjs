@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
 const node1 = [
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
-  ["apps/spacemountain-web/dist/integrated-server.js", { PORT: process.env.PORT ?? "8080", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000" }],
+  ["apps/discord-stream-hub/dist/live-worker-start.js", { SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite", DSH_RUNTIME_CONFIG_PATH: process.env.DSH_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-dsh-runtime.json" }],
+  ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.DSH_WEB_PORT ?? "3201", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite", DSH_RUNTIME_CONFIG_PATH: process.env.DSH_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-dsh-runtime.json" }],
+  ["apps/spacemountain-web/dist/integrated-server.js", { PORT: process.env.PORT ?? "8080", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201" }],
 ];
 const node2 = [
   ["apps/chat-gateway/dist/service-start.js", {}],
@@ -18,6 +21,11 @@ const node3 = [
   ["apps/discord-stream-hub/dist/live-worker-start.js", {}],
   ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.PORT ?? "8080" }],
 ];
+if (role === "node1" && process.env.DSH_RUNTIME_CONFIG_JSON) {
+  const configPath = process.env.DSH_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-dsh-runtime.json";
+  await mkdir(resolve(configPath, ".."), { recursive: true });
+  await writeFile(configPath, process.env.DSH_RUNTIME_CONFIG_JSON, { mode: 0o600 });
+}
 const services = ({ node1, node2, node3 })[role];
 if (!services) throw new Error("APOLLO_NODE_ROLE must be node1, node2, or node3");
 if (!process.env.PORT) process.env.PORT = "8080";
