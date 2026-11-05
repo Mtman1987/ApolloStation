@@ -161,3 +161,29 @@ After reviewing the report, apply only when the corresponding Turso namespaces a
     npm run db:migrate:nebula-action-activity:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
 
 The importer verifies destination counts in each tenant namespace and never modifies the source SQLite file. It is independent of the game-runtime importer; run and retain both reports. Do not enable the production Turso cutover until both reports verify and restart/read-after-write checks pass.
+
+## Nebula tabletop migration contract (not yet cut over)
+
+The remaining SqliteNebulaTabletopRuntime is not a single independent state blob. Its SQLite transaction currently coordinates these records:
+
+| SQLite source | Domain record namespace | Required key |
+|---|---|---|
+| nebula_tabletop | tabletop-state | channel_id + game_id (Bingo is normalized to @arcade) |
+| nebula_tabletop_receipts | tabletop-command-receipts | input_id |
+| nebula_quackverse_trade_receipts | quackverse-trade-receipts | actor_id + request_id |
+| nebula_media_outbox | tabletop-media-outbox | provider:connectionId:messageId |
+| nebula_game_runtime | existing game-runtime | default |
+
+These are logical target namespaces; an implementation may choose a different physical record layout, but it must preserve the keys and atomicity. In particular:
+
+- A shared Bingo claim/suggest/flip/free command updates shared-board state, the game-runtime player ledger/balance, and the command receipt in one transaction. The existing host's separate runtime.update() call after tabletop.execute() is not an acceptable Turso cutover design.
+- A personal Bingo claim updates the personal board, player score/ledger, win record when applicable, and command receipt atomically.
+- Quackverse pack commands update the player's collection, last-pack metadata, media outbox item, and command receipt atomically.
+- Quackverse trades update both affected collections and the actor/request idempotency receipt atomically. Replaying the same request ID must return the stored result without transferring cards twice.
+- succeeded() must read the durable receipt from the selected backend; observeBingo() and ingestBingoTranscript() must await their writes before the caller acknowledges or serves a snapshot.
+- Legacy room consolidation (scope-v2) must be idempotent and retain original rows until the import/verification report is accepted. Do not silently merge or overwrite a populated destination.
+- Media outbox records must preserve status and updated_at so pending deliveries can resume after a process restart.
+
+The async tabletop adapter must be wired into both NebulaArcadeProviderRuntime and the live HTTP host, including snapshot, command execution, success/receipt checks, transcript ingestion, trade endpoints, and shutdown. Extend NEBULA_ARCADE_REQUIRE_FULL_TURSO=1 to report tabletop readiness and return 503 unless this adapter is selected and healthy. The importer must open the SQLite source read-only, run integrity validation, export all four tabletop/outbox tables plus the coupled game-runtime state, compute a deterministic digest, refuse non-empty destination keys, import in one transaction, and verify per-namespace counts and digest.
+
+Until those conditions and restart/idempotency/rollback/recovery tests pass, tabletop remains SQLite-backed and the full Nebula Turso readiness gate must stay disabled. No source snapshot should be imported as part of code validation.
