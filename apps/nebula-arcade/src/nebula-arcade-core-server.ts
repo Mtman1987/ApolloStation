@@ -57,7 +57,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
     applyHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://nebula-arcade.sandbox");
-      if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
+      if (request.method === "GET" && url.pathname === "/health/ready") { await tagReady; const tagHealth = gameStore instanceof AsyncNebulaTagRecordStore ? await gameStore.health() : { ready: true }; return json(response, tagHealth.ready ? 200 : 503, { ready: tagHealth.ready, app: "nebula-arcade", runtimeMode: "sandbox", tagStoreReady: tagHealth.ready, tagStoreMode, outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" }); }
 
       if ((url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("action") === "overlay-scenes") {
         if (request.method === "GET") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
@@ -115,7 +115,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         return html(response, 200, proxySafeOverlayPage(scene));
       }
 
-      if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/tag/state") return json(response, 200, runtime.getState(options.tenantId));
+      if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/tag/state") return json(response, 200, await runtime.getState(options.tenantId));
       if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/support") return json(response, 200, experienceStore.listSupportTickets(options.tenantId));
       if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/tag/overlay/messages") {
         const after = Number(url.searchParams.get("after") ?? "0");
@@ -126,7 +126,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const body = await readJson(request);
         const occurredAt = optionalIso(body.occurredAt) ?? new Date().toISOString();
         const outcome = await experience.ingest({ schemaVersion: 1, provider: provider(body.provider), tenantId: options.tenantId, channelId: options.channelId, messageId: textField(body.messageId, "messageId", 200), userId: textField(body.userId, "userId", 200), username: textField(body.username, "username", 120), text: normalizeSandboxNebulaTagCommand(textField(body.text, "text", 500)), occurredAt, roles: roles(body.roles) }, { liveUserIds: stringArray(body.liveUserIds, 200) });
-        return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
+        return json(response, 200, { outcome, stored: await runtime.getState(options.tenantId) });
       }
       if (request.method === "POST" && url.pathname === "/v1/nebula-arcade/tag/rotation") {
         requireSameOrigin(request);
@@ -136,7 +136,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
       }
       if (url.pathname === "/v1/nebula-arcade/tag/overlay" || url.pathname.startsWith("/v1/nebula-arcade/tag/overlay/")) {
-        const adapted = overlay.handle({ method: request.method ?? "GET", path: url.pathname }, principal);
+        const adapted = await overlay.handle({ method: request.method ?? "GET", path: url.pathname }, principal);
         return textWithHeaders(response, adapted.status, adapted.body, adapted.headers);
       }
       return json(response, 404, { error: "not_found" });
@@ -148,8 +148,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
 
   return {
     server,
-    listen: () => new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 8080, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }),
-    close: () => new Promise<void>((done, reject) => server.close((error) => { sceneStore.close(); gameStore.close(); experienceStore.close(); error ? reject(error) : done(); })),
+    listen: async () => { await tagReady; return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 8080, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
+    close: async () => { await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done())); sceneStore.close(); await gameStore.close(); experienceStore.close(); settingsSource.close(); },
   };
 }
 
