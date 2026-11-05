@@ -142,8 +142,6 @@ jobs:
             console.error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes.");
             process.exit(1);
           }
-          if (role === "node2") {
-          }
           console.log("Required runtime configuration is present; values were not printed.");
           NODE
       - name: Install Hostless CLI
@@ -170,9 +168,6 @@ jobs:
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: ${{ secrets.NEBULA_ARCADE_PUBLIC_ORIGIN }}
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
           APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE1_DSH_WORKER_CREDENTIAL: ${{ secrets.DSH_WORKER_CREDENTIAL }}
