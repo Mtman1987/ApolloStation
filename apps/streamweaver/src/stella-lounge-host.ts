@@ -59,7 +59,7 @@ export class StreamWeaverStellaLoungeHost {
         const stream=await this.options.twitch.uptime(connection.tenantId);
         if(!stream){this.options.store.defer(connection.tenantId,nowMs,120_000);report.skipped++;continue;}
         if(this.options.community.program(connection.tenantId)){this.options.store.defer(connection.tenantId,nowMs,180_000);report.skipped++;continue;}
-        const planned=buildStellaAmbientMessage(stream,this.options.community,connection.tenantId,claimed.recentTopics);
+        const planned=await buildStellaAmbientMessage(stream,this.options.community,connection.tenantId,claimed.recentTopics);
         if(!planned){this.options.store.defer(connection.tenantId,nowMs,180_000);report.skipped++;continue;}
         await this.options.egress.send({schemaVersion:1,tenantId:connection.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:planned.text,idempotencyKey:"stella-lounge-host:"+connection.tenantId+":"+(claimed.slotId||claimed.nextAt)});
         this.options.store.complete(connection.tenantId,nowMs,planned.topic,planned.text,nowMs+this.delay());report.sent++;
@@ -97,8 +97,8 @@ export class StreamWeaverStellaLoungeHost {
   private delay(){const random=Math.min(0.999999,Math.max(0,this.options.random?.()??Math.random()));return this.minDelayMs+Math.floor(random*(this.maxDelayMs-this.minDelayMs+1));}
 }
 
-function buildStellaAmbientMessage(stream:StreamWeaverTwitchStreamV1,community:StreamWeaverCommunityStore,tenantId:string,recent:string[]){
-  const stats=community.checkinStats(tenantId),checkins=stats.users.reduce((sum,row)=>sum+Math.max(0,Number(row.count)||0),0),leaders=community.watchLeaders(tenantId),rides=community.rides.settings(tenantId),game=cleanPublic(stream.gameName,60),title=cleanPublic(stream.title,90),viewers=Math.max(0,Math.floor(Number(stream.viewerCount)||0));
+async function buildStellaAmbientMessage(stream:StreamWeaverTwitchStreamV1,community:StreamWeaverCommunityStore,tenantId:string,recent:string[]){
+  const stats=community.checkinStats(tenantId),checkins=stats.users.reduce((sum,row)=>sum+Math.max(0,Number(row.count)||0),0),leaders=community.watchLeaders(tenantId),rides=await community.rides.settings(tenantId),game=cleanPublic(stream.gameName,60),title=cleanPublic(stream.title,90),viewers=Math.max(0,Math.floor(Number(stream.viewerCount)||0));
   const candidates:Array<{topic:string;text:string}>=[];
   if(rides.enabled)candidates.push({topic:"ride",text:"Stella on the bridge: Space Mountain is ready for another run. Use !checkin --ride to claim a seat and join the crew."});
   if(checkins>0)candidates.push({topic:"community",text:"Stella's crew board has "+checkins.toLocaleString("en-US")+" check-ins on record. Thanks for keeping the lounge moving, crew."});
