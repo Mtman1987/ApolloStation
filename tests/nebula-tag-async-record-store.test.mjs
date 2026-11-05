@@ -48,6 +48,11 @@ test("async Tag store atomically persists state, command dedupe and outbox acros
     assert.ok(encodedPending.length > 0);
     await assert.doesNotReject(encodedTenantStore.markDeliveryFailed(encodedPending[0].id, "Bearer do-not-store"));
     await encodedTenantStore.close();
+    const settingsReopened = new AsyncNebulaTagRecordStore({ databasePath });
+    await settingsReopened.initialize();
+    assert.equal((await settingsReopened.settings("tenant:encoded")).tagSuccessPoints, 37);
+    assert.equal((await settingsReopened.rotationRules("tenant:encoded")).rotateAfterMs, 180_000);
+    await settingsReopened.close();
     const pending = await reopened.listPendingDeliveries("tenant-a");
     await reopened.markDeliveryFailed(pending[0].id, "Bearer do-not-store");
     await reopened.markDeliveryComplete(pending[0].id);
