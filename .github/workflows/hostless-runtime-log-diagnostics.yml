@@ -65,7 +65,7 @@ jobs:
           JOB_ID="$(printf '%s' "$JOBS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s).jobs||[];const x=j.find(v=>v.name.startsWith("Deploy Node 2"));if(x)process.stdout.write(String(x.id));})')"
           if [ -z "$JOB_ID" ]; then echo "No Node 2 deployment job exists in source run."; exit 0; fi
           LOG="$(gh run view "$SOURCE_RUN_ID" --job "$JOB_ID" --repo "$REPOSITORY" --log 2>/dev/null || true)"
-          DEPLOYMENT_ID="$(printf '%s\\n' "$LOG" | grep -Eo 'Deployment [a-f0-9]{24}: DEPLOYMENT_QUEUED' | tail -n1 | awk '{print $2}' | tr -d ':' || true)"
+          DEPLOYMENT_ID="$(printf '%s\\n' "$LOG" | grep -Eo 'Deployment [a-f0-9]{24}:' | tail -n1 | awk '{print $2}' | tr -d ':' || true)"
           if [ -n "$DEPLOYMENT_ID" ]; then echo "id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"; echo "Resolved exact Node 2 deployment: $DEPLOYMENT_ID"; else echo "Could not extract a deployment ID from the Node 2 job log."; fi
 
       - name: Install Hostless CLI
