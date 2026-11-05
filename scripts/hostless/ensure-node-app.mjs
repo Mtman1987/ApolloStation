@@ -93,6 +93,47 @@ function runCli(args, description) {
   if (result.status !== 0) fail(`${description} failed with exit code ${result.status}.`);
 }
 
+async function resolveNode1Origin() {
+  const node1Token = process.env.HOSTLESS_NODE1_TOKEN;
+  if (!node1Token) fail("Node 2 needs HOSTLESS_NODE1_TOKEN to discover the already-deployed SPMT authority URL; no URL was guessed.");
+  const response = await fetch(`${api}/apps/apollo-node-1`, {
+    headers: { Authorization: node1Token, Accept: "application/json" },
+  });
+  const body = await response.text();
+  let parsed;
+  try { parsed = body ? JSON.parse(body) : {}; } catch { parsed = {}; }
+  if (!response.ok) fail(`Could not discover Node 1's Hostless URL (HTTP ${response.status}); check HOSTLESS_NODE1_TOKEN has apps:read scope.`);
+
+  const candidates = [];
+  function visit(value) {
+    if (!value || typeof value !== "object") return;
+    for (const [key, item] of Object.entries(value)) {
+      if (/^(url|appUrl|publicUrl|defaultDomain|primaryDomain|domain|hostname|domains)$/i.test(key)) {
+        const values = Array.isArray(item) ? item : [item];
+        for (const entry of values) {
+          const raw = typeof entry === "string" ? entry : entry && typeof entry === "object"
+            ? (entry.url ?? entry.domain ?? entry.hostname ?? entry.host)
+            : null;
+          if (typeof raw !== "string" || !raw.trim()) continue;
+          try {
+            const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+            if (url.protocol === "https:" && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash) candidates.push(url.origin);
+          } catch {}
+        }
+      }
+      if (item && typeof item === "object") visit(item);
+    }
+  }
+  visit(parsed);
+  const unique = [...new Set(candidates)];
+  if (unique.length !== 1) fail(`Hostless returned ${unique.length} unambiguous HTTPS app origins for apollo-node-1; refusing to guess SPMT_ORIGIN.`);
+  const origin = unique[0];
+  const health = await fetch(`${origin}/health/ready`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  if (!health.ok) fail(`Node 1 URL was discovered but its readiness endpoint returned HTTP ${health.status}; Node 2 will not be pointed at an unhealthy authority.`);
+  console.log("Resolved Node 2 SPMT_ORIGIN from the healthy Hostless Node 1 app.");
+  return origin;
+}
+
 function syncRuntimeSecrets(projectId, appName) {
   let bundle = {};
   if (secretBundle) { try { bundle = JSON.parse(secretBundle); } catch { fail("APOLLO_GH_SECRETS_JSON is not valid JSON."); } }
@@ -141,6 +182,10 @@ if (matching.length === 0) {
     ["create", "app", node.app, "--project", String(projectId), "--branch", process.env.GITHUB_REF_NAME ?? "main", "--yes", "--wait", "--json"],
     `Create ${node.app}`,
   );
+}
+if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
+  process.env.SPMT_ORIGIN = await resolveNode1Origin();
+  process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN = process.env.SPMT_ORIGIN;
 }
 syncRuntimeSecrets(projectId, node.app);
 console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
