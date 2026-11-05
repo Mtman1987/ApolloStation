@@ -63,10 +63,12 @@ export class StreamWeaverWebControls {
     this.avatarBuildEnabled = options.avatarBuildEnabled ?? this.operationMode === "active";
     if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
-    if (options.databasePath) const rideStoreMode=this.operationMode==="active"?process.env.STREAMWEAVER_RIDE_STORE??"sqlite":"sqlite";
-       if(rideStoreMode!=="sqlite"&&rideStoreMode!=="turso")throw new Error("STREAMWEAVER_RIDE_STORE must be sqlite or turso");
-       if(rideStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_RIDE_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
-       this.community=new StreamWeaverCommunityStore(options.databasePath,rideStoreMode==="turso"?{mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}:{});
+    if (options.databasePath) {
+      const rideStoreMode=this.operationMode==="active"?(process.env.STREAMWEAVER_RIDE_STORE??"sqlite"):"sqlite";
+      if(rideStoreMode!=="sqlite"&&rideStoreMode!=="turso")throw new Error("STREAMWEAVER_RIDE_STORE must be sqlite or turso");
+      if(rideStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_RIDE_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
+      this.community=new StreamWeaverCommunityStore(options.databasePath,rideStoreMode==="turso"?{mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}:{});
+    }
     if (options.databasePath) this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
     if (options.databasePath) { this.runtimeSettings=new StreamWeaverRuntimeSettingsStore(options.databasePath); this.relay=new SqliteStreamWeaverBotRelayStore(options.databasePath); }
