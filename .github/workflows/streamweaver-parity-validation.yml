@@ -11,6 +11,11 @@ on:
       - apps/streamweaver/src/stream-presentation-runtime.ts
       - apps/streamweaver/src/web-controls.ts
       - apps/streamweaver/src/provider-runtime.ts
+      - apps/streamweaver/src/async-social-reaction-store.ts
+      - apps/streamweaver/src/donor-social-actions.ts
+      - scripts/migrate-streamweaver-social-reactions-to-turso.mjs
+      - tests/streamweaver-async-social-reaction-store.test.mjs
+      - tests/streamweaver-social-reaction-migration.test.mjs
       - apps/streamweaver/src/social-reaction-store.ts
       - apps/streamweaver/src/async-social-reaction-store.ts
       - apps/streamweaver/src/donor-social-actions.ts
