@@ -10,7 +10,7 @@ interface MtFixItReportRecord {
  tenant:string;eventId:string;jobId:string;channelId:string;messageId:string;reporter:string;description:string;
  ownerNotified:boolean;replySent:boolean;createdAt:string;
 }
-const RECORDS="mtfixit-reports";
+const RECORDS="mtfixit-reports",TENANTS="mtfixit-report-tenants";
 
 /** Async Turso counterpart for the DSH MtFixIt intake receipt and notification state. */
 export class AsyncDshMtFixItIntake {
@@ -42,7 +42,7 @@ export class AsyncDshMtFixItIntake {
    const prompt=mtFixItCoderPrompt({incident,attempt:1,evidence:[`Reporter: ${message.actor.username} (${message.actor.providerUserId})`,`Discord guild: ${message.guildId??"unknown"}`,`Discord channel: ${message.channelId}`,`Discord message: ${message.messageId}`,`Reported problem: ${description}`]});
    const created=await this.client.createCoderJob(tenantId,"discord-stream-hub",prompt,[published.log.id],`dsh-mtfixit-job:${key}`);
    const candidate:MtFixItReportRecord={tenant:tenantId,eventId,jobId:created.job.id,channelId:message.channelId,messageId:message.messageId,reporter:message.actor.username,description,ownerNotified:false,replySent:false,createdAt:this.now()};
-   saved=await this.records.transaction(async tx=>{const existing=await tx.get<MtFixItReportRecord>(RECORDS,tenantId,eventId);if(existing)return existing;await tx.put(RECORDS,tenantId,eventId,candidate);return candidate;});
+   saved=await this.records.transaction(async tx=>{const existing=await tx.get<MtFixItReportRecord>(RECORDS,tenantId,eventId);if(existing)return existing;await tx.put(TENANTS,"_index",tenantId,{tenantId});await tx.put(RECORDS,tenantId,eventId,candidate);return candidate;});
   }
   if(this.ownerDiscordUserId&&!saved.ownerNotified){
    await this.discord.sendDirectMessage(tenantId,this.ownerDiscordUserId,{content:`**MtFixIt report received**\nReporter: ${saved.reporter}\nReport: ${saved.description}\nCoder job: ${saved.jobId}\n\nReview the job in Mission Control. This intake does not approve or deploy changes.`,allowed_mentions:{parse:[]}});
