@@ -35,6 +35,14 @@ interface PendingDelivery {
   result: NebulaTagCommandResultV1;
 }
 
+export interface AsyncNebulaTagImportSnapshot {
+  tenantId: string;
+  revision: number;
+  state: NebulaTagStateV1;
+  commands: Array<{ commandId: string; occurredAt: string; result: NebulaTagCommandResultV1 }>;
+  outbox: Array<{ commandId: string; createdAt: string; attempts: number; lastError?: string; result: NebulaTagCommandResultV1 }>;
+}
+
 export interface AsyncNebulaTagStoreOptions {
   databasePath?: string;
   mode?: "sqlite" | "turso";
@@ -185,6 +193,42 @@ export class AsyncNebulaTagRecordStore {
         attempts: item.attempts + 1,
         lastError: safeError(message),
       });
+    });
+  }
+
+  async importSnapshot(snapshot: AsyncNebulaTagImportSnapshot, migrationId: string): Promise<{ imported: boolean; duplicate: boolean; revision: number; commands: number; outbox: number }> {
+    const state = assertNebulaTagStateV1(snapshot.state, snapshot.tenantId);
+    requireId(snapshot.tenantId, "tenantId");
+    requireId(migrationId, "migrationId");
+    if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0) throw new Error("Tag snapshot revision is invalid");
+    for (const item of snapshot.commands) {
+      requireId(item.commandId, "commandId");
+      if (!Number.isFinite(Date.parse(item.occurredAt))) throw new Error("Tag command timestamp is invalid");
+    }
+    for (const item of snapshot.outbox) {
+      requireId(item.commandId, "commandId");
+      if (!Number.isFinite(Date.parse(item.createdAt)) || !Number.isSafeInteger(item.attempts) || item.attempts < 0) throw new Error("Tag outbox record is invalid");
+    }
+    return this.records.transaction(async (tx) => {
+      const receipt = await tx.get<{ importedAt: string }>("tag-migrations", snapshot.tenantId, migrationId);
+      const current = await readState(tx, snapshot.tenantId);
+      if (receipt) return { imported: false, duplicate: true, revision: current.revision, commands: snapshot.commands.length, outbox: snapshot.outbox.length };
+      const [commands, outbox] = await Promise.all([
+        tx.list("tag-commands", snapshot.tenantId),
+        tx.list("tag-outbox", snapshot.tenantId),
+      ]);
+      if (current.revision !== 0 || commands.length || outbox.length) throw new Error("Nebula Tag destination already contains state, commands, or pending deliveries");
+      if (snapshot.revision > 0) await tx.put("tag-state", snapshot.tenantId, "current", { revision: snapshot.revision, state });
+      for (const item of snapshot.commands) await tx.put("tag-commands", snapshot.tenantId, item.commandId, item.result);
+      for (const item of snapshot.outbox) {
+        const id = `nebula-arcade:tag-outbox:${encodeURIComponent(snapshot.tenantId)}:${encodeURIComponent(item.commandId)}`;
+        await tx.put<PendingDelivery>("tag-outbox", snapshot.tenantId, id, {
+          id, tenantId: snapshot.tenantId, commandId: item.commandId, createdAt: item.createdAt,
+          attempts: item.attempts, ...(item.lastError ? { lastError: safeError(item.lastError) } : {}), result: item.result,
+        });
+      }
+      await tx.put("tag-migrations", snapshot.tenantId, migrationId, { importedAt: new Date().toISOString(), commands: snapshot.commands.length, outbox: snapshot.outbox.length });
+      return { imported: true, duplicate: false, revision: snapshot.revision, commands: snapshot.commands.length, outbox: snapshot.outbox.length };
     });
   }
 
