@@ -3,6 +3,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { DshLoungeStateStore } from "./lounge-state.js";
 import { DshLoungeHostStore } from "./lounge-host.js";
 import { SqliteDshLoungeAvatarStore } from "./lounge-avatar.js";
+import type { DshLoungeAvatarManifestV1 } from "./lounge-avatar.js";
+import type { DshLoungeStateV1 } from "./lounge-state.js";
+import type { DshLoungeHostStateV1 } from "./lounge-host.js";
+import { createAsyncJsonRecordStore } from "@spmt/async-json-store/factory";
+import type { AsyncJsonRecordStore } from "@spmt/async-json-store";
 import { DshLoungeProgramScheduler, DSH_LOUNGE_RECOMMENDED_RESTART_HOURS, dshLoungeBroadcastClock } from "./lounge-program.js";
 
 export class DshLoungeOverlayWeb {
@@ -46,6 +51,48 @@ export class DshLoungeOverlayWeb {
     return { startedAt, targetHours };
   }
 }
+
+/** Async Turso-backed read model for the Lounge overlay. */
+export class AsyncDshLoungeOverlayWeb {
+  private readonly records:AsyncJsonRecordStore;
+  constructor(options:{databasePath?:string;mode?:"sqlite"|"turso";url?:string;authToken?:string;now?:()=>string}={}){
+    this.now=options.now??(()=>new Date().toISOString());
+    this.records=createAsyncJsonRecordStore({service:"discord-stream-hub",...(options.databasePath?{databasePath:options.databasePath}:{}),...(options.mode?{mode:options.mode}:{}),...(options.url?{url:options.url}:{}),...(options.authToken?{authToken:options.authToken}:{})});
+  }
+  private readonly now:()=>string;
+  initialize(){return this.records.initialize();}
+  health(){return this.records.health();}
+  close(){return this.records.close();}
+  async handle(request:IncomingMessage,response:ServerResponse,url:URL):Promise<boolean>{
+    if(request.method==="GET"&&url.pathname==="/apps/discord-stream-hub/overlay/lounge"){this.overlay(response,url);return true;}
+    if(request.method==="GET"&&url.pathname==="/apps/discord-stream-hub/api/lounge/state"){await this.state(response,url);return true;}
+    return false;
+  }
+  private overlay(response:ServerResponse,url:URL){
+    let tenantId:string;try{tenantId=tenant(url);}catch(error){response.writeHead(400,{"content-type":"text/plain; charset=utf-8"});response.end(safe(error));return;}
+    const endpoint=`/apps/discord-stream-hub/api/lounge/state?tenant=${encodeURIComponent(tenantId)}`;
+    response.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-security-policy":"default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors *"});
+    response.end(renderOverlay(endpoint));
+  }
+  private async state(response:ServerResponse,url:URL){
+    try{
+      const tenantId=tenant(url),state=await this.records.get<DshLoungeStateV1>("lounge-state",tenantId,"current")??defaultLoungeState(tenantId,this.now());
+      const host=await this.records.get<DshLoungeHostStateV1>("lounge-host",tenantId,"current")??defaultLoungeHost(tenantId,this.now());
+      const avatar=await this.records.get<DshLoungeAvatarManifestV1>("lounge-avatar",tenantId,"manifest");
+      const broadcast=await this.records.transaction(async tx=>{
+        const current=await tx.get<{startedAt:string;targetHours:number}>("lounge-broadcast",tenantId,"current");
+        if(current)return current;
+        const value={startedAt:this.now(),targetHours:DSH_LOUNGE_RECOMMENDED_RESTART_HOURS};
+        await tx.put("lounge-broadcast",tenantId,"current",value);return value;
+      });
+      const clock=dshLoungeBroadcastClock(broadcast.startedAt,this.now(),broadcast.targetHours),program=this.scheduler.select(state,this.now(),clock);
+      sendJson(response,200,{schemaVersion:1,twitchLogin:"spacemountainlive",state,host,avatar:avatar??null,broadcast:clock,program});
+    }catch(error){sendJson(response,400,{error:safe(error)});}
+  }
+  private readonly scheduler=new DshLoungeProgramScheduler();
+}
+function defaultLoungeState(tenantId:string,now:string):DshLoungeStateV1{return{schemaVersion:1,tenantId,twitchLogin:"spacemountainlive",mode:"lounge",headline:"SpaceMountainLive Lounge",features:[],pileIds:[],raidReturnPending:false,updatedAt:now};}
+function defaultLoungeHost(tenantId:string,now:string):DshLoungeHostStateV1{return{schemaVersion:1,tenantId,host:"stella",persistent:"idle",gestureNonce:0,speaking:false,updatedAt:now};}
 
 function renderOverlay(endpoint: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpaceMountainLive Lounge</title><style>
