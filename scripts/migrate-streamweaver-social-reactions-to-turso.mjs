@@ -39,9 +39,10 @@ export async function importStreamWeaverSocialReactionSnapshot(store, snapshot, 
       if (prior.digest !== snapshot.digest) throw new Error("Migration ID already exists with a different social-reaction source digest");
       return { imported: false, duplicate: true, counts: snapshot.counts, digest: snapshot.digest };
     }
+    if ((await tx.list(TENANTS, "_index")).length) throw new Error("Turso social-reaction tenant index is not empty");
+    if ((await tx.list(MIGRATIONS, "_index")).length) throw new Error("Turso social-reaction migration receipts are not empty");
     for (const tenantId of snapshot.tenants) {
       if ((await tx.list(RECORDS, tenantId)).length) throw new Error(`Turso destination is not empty for social reactions / ${tenantId}`);
-      if (await tx.get(TENANTS, "_index", tenantId)) throw new Error(`Turso social-reaction tenant index already exists for ${tenantId}`);
     }
     for (const tenantId of snapshot.tenants) await tx.put(TENANTS, "_index", tenantId, { tenantId });
     for (const row of snapshot.reactions) await tx.put(RECORDS, row.tenantId, row.key, row.value);
