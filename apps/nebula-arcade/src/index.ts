@@ -69,3 +69,5 @@ export * from "./mosaic-store.js";
 export * from "./mosaic-runtime.js";
 export * from "./mosaic-generation.js";
 export * from "./mosaic-overlay.js";
+
+export * from "./async-tag-record-store.js";
