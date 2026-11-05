@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   disable-auto-deploy:
-    name: Make Apollo Actions the sole Node 2 deploy controller
+    name: Make Apollo Actions the sole Node 2 deploy controller; cancel stale full release runs
     runs-on: ubuntu-latest
     environment: production
     steps:
