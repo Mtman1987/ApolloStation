@@ -50,6 +50,7 @@ test("Nebula tabletop importer produces deterministic read-only snapshot and imp
     assert.deepEqual(await t.store.get("tabletop-command-receipts", "tenant-a", "twitch:conn:message-1"), { result: "Bingo claimed" });
     assert.equal((await t.store.get("tabletop-media-outbox", "tenant-a", "twitch:conn:pack-1")).status, "pending");
     assert.equal((await importNebulaTabletopSnapshot(t.store, first, "migration-a")).duplicate, true);
+    await assert.rejects(importNebulaTabletopSnapshot(t.store, { ...first, digest: "different-digest" }, "migration-a"), /different tabletop source digest/);
   } finally { await t.close(); }
 });
 
