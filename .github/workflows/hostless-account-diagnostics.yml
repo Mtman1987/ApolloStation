@@ -1,0 +1,69 @@
+name: Hostless account entitlement diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hostless-account-diagnostics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Read-only Hostless account diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: Node 1
+            secret: HOSTLESS_NODE1_TOKEN
+          - node: Node 2
+            secret: HOSTLESS_NODE2_TOKEN
+          - node: Node 3
+            secret: HOSTLESS_NODE3_TOKEN
+    steps:
+      - name: Inspect billing entitlement and app inventory (read only)
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
+          NODE_LABEL: ${{ matrix.node }}
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://api.hostless.cloud/v1";
+          const token = process.env.HOSTLESS_TOKEN;
+          if (!token) { console.log(process.env.NODE_LABEL + ": token missing"); process.exit(1); }
+          const paths = [
+            "/billing/cycles",
+            "/billing/breakdown?startDate=2026-11-01&endDate=2026-11-30",
+            "/billing/payment-config",
+            "/apps"
+          ];
+          const safe = (value, depth = 0) => {
+            if (depth > 5 || value == null) return value;
+            if (Array.isArray(value)) return value.slice(0, 20).map(v => safe(v, depth + 1));
+            if (typeof value !== "object") return value;
+            const out = {};
+            const allowed = /^(id|name|status|state|plan|tier|free|eligible|enabled|active|limit|limits|usage|used|remaining|allowance|resource|resources|app|apps|project|projects|invoice|invoices|credit|balance|amount|currency|cycle|period|startDate|endDate|message|error|code|paymentRequired|requiresPayment|hasPaymentMethod|canCreate|canDeploy|reason|type|count|total|storage|cpu|memory|database)$/i;
+            for (const [k,v] of Object.entries(value)) {
+              if (allowed.test(k)) out[k] = safe(v, depth + 1);
+            }
+            return out;
+          };
+          console.log("=== " + process.env.NODE_LABEL + " ===");
+          for (const path of paths) {
+            try {
+              const response = await fetch(base + path, {
+                headers: { Authorization: token, Accept: "application/json" }
+              });
+              const raw = await response.text();
+              let body;
+              try { body = raw ? JSON.parse(raw) : {}; } catch { body = { nonJsonResponse: true }; }
+              console.log(JSON.stringify({ endpoint: path.split("?")[0], httpStatus: response.status, result: safe(body) }));
+            } catch (error) {
+              console.log(JSON.stringify({ endpoint: path.split("?")[0], networkError: String(error).slice(0, 180) }));
+            }
+          }
+          NODE
