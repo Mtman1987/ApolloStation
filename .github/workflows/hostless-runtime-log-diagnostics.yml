@@ -88,6 +88,11 @@ jobs:
             echo "===== DEPLOYMENT LOGS: $DEPLOYMENT_ID =====" | tee -a hostless-diagnostics/summary.txt
             hostless logs --app "$APP" --deployment "$DEPLOYMENT_ID" 2>&1 | tee hostless-diagnostics/deployment.log
             echo "Deployment log command exit code: ${PIPESTATUS[0]}" | tee -a hostless-diagnostics/summary.txt
+            API="https://api.hostless.cloud/v1/apps/$APP/deployments/$DEPLOYMENT_ID"
+            curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API" -o hostless-diagnostics/deployment-detail.json
+            curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/logs" -o hostless-diagnostics/deployment-api-logs.json
+            curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/post-build-logs" -o hostless-diagnostics/post-build-logs.json
+            echo "Fetched Hostless deployment detail, release logs, and post-build logs through the API." | tee -a hostless-diagnostics/summary.txt
           fi
           exit 0
 
