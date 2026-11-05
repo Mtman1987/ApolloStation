@@ -17,6 +17,14 @@ import type {
   StoredNebulaTagCommandV1,
 } from "./nebula-tag-runtime.js";
 
+export interface AsyncNebulaTagSettings {
+  tagSuccessPoints?: number;
+  taggedPenaltyPoints?: number;
+  immunityMinutes?: number;
+  rotateMinutes?: number;
+  forceMinutes?: number;
+}
+
 interface PendingDelivery {
   id: string;
   tenantId: string;
@@ -65,8 +73,24 @@ export class AsyncNebulaTagRecordStore {
       : { revision: 0, state: createNebulaTagState(tenantId) };
   }
 
-  async rotationRules(_tenantId: string): Promise<NebulaTagRotationRulesV1> {
-    return { ...DEFAULT_NEBULA_TAG_ROTATION_RULES };
+  async settings(tenantId: string): Promise<AsyncNebulaTagSettings> {
+    requireId(tenantId, "tenantId");
+    return (await this.records.get<AsyncNebulaTagSettings>("tag-settings", tenantId, "@arcade")) ?? {};
+  }
+
+  async setSettings(tenantId: string, settings: AsyncNebulaTagSettings): Promise<void> {
+    requireId(tenantId, "tenantId");
+    validateSettings(settings);
+    await this.records.put("tag-settings", tenantId, "@arcade", settings);
+  }
+
+  async rotationRules(tenantId: string): Promise<NebulaTagRotationRulesV1> {
+    const settings = await this.settings(tenantId);
+    return {
+      ...DEFAULT_NEBULA_TAG_ROTATION_RULES,
+      ...(settings.rotateMinutes !== undefined ? { rotateAfterMs: settings.rotateMinutes * 60_000 } : {}),
+      ...(settings.forceMinutes !== undefined ? { forceRandomAfterMs: settings.forceMinutes * 60_000 } : {}),
+    };
   }
 
   async applyCommand(command: NebulaTagCommandV1, rules: NebulaTagRulesV1 = DEFAULT_NEBULA_TAG_RULES): Promise<StoredNebulaTagCommandV1> {
@@ -83,7 +107,14 @@ export class AsyncNebulaTagRecordStore {
         };
       }
 
-      const applied = executeNebulaTagCommand(current.state, command, rules);
+      const settings = (await tx.get<AsyncNebulaTagSettings>("tag-settings", command.tenantId, "@arcade")) ?? {};
+      const effectiveRules = {
+        ...rules,
+        ...(settings.tagSuccessPoints !== undefined ? { tagSuccessPoints: settings.tagSuccessPoints } : {}),
+        ...(settings.taggedPenaltyPoints !== undefined ? { taggedPenaltyPoints: settings.taggedPenaltyPoints } : {}),
+        ...(settings.immunityMinutes !== undefined ? { immunityMs: settings.immunityMinutes * 60_000 } : {}),
+      };
+      const applied = executeNebulaTagCommand(current.state, command, effectiveRules);
       const revision = current.revision + 1;
       const result: StoredNebulaTagCommandV1 = {
         revision,
@@ -190,4 +221,20 @@ function safeError(value: string): string {
     .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
     .replace(/((?:token|secret|password|authorization)\s*[:=]\s*)\S+/gi, "$1[REDACTED]")
     .slice(0, 1_000);
+}
+
+function validateSettings(settings: AsyncNebulaTagSettings): void {
+  const ranges: Record<keyof AsyncNebulaTagSettings, [number, number]> = {
+    tagSuccessPoints: [0, 1_000_000],
+    taggedPenaltyPoints: [0, 1_000_000],
+    immunityMinutes: [0, 10_080],
+    rotateMinutes: [1, 10_080],
+    forceMinutes: [1, 10_080],
+  };
+  for (const [key, value] of Object.entries(settings) as Array<[keyof AsyncNebulaTagSettings, number]>) {
+    const range = ranges[key];
+    if (!range || !Number.isSafeInteger(value) || value < range[0] || value > range[1]) {
+      throw new Error(`Tag setting ${key} is invalid`);
+    }
+  }
 }
