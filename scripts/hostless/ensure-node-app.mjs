@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
 const token = process.env.HOSTLESS_TOKEN;
+const secretBundle = process.env.APOLLO_GH_SECRETS_JSON;
 const api = process.env.HOSTLESS_API_URL ?? "https://api.hostless.cloud/v1";
 
 const nodes = {
@@ -92,6 +93,23 @@ function runCli(args, description) {
   if (result.status !== 0) fail(`${description} failed with exit code ${result.status}.`);
 }
 
+function syncRuntimeSecrets(projectId, appName) {
+  if (!secretBundle) fail("APOLLO_GH_SECRETS_JSON was not supplied; refusing to deploy without runtime secret synchronization.");
+  let bundle;
+  try { bundle = JSON.parse(secretBundle); } catch { fail("GitHub Actions secret bundle is not valid JSON."); }
+  const excluded = new Set(["HOSTLESS_NODE1_TOKEN", "HOSTLESS_NODE2_TOKEN", "HOSTLESS_NODE3_TOKEN", "GITHUB_TOKEN"]);
+  const entries = Object.entries(bundle).filter(([key, value]) =>
+    /^[A-Z][A-Z0-9_]{1,127}$/.test(key) && !excluded.has(key) &&
+    !/^HOSTLESS_.*TOKEN$/.test(key) && typeof value === "string" && value.length > 0
+  );
+  if (entries.length === 0) fail("No runtime secrets were present in the GitHub Actions secret bundle.");
+  console.log(`Synchronizing ${entries.length} GitHub Actions secrets to ${appName} (values are write-only and never logged).`);
+  for (const [key, value] of entries) {
+    runCli(["env", "set", `${key}=${value}`, "--write-only", "--app", appName, "--project", String(projectId)], `Set runtime secret ${key}`);
+  }
+  console.log(`Synchronized ${entries.length} runtime secrets to ${appName}.`);
+}
+
 const node = nodes[nodeKey];
 const projectsResponse = await request("/projects");
 const projects = rows(projectsResponse, ["projects", "data", "items"]);
@@ -110,17 +128,17 @@ const matching = apps.filter(app => normalize(nameOf(app)) === normalize(node.ap
 if (matching.length > 1) fail(`Multiple apps named ${node.app} exist in project ${projectId}; refusing to guess.`);
 
 if (matching.length === 0) {
-  console.log(`App ${node.app} does not exist. Creating it from this checked-out ApolloStation commit; Hostless create-app also starts its first deployment.`);
+  console.log(`App ${node.app} does not exist. Creating it; Hostless may start an initial deployment automatically.`);
   runCli(
     ["create", "app", node.app, "--project", String(projectId), "--yes", "--wait", "--json"],
-    `Create and first deploy of ${node.app}`,
-  );
-} else {
-  console.log(`Found existing app ${node.app}; deploying commit ${commit}.`);
-  runCli(
-    ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
-    `Deploy ${node.app}`,
+    `Create ${node.app}`,
   );
 }
+syncRuntimeSecrets(projectId, node.app);
+console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
+runCli(
+  ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
+  `Deploy ${node.app}`,
+);
 
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
