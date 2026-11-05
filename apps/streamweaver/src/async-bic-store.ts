@@ -1,0 +1,29 @@
+import { createAsyncJsonRecordStore } from "@spmt/async-json-store/factory";
+import type { AsyncJsonRecordStore } from "@spmt/async-json-store";
+import type { StreamWeaverBicSnapshotV1, StreamWeaverBicMutationV1, StreamWeaverLegacyBicDataV1 } from "./bic-store.js";
+
+const NS="bic-state";
+type Mutation=Omit<StreamWeaverBicMutationV1,"duplicate">;
+interface TenantState { tenantId:string; total:number; victims:Record<string,{displayName:string;count:number}>; blacklist:string[]; operations:Record<string,Mutation|{imported:number}>; }
+const empty=(tenantId:string):TenantState=>({tenantId,total:0,victims:{},blacklist:[],operations:{}});
+export interface AsyncStreamWeaverBicStoreOptions { databasePath?:string; mode?:"sqlite"|"turso"; url?:string; authToken?:string; }
+export class AsyncStreamWeaverBicStore {
+ private readonly records:AsyncJsonRecordStore;
+ constructor(options:AsyncStreamWeaverBicStoreOptions={}){this.records=createAsyncJsonRecordStore({service:"streamweaver",...(options.databasePath?{databasePath:options.databasePath}:{}),...(options.mode?{mode:options.mode}:{}),...(options.url?{url:options.url}:{}),...(options.authToken?{authToken:options.authToken}:{})});}
+ initialize(){return this.records.initialize();} health(){return this.records.health();} close(){return this.records.close();}
+ async steal(tenantId:string,target:string,displayName:string,idempotencyKey:string):Promise<StreamWeaverBicMutationV1>{return this.mutate("steal",tenantId,target,displayName,idempotencyKey);}
+ async remove(tenantId:string,target:string,displayName:string,idempotencyKey:string):Promise<StreamWeaverBicMutationV1>{return this.mutate("remove",tenantId,target,displayName,idempotencyKey);}
+ async snapshot(tenantId:string):Promise<StreamWeaverBicSnapshotV1>{const s=await this.read(tenantId);return{tenantId:s.tenantId,total:s.total,victims:Object.entries(s.victims).filter(([,v])=>v.count>0).map(([name,v])=>({name,displayName:v.displayName,count:v.count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name)),blacklist:[...s.blacklist].sort()};}
+ async isBlacklisted(tenantId:string,target:string){return(await this.read(tenantId)).blacklist.includes(safeName(target));}
+ async addToBlacklist(tenantId:string,target:string){let changed=false;await this.update(tenantId,s=>{const name=safeName(target);if(!s.blacklist.includes(name)){s.blacklist.push(name);changed=true;}});return changed;}
+ async removeFromBlacklist(tenantId:string,target:string){let changed=false;await this.update(tenantId,s=>{const name=safeName(target),before=s.blacklist.length;s.blacklist=s.blacklist.filter(v=>v!==name);changed=s.blacklist.length!==before;});return changed;}
+ async importLegacy(tenantId:string,legacy:StreamWeaverLegacyBicDataV1,idempotencyKey:string){const tenant=safeId(tenantId,"tenantId"),key="migration:"+safeKey(idempotencyKey);let imported=0,duplicate=false;await this.update(tenant,s=>{const prior=s.operations[key];if(prior){imported=Number((prior as {imported?:number}).imported??0);duplicate=true;return;}for(const[raw,count]of Object.entries(legacy.victims??{})){const name=safeName(raw),n=positiveInt(count);if(!name||n<=0||s.victims[name])continue;s.victims[name]={displayName:name,count:n};imported+=n;}s.total=Math.max(s.total,positiveInt(legacy.total));for(const raw of legacy.blacklist??[]){const name=safeName(raw);if(name&&!s.blacklist.includes(name))s.blacklist.push(name);}s.operations[key]={imported};});return{imported,snapshot:await this.snapshot(tenant),duplicate};}
+ private async mutate(kind:"steal"|"remove",tenantId:string,target:string,displayName:string,idempotencyKey:string):Promise<StreamWeaverBicMutationV1>{const tenant=safeId(tenantId,"tenantId"),name=safeName(target),display=safeDisplay(displayName||target),key=safeKey(idempotencyKey);let result:StreamWeaverBicMutationV1|undefined;await this.update(tenant,s=>{const prior=s.operations[key] as Mutation|undefined;if(prior){result={...prior,duplicate:true};return;}if(kind==="steal"&&s.blacklist.includes(name))throw new Error(`${display} is protected from Bic thefts`);const total=kind==="steal"?s.total+1:Math.max(0,s.total-1),userCount=kind==="steal"?(s.victims[name]?.count??0)+1:Math.max(0,(s.victims[name]?.count??0)-1);s.total=total;if(userCount>0)s.victims[name]={displayName:display,count:userCount};else delete s.victims[name];const saved={tenantId:tenant,target:name,displayName:display,total,userCount};s.operations[key]=saved;result={...saved,duplicate:false};});if(!result)throw new Error("Bic mutation did not complete");return result;}
+ private async read(tenantId:string){await this.initialize();return(await this.records.get<TenantState>(NS,safeId(tenantId,"tenantId"),"state"))??empty(safeId(tenantId,"tenantId"));}
+ private async update(tenantId:string,change:(state:TenantState)=>void){await this.initialize();const tenant=safeId(tenantId,"tenantId");await this.records.transaction(async tx=>{const state=(await tx.get<TenantState>(NS,tenant,"state"))??empty(tenant);change(state);await tx.put(NS,tenant,"state",state);});}
+}
+function safeId(value:unknown,field:string){const v=String(value??"").trim().replace(/[^A-Za-z0-9._:-]/g,"").slice(0,180);if(!v)throw new Error(`${field} is required`);return v;}
+function safeKey(value:unknown){const v=String(value??"").trim().replace(/[^A-Za-z0-9._:-]/g,"").slice(0,240);if(!v)throw new Error("idempotencyKey is required");return v;}
+function safeName(value:unknown){const v=String(value??"").trim().replace(/^@/,"").toLowerCase().replace(/[^a-z0-9_.-]/g,"").slice(0,80);if(!v)throw new Error("Bic target is required");return v;}
+function safeDisplay(value:unknown){return String(value??"").trim().replace(/[\\r\\n\\u0000-\\u001f]/g," ").slice(0,120)||"unknown";}
+function positiveInt(value:unknown){const n=Number(value);return Number.isSafeInteger(n)&&n>0?n:0;}
