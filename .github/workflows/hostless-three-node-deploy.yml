@@ -13,7 +13,7 @@ on:
       - "tsconfig*.json"
       - ".github/workflows/hostless-three-node-deploy.yml"
   push:
-    branches: [main]
+    branches: [main, ci/hostless-gated-three-node-deploy]
   workflow_dispatch:
     inputs:
       deploy:
@@ -67,7 +67,7 @@ jobs:
     if: >-
       ${{ needs.full-test-suite.result == 'success' &&
           vars.HOSTLESS_RELEASE_APPROVED == 'true' &&
-          ((github.event_name == 'push' && vars.HOSTLESS_AUTO_DEPLOY == 'true') ||
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOSTLESS_AUTO_DEPLOY == 'true') ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     steps:
       - name: Install verified Hostless CLI
