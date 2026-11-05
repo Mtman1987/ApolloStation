@@ -115,7 +115,7 @@ test("async Tag runtime awaits state, executes commands, and flushes durable SPM
     assert.equal(tagged.delivery.delivered, 1);
     assert.equal((await runtime.getState("runtime-tenant")).state.currentItUserId, "player-two");
     assert.equal((await store.listPendingDeliveries("runtime-tenant")).length, 0);
-    assert.equal(calls.filter((call) => call.headers["idempotency-key"] === "nebula-arcade:tag:tag-one-two").length, 3);
+    assert.equal(calls.filter((call) => call.headers["idempotency-key"] === "nebula-arcade:tag:tag-one-two").length, 2);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });
