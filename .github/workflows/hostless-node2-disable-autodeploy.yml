@@ -20,6 +20,34 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Disable automatic Git push deployments for Node 1 without redeploying it
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+        run: |
+          set -euo pipefail
+          API="https://api.hostless.cloud/v1/apps/apollo-node-1"
+          curl -fsS -X PATCH "$API" \
+            -H "Authorization: $HOSTLESS_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data '{"autoDeployOnPush":false}' \
+            -o /tmp/hostless-node1-update.json
+          curl -fsS "$API" \
+            -H "Authorization: $HOSTLESS_TOKEN" \
+            -H "Accept: application/json" \
+            -o /tmp/hostless-node1-app.json
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          const d = JSON.parse(fs.readFileSync("/tmp/hostless-node1-app.json", "utf8"));
+          const a = d.app ?? d;
+          if (a.autoDeployOnPush !== false || a.status !== "RUNNING") {
+            console.error("Node 1 auto-deploy disable or running-state verification failed.");
+            console.error(JSON.stringify({ status: a.status, autoDeployOnPush: a.autoDeployOnPush }));
+            process.exit(1);
+          }
+          console.log("Verified: Node 1 remains RUNNING and autoDeployOnPush=false; no redeploy requested.");
+          NODE
+
       - name: Disable automatic Git push deployments for Node 2
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
