@@ -121,3 +121,47 @@ test("async Tag runtime awaits state, executes commands, and flushes durable SPM
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("async Tag snapshot import preserves state, dedupe receipts, and pending outbox", async () => {
+  const sourceDir = await mkdtemp(join(tmpdir(), "nebula-tag-import-source-"));
+  const targetDir = await mkdtemp(join(tmpdir(), "nebula-tag-import-target-"));
+  const source = new AsyncNebulaTagRecordStore({ databasePath: join(sourceDir, "source.sqlite") });
+  const target = new AsyncNebulaTagRecordStore({ databasePath: join(targetDir, "target.sqlite") });
+  try {
+    await source.initialize();
+    await target.initialize();
+    const joinedOne = await source.applyCommand(command("tenant-import", "join", "join-one", "player-one", 0, { username: "One" }));
+    const joinedTwo = await source.applyCommand(command("tenant-import", "join", "join-two", "player-two", 1, { username: "Two" }));
+    const tagged = await source.applyCommand(command("tenant-import", "tag", "tag-one-two", "player-one", 2, { targetUserId: "player-two" }));
+    const state = await source.getState("tenant-import");
+    const pending = await source.listPendingDeliveries("tenant-import");
+    const snapshot = {
+      tenantId: "tenant-import",
+      revision: state.revision,
+      state: state.state,
+      commands: [
+        { commandId: "join-one", occurredAt: at(0), result: joinedOne.result },
+        { commandId: "join-two", occurredAt: at(1), result: joinedTwo.result },
+        { commandId: "tag-one-two", occurredAt: at(2), result: tagged.result },
+      ],
+      outbox: pending.map((item) => ({
+        commandId: item.result.commandId,
+        createdAt: at(2),
+        attempts: 0,
+        result: item.result,
+      })),
+    };
+    const imported = await target.importSnapshot(snapshot, "sqlite-tag-snapshot-v1");
+    assert.deepEqual(imported, { imported: true, duplicate: false, revision: state.revision, commands: 3, outbox: pending.length });
+    assert.equal((await target.getState("tenant-import")).state.currentItUserId, "player-two");
+    assert.equal((await target.listPendingDeliveries("tenant-import")).length, pending.length);
+    const replay = await target.applyCommand(command("tenant-import", "tag", "tag-one-two", "player-one", 2, { targetUserId: "player-two" }));
+    assert.equal(replay.duplicate, true);
+    assert.deepEqual(await target.importSnapshot(snapshot, "sqlite-tag-snapshot-v1"), { imported: false, duplicate: true, revision: state.revision, commands: 3, outbox: pending.length });
+  } finally {
+    await source.close();
+    await target.close();
+    await rm(sourceDir, { recursive: true, force: true });
+    await rm(targetDir, { recursive: true, force: true });
+  }
+});
