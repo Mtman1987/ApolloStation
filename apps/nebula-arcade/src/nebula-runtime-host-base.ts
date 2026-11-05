@@ -202,7 +202,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   return {
     server,
     async listen() { if (mosaics instanceof AsyncNebulaMosaicRecordStore) await mosaics.initialize(); await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async close() { if (server.listening) await close(server); await controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
