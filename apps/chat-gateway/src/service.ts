@@ -5,7 +5,7 @@ import { basename, isAbsolute, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
+import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, AsyncStreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
@@ -173,7 +173,7 @@ export class SupervisedChatGatewayService {
   private readonly streamweaverImage?: StreamWeaverImageWorker;
   private readonly streamweaverAvatar?:StreamWeaverAvatarWorker;
   private readonly streamweaverAvatarSettings?:StreamWeaverRuntimeSettingsStore;
-  private readonly generationSettings?:StreamWeaverGenerationStore;
+  private readonly generationSettings?:StreamWeaverGenerationStore|AsyncStreamWeaverGenerationStore;
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   private readonly discordDashboard: NebulaDiscordDashboardEgressV1;
@@ -241,8 +241,8 @@ export class SupervisedChatGatewayService {
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
-      const generationSettings=this.generationSettings=new StreamWeaverGenerationStore(options.streamweaver.databasePath);
-      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=generationSettings.read(context.tenantId).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
+      const generationMode=options.operationMode==="active"?(process.env.STREAMWEAVER_GENERATION_STORE??"sqlite"):"sqlite";if(generationMode!=="sqlite"&&generationMode!=="turso")throw new Error("STREAMWEAVER_GENERATION_STORE must be sqlite or turso");if(generationMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_GENERATION_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");const generationSettings=this.generationSettings=generationMode==="turso"?new AsyncStreamWeaverGenerationStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}):new StreamWeaverGenerationStore(options.streamweaver.databasePath);
+      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=(await generationSettings.read(context.tenantId)).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
         const loungeMedia = context.source === "twitch" && request.action.startsWith("hmo.media.") && context.channelId.toLowerCase() === "spacemountainlive";
         if (loungeMedia) return suiteActions.execute({ ...request, args: { ...request.args, roomId: "system-spacemountainlive-lounge" } }, context);
         const descriptor = spmtSuiteActionDescriptor(request.action), roomId = `${context.source}:${context.connectionId ?? "chat"}:${context.channelId}`;
@@ -444,7 +444,7 @@ export class SupervisedChatGatewayService {
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
-  async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); await this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); const clean = !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash; const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname); if (!clean || !(url.protocol === "https:" || (url.protocol === "http:" && loopback))) throw new Error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin"); return url.origin; }
