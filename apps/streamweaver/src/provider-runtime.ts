@@ -40,6 +40,7 @@ import { StreamWeaverFlowPackageStore } from "./flow-packages.js";
 import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBicStore } from "./bic-store.js";
+import { AsyncStreamWeaverBicStore } from "./async-bic-store.js";
 import { StreamWeaverBicRuntime, StreamWeaverBicCommandExecutor, StreamWeaverSocialActionExecutor, StreamWeaverSocialReactionReconciler } from "./donor-social-actions.js";
 import { SqliteStreamWeaverSocialReactionStore } from "./social-reaction-store.js";
 import { AsyncStreamWeaverSocialReactionStore } from "./async-social-reaction-store.js";
@@ -87,7 +88,8 @@ export class StreamWeaverProviderRuntime {
   private readonly flows: StreamWeaverFlowPackageStore;
   private readonly runtimeSettings: StreamWeaverRuntimeSettingsStore;
   private readonly research:StreamWeaverResearchConversation;
-  private readonly bic: SqliteStreamWeaverBicStore;
+  private readonly bic: SqliteStreamWeaverBicStore | AsyncStreamWeaverBicStore;
+  private readonly bicReady: Promise<void>;
   private readonly socialReactions:SqliteStreamWeaverSocialReactionStore|AsyncStreamWeaverSocialReactionStore;
   private readonly socialReactionReady:Promise<void>;
   private readonly socialReactionReconciler:StreamWeaverSocialReactionReconciler;
@@ -118,7 +120,12 @@ export class StreamWeaverProviderRuntime {
     this.flows = new StreamWeaverFlowPackageStore(options.databasePath, options.now);
     this.runtimeSettings = new StreamWeaverRuntimeSettingsStore(options.databasePath);
     this.research=new StreamWeaverResearchConversation(options.databasePath,tenantId=>this.runtimeSettings.research(tenantId),options.nowMs);
-    this.bic = new SqliteStreamWeaverBicStore(options.databasePath);
+    const bicStoreMode=options.simulation===true?"sqlite":process.env.STREAMWEAVER_BIC_STORE??"sqlite";
+    if(bicStoreMode!=="sqlite"&&bicStoreMode!=="turso")throw new Error("STREAMWEAVER_BIC_STORE must be sqlite or turso");
+    if(bicStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_BIC_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
+    const asyncBicStore=bicStoreMode==="turso"?new AsyncStreamWeaverBicStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}):undefined;
+    this.bic=asyncBicStore??new SqliteStreamWeaverBicStore(options.databasePath);
+    this.bicReady=asyncBicStore?asyncBicStore.initialize():Promise.resolve();
     const socialReactionStoreMode=options.simulation===true?"sqlite":process.env.STREAMWEAVER_SOCIAL_REACTIONS_STORE??"sqlite";
     if(socialReactionStoreMode!=="sqlite"&&socialReactionStoreMode!=="turso")throw new Error("STREAMWEAVER_SOCIAL_REACTIONS_STORE must be sqlite or turso");
     if(socialReactionStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_SOCIAL_REACTIONS_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
@@ -334,5 +341,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.stellaLoungeHost?.close(); this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); if(this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close());this.socialReactions.close(); }
+  close() { this.stellaLoungeHost?.close(); this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); const closeBic=()=>this.bic instanceof AsyncStreamWeaverBicStore?this.bic.close():this.bic.close(); if(this.bic instanceof AsyncStreamWeaverBicStore||this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return Promise.all([this.bicReady.catch(()=>undefined).then(closeBic),this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close())]).then(()=>undefined);this.bic.close();this.socialReactions.close(); }
 }
