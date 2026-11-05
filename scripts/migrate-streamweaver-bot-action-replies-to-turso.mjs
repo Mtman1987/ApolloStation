@@ -9,7 +9,8 @@ export function readStreamWeaverBotActionReplySnapshot(db){
  const integrity=db.prepare("PRAGMA integrity_check").all().map(row=>Object.values(row)[0]);
  if(integrity.length!==1||integrity[0]!=="ok")throw new Error("Source SQLite integrity_check failed");
  const exists=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='streamweaver_bot_action_replies'").get());
- const rows=exists?db.prepare("SELECT tenant_id,request_id,body,acknowledged,done,next_attempt FROM streamweaver_bot_action_replies ORDER BY tenant_id,request_id").all():[];
+ if(!exists)throw new Error("Source SQLite is missing streamweaver_bot_action_replies");
+ const rows=db.prepare("SELECT tenant_id,request_id,body,acknowledged,done,next_attempt FROM streamweaver_bot_action_replies ORDER BY tenant_id,request_id").all();
  const receipts=rows.map(row=>({tenantId:String(row.tenant_id),key:String(row.request_id),value:{...JSON.parse(String(row.body)),acknowledged:Number(row.acknowledged)===1,done:Number(row.done)===1,nextAttempt:Number(row.next_attempt)}}));
  const tenants=[...new Set(receipts.map(row=>row.tenantId))].sort(),snapshot={receipts,tenants};
  const digest=createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
