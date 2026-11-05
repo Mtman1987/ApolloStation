@@ -37,7 +37,11 @@ async function request(path) {
 
 function rows(value, keys) {
   if (Array.isArray(value)) return value;
-  for (const key of keys) if (Array.isArray(value?.[key])) return value[key];
+  for (const key of keys) {
+    if (Array.isArray(value?.[key])) return value[key];
+    if (Array.isArray(value?.data?.[key])) return value.data[key];
+  }
+  if (Array.isArray(value?.data)) return value.data;
   return null;
 }
 
