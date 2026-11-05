@@ -1,5 +1,6 @@
 import { parseExecutionTargetV1 } from "@spmt/contracts";
 import { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
+import { AsyncStreamWeaverBotActionReplies } from "./async-bot-action-replies.js";
 import { normalizeTextForTTS } from "./tts-text.js";
 import {activeRideLookup, type NebulaCheckinBonusAwarder} from "./ride-runtime.js";
 import { SqliteStreamWeaverStellaLoungeHostStore, StreamWeaverStellaLoungeHost } from "./stella-lounge-host.js";
@@ -104,7 +105,7 @@ export class StreamWeaverProviderRuntime {
   private readonly stellaLoungeHost?:StreamWeaverStellaLoungeHost;
   private readonly pokemon:StreamWeaverPokemonStore;
   private readonly secureChoices:StreamWeaverSecureChoiceStore;
-  private readonly botActionReplies: StreamWeaverBotActionReplies;
+  private readonly botActionReplies: StreamWeaverBotActionReplies | AsyncStreamWeaverBotActionReplies;
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
     this.community=new StreamWeaverCommunityStore(options.databasePath);
@@ -141,7 +142,11 @@ export class StreamWeaverProviderRuntime {
       { id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } },
       { id: "streamweaver.auto-translation", observe: (message) => { this.translationRuntime.observe(message); } },
     ];
-    this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
+    const botActionRepliesMode=options.simulation===true?"sqlite":process.env.STREAMWEAVER_BOT_ACTION_REPLIES_STORE??"sqlite";
+    if(botActionRepliesMode!=="sqlite"&&botActionRepliesMode!=="turso")throw new Error("STREAMWEAVER_BOT_ACTION_REPLIES_STORE must be sqlite or turso");
+    if(botActionRepliesMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_BOT_ACTION_REPLIES_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
+    this.botActionReplies=botActionRepliesMode==="turso"?new AsyncStreamWeaverBotActionReplies({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!,...(options.nowMs?{now:options.nowMs}:{})}):new StreamWeaverBotActionReplies(options.databasePath,options.nowMs);
+    const botActionRepliesReady=this.botActionReplies instanceof AsyncStreamWeaverBotActionReplies?this.botActionReplies.initialize():Promise.resolve();
     const twitchChannelAllowed = (message: NormalizedChatMessageV1) => options.simulation === true || message.provider !== "twitch" || (options.connections ?? []).some(connection => connection.tenantId === message.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === message.channelId);
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed, options.allowTwitchMedia !== false) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
@@ -288,7 +293,7 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.stellaLoungeHost?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.socialReactionReady;const social=await this.socialReactionReconciler.runOnce(Math.min(limit,50));const translations=await this.translationRuntime.reconcile(Math.min(limit,50));const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices,social,translations}; }
+  async reconcile(limit = 100) { await (this.botActionReplies instanceof AsyncStreamWeaverBotActionReplies?botActionRepliesReady:Promise.resolve()); if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.stellaLoungeHost?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.socialReactionReady;const social=await this.socialReactionReconciler.runOnce(Math.min(limit,50));const translations=await this.translationRuntime.reconcile(Math.min(limit,50));const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices,social,translations}; }
   private async reconcileProviderEvents(){
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
@@ -341,5 +346,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.stellaLoungeHost?.close(); this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); const closeBic=()=>this.bic instanceof AsyncStreamWeaverBicStore?this.bic.close():this.bic.close(); if(this.bic instanceof AsyncStreamWeaverBicStore||this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return Promise.all([this.bicReady.catch(()=>undefined).then(closeBic),this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close())]).then(()=>undefined);this.bic.close();this.socialReactions.close(); }
+  async close() { this.stellaLoungeHost?.close(); await this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); const closeBic=()=>this.bic instanceof AsyncStreamWeaverBicStore?this.bic.close():this.bic.close(); if(this.bic instanceof AsyncStreamWeaverBicStore||this.socialReactions instanceof AsyncStreamWeaverSocialReactionStore)return Promise.all([this.bicReady.catch(()=>undefined).then(closeBic),this.socialReactionReady.catch(()=>undefined).then(()=>this.socialReactions.close())]).then(()=>undefined);this.bic.close();this.socialReactions.close(); }
 }
