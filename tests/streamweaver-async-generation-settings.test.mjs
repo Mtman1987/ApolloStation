@@ -22,5 +22,5 @@ test("async generation settings persist scoped settings, catalog and job checkpo
 });
 test("async generation settings reject unsafe public-only model and invalid scopes",async()=>{
  const directory=await mkdtemp(join(tmpdir(),"streamweaver-generation-")),databasePath=join(directory,"records.sqlite"),store=new AsyncStreamWeaverGenerationStore({mode:"sqlite",databasePath});await store.initialize();
- try{await assert.rejects(store.save("tenant-a","public",{provider:"cloudflare",cloudflareModel:"@cf/black-forest-labs/klein-9b"}),/restricted to private/);await assert.rejects(store.save("tenant-a","private:bad scope",{provider:"automatic"}),/scope/);}finally{await store.close();await rm(directory,{recursive:true,force:true});}
+ try{await assert.rejects(store.save("tenant-a","public",{provider:"cloudflare",cloudflareModel:"@cf/black-forest-labs/flux-2-klein-9b"}),/restricted to private/);await assert.rejects(store.save("tenant-a","private:bad scope",{provider:"automatic"}),/scope/);}finally{await store.close();await rm(directory,{recursive:true,force:true});}
 });
