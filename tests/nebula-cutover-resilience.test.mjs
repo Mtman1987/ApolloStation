@@ -39,7 +39,7 @@ test('production readiness checks the internal runtime and persisted state',asyn
     try{
       process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO='1';
       response=await fetch(origin+'/health/ready');assert.equal(response.status,503);
-      const blocked=await response.json();assert.equal(blocked.ready,false);assert.match(blocked.message,/Nebula tabletop state, Bingo rewards, Quackverse trades/);
+      const blocked=await response.json();assert.equal(blocked.ready,false);assert.equal(blocked.error,'unavailable');assert.match(blocked.message,/Nebula tabletop state, Bingo rewards, Quackverse trades/);
     }finally{
       if(previousRequireFullTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_FULL_TURSO=previousRequireFullTurso;
     }
