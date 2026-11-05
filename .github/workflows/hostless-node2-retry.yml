@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-release
+  group: apollo-hostless-node2-retry
   cancel-in-progress: false
 
 jobs:
