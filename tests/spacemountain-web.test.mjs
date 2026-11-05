@@ -328,7 +328,9 @@ test("sandbox environment guards fail closed before a process can reach a provid
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "yes" }), /must be 0 or 1/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, DISCORD_BOT_TOKEN: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY: "forbidden" }), /rejects provider/);
-  assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://spmt.live" }), /private Sprite/);
+  assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://spmt.live" }), /supported private HTTPS app URL/);
+  assert.equal(validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://apollo-node-1.hostless.app" }).publicBaseUrl, "https://apollo-node-1.hostless.app");
+  assert.equal(validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://apollo-node-1.apps.hostless.cloud" }).publicBaseUrl, "https://apollo-node-1.apps.hostless.cloud");
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, DATABASE_PATH: "/data/spmt.db" }), /sandbox-named/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_HOST: "0.0.0.0" }), /loopback/);
   assert.equal(validateSandboxWebEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_SANDBOX_ID: "spmt-ecosystem-sandbox", SPMT_ORIGIN: "http://127.0.0.1:3000" }).spmtOrigin, "http://127.0.0.1:3000");

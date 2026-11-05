@@ -53,7 +53,8 @@
     "db:migrate:streamweaver-bot-action-replies:turso": "node scripts/migrate-streamweaver-bot-action-replies-to-turso.mjs",
     "db:migrate:streamweaver-bic:turso": "node scripts/migrate-streamweaver-bic-to-turso.mjs",
     "db:migrate:streamweaver-rides:turso": "node scripts/migrate-streamweaver-rides-to-turso.mjs",
-    "db:migrate:streamweaver-generation:turso": "node scripts/migrate-streamweaver-generation-to-turso.mjs"
+    "db:migrate:streamweaver-generation:turso": "node scripts/migrate-streamweaver-generation-to-turso.mjs",
+    "hostless:node1": "node scripts/hostless/run-private-preview.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

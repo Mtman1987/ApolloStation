@@ -1,0 +1,10 @@
+build:
+  system: auto
+  command: "npm ci && npx tsc -b apps/spmt-service apps/spacemountain-web && node scripts/build-rtc-browser.mjs"
+working_directory: /
+build_context_directory: /
+start_command: "npm run hostless:node1"
+health_check:
+  type: http
+  http_path: /sandbox/health
+  interval_in_seconds: 30

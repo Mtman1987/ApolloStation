@@ -1,0 +1,61 @@
+name: ApolloStation Hostless private owner preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Build, configure, and deploy the private empty-data owner preview"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-hostless-private-preview
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify preview launcher syntax
+        run: node --check scripts/hostless/run-private-preview.mjs && node --check scripts/hostless/deploy-private-preview.mjs
+      - name: Build and run regression suite
+        run: npm test
+
+  deploy:
+    needs: test
+    if: ${{ needs.test.result == 'success' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: preview
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Deploy Node 1 private preview only
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APOLLO_PREVIEW_PASSWORD: ${{ secrets.APOLLO_PREVIEW_PASSWORD }}
+        run: node scripts/hostless/deploy-private-preview.mjs

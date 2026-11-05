@@ -47,7 +47,10 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Validate Hostless automation helper syntax
-        run: node --check scripts/hostless/ensure-node-app.mjs
+        run: |
+          node --check scripts/hostless/ensure-node-app.mjs
+          node --check scripts/hostless/run-private-preview.mjs
+          node --check scripts/hostless/deploy-private-preview.mjs
       - name: Install media test tools
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -85,6 +88,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Refuse partial three-node deployment until every node runtime is ready
+        run: |
+          node - <<'NODE'
+          const scripts = require("./package.json").scripts || {};
+          const missing = ["node1", "node2", "node3"].filter(node => !scripts["hostless:" + node]);
+          if (missing.length) {
+            console.error("Three-node deployment blocked; missing tested runtime scripts: " + missing.join(", "));
+            process.exit(1);
+          }
+          NODE
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
