@@ -31,3 +31,14 @@ test("DSH MtFixIt importer refuses a populated namespace without partial writes"
   assert.equal((await t.store.list("mtfixit-migrations","_index")).length,0);
  }finally{await t.close();}
 });
+
+test("DSH MtFixIt importer detects occupied tenant partitions outside source snapshot",async()=>{
+ const t=await fixture();try{
+  const db=new DatabaseSync(t.sourcePath,{readOnly:true}),snapshot=readDshMtFixItSnapshot(db);db.close();
+  await t.store.put("mtfixit-report-tenants","_index","tenant-b",{tenantId:"tenant-b"});
+  await t.store.put("mtfixit-reports","tenant-b","existing",{jobId:"existing"});
+  await assert.rejects(importDshMtFixItSnapshot(t.store,snapshot,"migration-one"),/tenant index is not empty/);
+  assert.equal((await t.store.list("mtfixit-reports","tenant-a")).length,0);
+  assert.equal((await t.store.list("mtfixit-migrations","_index")).length,0);
+ }finally{await t.close();}
+});
