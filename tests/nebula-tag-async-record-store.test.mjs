@@ -39,6 +39,12 @@ test("async Tag store atomically persists state, command dedupe and outbox acros
     const encodedTenantStore = new AsyncNebulaTagRecordStore({ databasePath });
     await encodedTenantStore.initialize();
     await encodedTenantStore.setSettings("tenant:encoded", { tagSuccessPoints: 37, rotateMinutes: 3, forceMinutes: 5, immunityMinutes: 2 });
+    const imported = await encodedTenantStore.importSettings("tenant:legacy", { tagSuccessPoints: 29, taggedPenaltyPoints: 7, immunityMinutes: 4, rotateMinutes: 8, forceMinutes: 12 }, "sqlite-tag-settings-v1");
+    assert.deepEqual(imported, { imported: true, duplicate: false });
+    assert.deepEqual(await encodedTenantStore.importSettings("tenant:legacy", { tagSuccessPoints: 29 }, "sqlite-tag-settings-v1"), { imported: false, duplicate: true });
+    await encodedTenantStore.setSettings("tenant:preserve", { tagSuccessPoints: 91 });
+    assert.deepEqual(await encodedTenantStore.importSettings("tenant:preserve", { tagSuccessPoints: 12 }, "sqlite-tag-settings-v1"), { imported: false, duplicate: false });
+    assert.equal((await encodedTenantStore.settings("tenant:preserve")).tagSuccessPoints, 91);
     assert.equal((await encodedTenantStore.rotationRules("tenant:encoded")).rotateAfterMs, 180_000);
     assert.equal((await encodedTenantStore.rotationRules("tenant:encoded")).forceRandomAfterMs, 300_000);
     await encodedTenantStore.applyCommand(command("tenant:encoded", "join", "join-encoded", "player-c", 3, { username: "Gamma" }));
