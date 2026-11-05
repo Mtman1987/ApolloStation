@@ -38,8 +38,9 @@ export class AsyncNebulaGameRuntimeStore {
     const stored = await this.records.get<{ state?: Partial<NebulaGameRuntimeStateV1> } | Partial<NebulaGameRuntimeStateV1>>("game-runtime", tenant, key);
     if (!stored) return defaultNebulaGameRuntimeState();
     try {
-      const value = "state" in stored ? stored.state : stored;
-      return normalizeNebulaGameRuntimeState(value ?? {});
+      const wrapped = stored as { state?: Partial<NebulaGameRuntimeStateV1> };
+      const value = wrapped.state && typeof wrapped.state === "object" ? wrapped.state : stored as Partial<NebulaGameRuntimeStateV1>;
+      return normalizeNebulaGameRuntimeState(value);
     }
     catch (error) { throw new NebulaGameRuntimeCorruptionError(tenant, key, error); }
   }
