@@ -55,7 +55,7 @@ test("Chat Tag front-seat check-in bonus credits 100 Nebula points exactly once 
   } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("Nebula provider runtime exposes the configured tenant check-in bonus service", () => {
+test("Nebula provider runtime exposes the configured tenant check-in bonus service", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-provider-checkin-")), path = join(directory, "nebula.sqlite");
   const runtime = new NebulaArcadeProviderRuntime({
     databasePath: path,
@@ -65,12 +65,12 @@ test("Nebula provider runtime exposes the configured tenant check-in bonus servi
     simulation: true,
   });
   try {
-    const award = runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" });
+    const award = await runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" });
     assert.equal(award.amount, 100);
     assert.equal(award.balance, 100);
-    assert.equal(runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" }).duplicate, true);
-    assert.throws(() => runtime.awardCheckinBonus({ tenantId: "not-configured", awardId: "ride", channel: "123456789", userId: "spmt:other", username: "other" }), /tenant is not configured/);
-  } finally { runtime.close(); rmSync(directory, { recursive: true, force: true }); }
+    assert.equal((await runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" })).duplicate, true);
+    await assert.rejects(() => runtime.awardCheckinBonus({ tenantId: "not-configured", awardId: "ride", channel: "123456789", userId: "spmt:other", username: "other" }), /tenant is not configured/);
+  } finally { await runtime.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("Nebula membership records join leave plays and rejoin", () => {
