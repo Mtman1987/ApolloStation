@@ -123,7 +123,10 @@ jobs:
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
           APOLLO_RUNTIME_NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+          APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE3_TURSO_AUTH_TOKEN: ${{ secrets.NODE3_TURSO_AUTH_TOKEN }}
+          APOLLO_RUNTIME_NODE3_TURSO_DATABASE_URL: ${{ secrets.NODE3_TURSO_DATABASE_URL }}
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
