@@ -162,7 +162,7 @@ export class NebulaArcadeProviderRuntime {
     return result;
   }
   async reconcile() {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady, this.tabletopReady]);
     const delivery = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenant of this.options.config.tenants) {
       await this.flushAnnouncements(tenant.tenantId);
