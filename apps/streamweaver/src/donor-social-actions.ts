@@ -170,18 +170,18 @@ export class StreamWeaverSocialReactionReconciler {
           presentation:{personaId:"social-alert",displayName:"Social alert",instructions:"Write one playful, friendly, public reaction to the supplied social interaction. Keep it under 140 characters. Never mention private context. Never reuse an exact previous line.",memoryPolicy:"off"},
           message:`Interaction: ${socialInteractionText(item.trigger,item.actor,item.target)}\nAnimation: ${item.animationKey}\nDo not repeat any of these recent lines: ${JSON.stringify(recent)}\nReturn only the new reaction.`,
         },`social-reaction:${item.deliveryId}:${item.attempts+1}`);
-        if(result.status!=="accepted"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
+        if(result.status!=="accepted"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
         await this.store.setJob(item.tenantId,item.deliveryId,result.jobId,item.attempts+1);waiting++;continue;
       }
       const job=await this.client.getExecutionJob(item.tenantId,item.jobId);
       const conversationId=`streamweaver:social:${item.deliveryId}`;
-      if(job.tenantId!==item.tenantId||job.billedUserId!==owner||job.ownerAppId!=="stellar-core"||job.input.conversationId!==conversationId){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
+      if(job.tenantId!==item.tenantId||job.billedUserId!==owner||job.ownerAppId!=="stellar-core"||job.input.conversationId!==conversationId){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
       if(!["succeeded","failed","cancelled","dead-letter"].includes(job.state)){waiting++;continue;}
-      if(job.state!=="succeeded"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
+      if(job.state!=="succeeded"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
       const reaction=safeReaction(job.result?.text);
-      const prior=await this.store.recent(item.tenantId,40).map(value=>value.toLowerCase());
+      const prior=(await this.store.recent(item.tenantId,40)).map(value=>value.toLowerCase());
       if((!reaction||prior.includes(reaction.toLowerCase()))&&item.attempts<2){await this.store.retry(item.tenantId,item.deliveryId);waiting++;continue;}
-      await this.publish(item,reaction&&!prior.includes(reaction.toLowerCase())?reaction:socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));published++;
+      await this.publish(item,reaction&&!prior.includes(reaction.toLowerCase())?reaction:socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));published++;
     }
     return{observed,waiting,published,failed};
   }
