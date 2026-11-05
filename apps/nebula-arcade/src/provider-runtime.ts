@@ -15,7 +15,7 @@ import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNebulaDiscordDashboardStore, type NebulaDiscordDashboardEgressV1 } from "./discord-dashboard.js";
 import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
-import { AsyncNebulaTagRecordStore } from "./async-tag-record-store.js";
+import { AsyncNebulaTagRecordStore, type AsyncNebulaTagSettings } from "./async-tag-record-store.js";
 import { AsyncNebulaTagRuntime } from "./async-nebula-tag-runtime.js";
 import { NebulaMosaicRuntime } from "./mosaic-runtime.js";
 import { createStreamWeaverMosaicGenerator } from "./mosaic-generation.js";
@@ -93,7 +93,16 @@ export class NebulaArcadeProviderRuntime {
     this.tagStore = tagStoreMode === "turso"
       ? new AsyncNebulaTagRecordStore({ mode: "turso", url: process.env.NEBULA_ARCADE_TURSO_DATABASE_URL, authToken: process.env.NEBULA_ARCADE_TURSO_AUTH_TOKEN })
       : new SqliteNebulaTagStore(options.databasePath);
-    this.tagReady = this.tagStore instanceof AsyncNebulaTagRecordStore ? this.tagStore.initialize().then(() => undefined) : Promise.resolve();
+    this.tagReady = this.tagStore instanceof AsyncNebulaTagRecordStore
+      ? this.tagStore.initialize().then(async () => {
+          for (const tenant of options.config.tenants) {
+            const legacy = this.network.settings(tenant.tenantId, "@arcade", "tag");
+            const keys = ["tagSuccessPoints", "taggedPenaltyPoints", "immunityMinutes", "rotateMinutes", "forceMinutes"] as const;
+            const settings = Object.fromEntries(keys.filter((key) => Number.isSafeInteger(legacy[key])).map((key) => [key, Number(legacy[key])])) as AsyncNebulaTagSettings;
+            if (Object.keys(settings).length) await this.tagStore.importSettings(tenant.tenantId, settings, "sqlite-nebula-tag-settings-v1");
+          }
+        })
+      : Promise.resolve();
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
