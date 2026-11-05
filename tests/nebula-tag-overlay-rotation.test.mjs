@@ -97,3 +97,15 @@ function applyFor(tenantId, state, value) {
   assert.equal(value.tenantId, tenantId);
   return executeNebulaTagCommand(state, value).state;
 }
+
+test("overlay state awaits the asynchronous Tag store used by Turso", async () => {
+  const state = createNebulaTagState("tenant-async-overlay");
+  const adapter = new NebulaTagOverlayHttpAdapter({
+    getState: async (tenantId) => ({ revision: 12, state: { ...state, tenantId } }),
+  }, () => at(9));
+  const principal = { schemaVersion: 1, tenantId: "tenant-async-overlay", appId: "nebula-arcade", widgetId: "tag" };
+  const result = await adapter.handle({ method: "GET", path: "/v1/nebula-arcade/tag/overlay/state" }, principal);
+  assert.equal(result.status, 200);
+  assert.equal(JSON.parse(result.body).revision, 12);
+  assert.equal(JSON.parse(result.body).snapshot.tenantId, "tenant-async-overlay");
+});
