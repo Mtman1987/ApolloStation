@@ -8,6 +8,7 @@ const ACTIONS = "game-actions";
 const CHANNELS = "arcade-activity-channels";
 const MEMBERS = "arcade-activity-members";
 const CHOICES = "arcade-activity-choices";
+const INPUTS = "game-inputs";
 
 export function readNebulaActionActivitySnapshot(db) {
   const integrity = db.prepare("PRAGMA integrity_check").all().map((row) => Object.values(row)[0]);
@@ -32,9 +33,10 @@ export function readNebulaActionActivitySnapshot(db) {
     tenantId: String(row.tenant_id), key: [String(row.channel_id),String(row.actor_id)].map(encodeURIComponent).join("|"),
     value: { targets: JSON.parse(String(row.targets)), expiresAt: Number(row.expires_at) },
   }));
-  const snapshot = { actions, channels, members, choices };
+  const inputs = read("nebula_game_inputs", "SELECT sequence,tenant_id,input_id,channel_id,body FROM nebula_game_inputs ORDER BY tenant_id,sequence").map((row) => ({ tenantId: String(row.tenant_id), key: String(row.input_id), value: { sequence: Number(row.sequence), input: JSON.parse(String(row.body)) } }));
+  const snapshot = { actions, channels, members, choices, inputs };
   const digest = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
-  return { ...snapshot, counts: { actions: actions.length, channels: channels.length, members: members.length, choices: choices.length }, digest };
+  return { ...snapshot, counts: { actions: actions.length, channels: channels.length, members: members.length, choices: choices.length, inputs: inputs.length }, digest };
 }
 
 export async function importNebulaActionActivitySnapshot(store, snapshot) {
@@ -43,10 +45,11 @@ export async function importNebulaActionActivitySnapshot(store, snapshot) {
     ...snapshot.channels.map((row) => [CHANNELS, row]),
     ...snapshot.members.map((row) => [MEMBERS, row]),
     ...snapshot.choices.map((row) => [CHOICES, row]),
+    ...snapshot.inputs.map((row) => [INPUTS, row]),
   ];
   const tenants = [...new Set(entries.map(([, row]) => row.tenantId))];
   return store.transaction(async (tx) => {
-    for (const tenantId of tenants) for (const namespace of [ACTIONS, CHANNELS, MEMBERS, CHOICES]) {
+    for (const tenantId of tenants) for (const namespace of [ACTIONS, CHANNELS, MEMBERS, CHOICES, INPUTS]) {
       if ((await tx.list(namespace, tenantId)).length) throw new Error(`Turso destination is not empty for ${namespace} / ${tenantId}`);
     }
     for (const [namespace, row] of entries) await tx.put(namespace, row.tenantId, row.key, row.value);
