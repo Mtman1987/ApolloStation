@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
@@ -20,6 +21,16 @@ function fail(message) {
 if (!nodes[nodeKey]) fail("Pass node1, node2, or node3.");
 if (!token) fail("HOSTLESS_TOKEN is not set.");
 if (!commit) fail("No commit SHA was supplied.");
+
+// Never create a Hostless app from the monorepo root until that node has an
+// explicit production entrypoint. The current root package intentionally has
+// no generic start script; deploying it would create a healthy-looking but
+// non-functional app or fail at runtime.
+const packageJson = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+const startScript = packageJson.scripts?.[`hostless:${nodeKey}`];
+if (typeof startScript !== "string" || !startScript.trim()) {
+  fail(`No package.json script hostless:${nodeKey} exists yet. This node's role-specific runtime entrypoint must be implemented and tested before Hostless can create or deploy its app. No Hostless resources were modified.`);
+}
 
 async function request(path) {
   const response = await fetch(`${api}${path}`, {
