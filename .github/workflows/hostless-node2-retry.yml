@@ -1,6 +1,10 @@
 name: ApolloStation Hostless Node 2 retry
 
 on:
+  workflow_run:
+    workflows: ["ApolloStation Hostless two-node release"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       validated_run_id:
@@ -26,13 +30,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
+      deploy: ${{ steps.verify.outputs.deploy }}
     steps:
       - name: Verify prior run and exact commit
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.validated_run_id }}
-          EXPECTED_SHA: ${{ inputs.validated_sha }}
+          RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.validated_run_id }}
+          EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.validated_sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
           node --input-type=module - <<'NODE'
@@ -53,14 +58,17 @@ jobs:
           const node1 = jobs.jobs?.find(j => j.name.startsWith("Deploy Node 1"));
           if (validation?.conclusion !== "success") throw new Error("The prior full validation job did not succeed.");
           if (node1?.conclusion !== "success") throw new Error("The prior Node 1 deployment job did not succeed.");
-          console.log(`Verified full validation and Node 1 success for ${EXPECTED_SHA} (run ${RUN_ID}).`);
+          const node2 = jobs.jobs?.find(j => j.name.startsWith("Deploy Node 2"));
+          const shouldDeploy = node2?.conclusion !== "success";
+          console.log(`Verified full validation and Node 1 success for ${EXPECTED_SHA} (run ${RUN_ID}); Node 2 retry required: ${shouldDeploy}.`);
           const fs = await import("node:fs");
-          fs.appendFileSync(GITHUB_OUTPUT, `sha=${EXPECTED_SHA}\n`);
+          fs.appendFileSync(GITHUB_OUTPUT, `sha=${EXPECTED_SHA}\ndeploy=${shouldDeploy}\n`);
           NODE
 
   deploy-node2:
     name: Deploy Node 2 only — Chat Gateway / StreamWeaver
     needs: verify-prior-release
+    if: needs.verify-prior-release.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: production
