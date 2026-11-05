@@ -3,8 +3,10 @@ import type { StreamWeaverCapabilityExecutorV1 } from "./donor-command-services.
 import type { StreamWeaverDonorCommandInvocationV1 } from "./donor-command-runtime.js";
 import { STREAMWEAVER_DONOR_ACTION_FIRED } from "./donor-event-actions.js";
 import type { SqliteStreamWeaverBicStore, StreamWeaverBicMutationV1 } from "./bic-store.js";
+import type { AsyncStreamWeaverBicStore } from "./async-bic-store.js";
 import { findBestStreamWeaverUsernameMatch, type StreamWeaverChatterV1 } from "./username-matcher.js";
 import { SqliteStreamWeaverSocialReactionStore, type StreamWeaverSocialReactionRecord } from "./social-reaction-store.js";
+import { AsyncStreamWeaverSocialReactionStore } from "./async-social-reaction-store.js";
 
 export const STREAMWEAVER_SOCIAL_INTERACTION = "streamweaver.social.interaction.v1";
 export const STREAMWEAVER_BIC_COUNTER_UPDATED = "streamweaver.bic.counter.updated.v1";
@@ -37,7 +39,7 @@ export interface StreamWeaverBicChatterSourceV1 {
   list(input: { tenantId: string; provider: string; channelId: string }): Promise<readonly StreamWeaverChatterV1[]> | readonly StreamWeaverChatterV1[];
 }
 export interface StreamWeaverBicRuntimeOptionsV1 {
-  store: SqliteStreamWeaverBicStore;
+  store: SqliteStreamWeaverBicStore | AsyncStreamWeaverBicStore;
   client: Pick<SpmtClient, "publishEvent">;
   chatters?: StreamWeaverBicChatterSourceV1;
   resolveThiefDisplayName?: (tenantId: string, invocation?: StreamWeaverDonorCommandInvocationV1) => Promise<string> | string;
@@ -86,7 +88,7 @@ export class StreamWeaverBicRuntime {
   }
 
   async record(input: { tenantId: string; target: string; displayName: string; thiefDisplayName: string; idempotencyKey: string; donorActionId: string; donorActionName: string; source: string }): Promise<StreamWeaverBicMutationV1> {
-    const result = this.options.store.steal(input.tenantId, input.target, input.displayName, input.idempotencyKey);
+    const result = await this.options.store.steal(input.tenantId, input.target, input.displayName, input.idempotencyKey);
     const payload = {
       schemaVersion: 1,
       total: result.total,
@@ -122,7 +124,7 @@ export class StreamWeaverBicRuntime {
 
 /** Hooks the existing donor command runtime to the preserved starter-social action identities. */
 export class StreamWeaverSocialActionExecutor implements StreamWeaverCapabilityExecutorV1 {
-  constructor(private readonly client: Pick<SpmtClient, "publishEvent">, private readonly store?:SqliteStreamWeaverSocialReactionStore) {}
+  constructor(private readonly client: Pick<SpmtClient, "publishEvent">, private readonly store?:SqliteStreamWeaverSocialReactionStore|AsyncStreamWeaverSocialReactionStore) {}
   async execute(invocation: StreamWeaverDonorCommandInvocationV1): Promise<string | undefined> {
     const action = STREAMWEAVER_DONOR_SOCIAL_ACTIONS.find((candidate) => "trigger" in candidate && candidate.trigger === invocation.canonicalTrigger && candidate.kind === "interaction");
     if (!action) return undefined;
@@ -141,7 +143,7 @@ export class StreamWeaverSocialActionExecutor implements StreamWeaverCapabilityE
       channelId: invocation.channelId,
     };
     await this.client.publishEvent(invocation.tenantId, STREAMWEAVER_DONOR_ACTION_FIRED, payload, `streamweaver-donor-action:${action.id}:${invocation.deliveryId}`);
-    if(this.store)this.store.enqueue({tenantId:invocation.tenantId,deliveryId:invocation.deliveryId,trigger:invocation.canonicalTrigger,actor,target,animationKey});
+    if(this.store)await this.store.enqueue({tenantId:invocation.tenantId,deliveryId:invocation.deliveryId,trigger:invocation.canonicalTrigger,actor,target,animationKey});
     else await this.client.publishEvent(invocation.tenantId, STREAMWEAVER_SOCIAL_INTERACTION, {...payload,reaction:socialFallback(invocation.canonicalTrigger,actor,target,0),interactionText:socialInteractionText(invocation.canonicalTrigger,actor,target)}, `streamweaver-social:${action.id}:${invocation.deliveryId}`);
     return undefined;
   }
@@ -149,43 +151,43 @@ export class StreamWeaverSocialActionExecutor implements StreamWeaverCapabilityE
 
 export class StreamWeaverSocialReactionReconciler {
   constructor(
-    private readonly store:SqliteStreamWeaverSocialReactionStore,
+    private readonly store:SqliteStreamWeaverSocialReactionStore|AsyncStreamWeaverSocialReactionStore,
     private readonly client:SpmtClient,
     private readonly owner:(tenantId:string)=>string|undefined,
   ){}
   async runOnce(limit=50){
     let observed=0,waiting=0,published=0,failed=0;
-    for(const item of this.store.pending(limit)){
+    for(const item of await this.store.pending(limit)){
       observed++;
       const owner=this.owner(item.tenantId);
       if(!owner){
-        await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;
+        await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;
       }
       if(!item.jobId){
-        const recent=this.store.recent(item.tenantId,30);
+        const recent=await this.store.recent(item.tenantId,30);
         const conversationId=`streamweaver:social:${item.deliveryId}`;
         const result=await this.client.invokeCommunityAssistant(item.tenantId,{
           userId:owner,surface:"stream",remember:false,routingPreference:"automatic",conversationId,
           presentation:{personaId:"social-alert",displayName:"Social alert",instructions:"Write one playful, friendly, public reaction to the supplied social interaction. Keep it under 140 characters. Never mention private context. Never reuse an exact previous line.",memoryPolicy:"off"},
           message:`Interaction: ${socialInteractionText(item.trigger,item.actor,item.target)}\nAnimation: ${item.animationKey}\nDo not repeat any of these recent lines: ${JSON.stringify(recent)}\nReturn only the new reaction.`,
         },`social-reaction:${item.deliveryId}:${item.attempts+1}`);
-        if(result.status!=="accepted"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
-        this.store.setJob(item.tenantId,item.deliveryId,result.jobId,item.attempts+1);waiting++;continue;
+        if(result.status!=="accepted"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
+        await this.store.setJob(item.tenantId,item.deliveryId,result.jobId,item.attempts+1);waiting++;continue;
       }
       const job=await this.client.getExecutionJob(item.tenantId,item.jobId);
       const conversationId=`streamweaver:social:${item.deliveryId}`;
-      if(job.tenantId!==item.tenantId||job.billedUserId!==owner||job.ownerAppId!=="stellar-core"||job.input.conversationId!==conversationId){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
+      if(job.tenantId!==item.tenantId||job.billedUserId!==owner||job.ownerAppId!=="stellar-core"||job.input.conversationId!==conversationId){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
       if(!["succeeded","failed","cancelled","dead-letter"].includes(job.state)){waiting++;continue;}
-      if(job.state!=="succeeded"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));failed++;continue;}
+      if(job.state!=="succeeded"){await this.publish(item,socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));failed++;continue;}
       const reaction=safeReaction(job.result?.text);
-      const prior=this.store.recent(item.tenantId,40).map(value=>value.toLowerCase());
-      if((!reaction||prior.includes(reaction.toLowerCase()))&&item.attempts<2){this.store.retry(item.tenantId,item.deliveryId);waiting++;continue;}
-      await this.publish(item,reaction&&!prior.includes(reaction.toLowerCase())?reaction:socialFallback(item.trigger,item.actor,item.target,this.store.count(item.tenantId)));published++;
+      const prior=(await this.store.recent(item.tenantId,40)).map(value=>value.toLowerCase());
+      if((!reaction||prior.includes(reaction.toLowerCase()))&&item.attempts<2){await this.store.retry(item.tenantId,item.deliveryId);waiting++;continue;}
+      await this.publish(item,reaction&&!prior.includes(reaction.toLowerCase())?reaction:socialFallback(item.trigger,item.actor,item.target,await this.store.count(item.tenantId)));published++;
     }
     return{observed,waiting,published,failed};
   }
   private async publish(item:StreamWeaverSocialReactionRecord,reaction:string){
-    this.store.complete(item.tenantId,item.deliveryId,reaction);
+    await this.store.complete(item.tenantId,item.deliveryId,reaction);
     const interactionText=socialInteractionText(item.trigger,item.actor,item.target);
     await this.client.publishEvent(item.tenantId,STREAMWEAVER_SOCIAL_INTERACTION,{
       schemaVersion:1,trigger:item.trigger,deliveryId:item.deliveryId,animationKey:item.animationKey,reaction,interactionText,

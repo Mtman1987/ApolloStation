@@ -38,7 +38,7 @@ export class SimulationRoomRuntime {
     const prior = receipts.prepare("SELECT state FROM inputs WHERE id=?").get(job.id) as { state: string } | undefined;
     if (prior) { receipts.close(); if (prior.state !== "done") throw new Error("This input was interrupted. Review its room output before sending it again."); return { duplicate: true }; }
     receipts.prepare("INSERT INTO inputs VALUES (?, 'running')").run(job.id);
-    const stores: Array<{ close(): void }> = [];
+    const stores: Array<{ close(): void | Promise<void> }> = [];
     let sequence = 0, outputs = 0;
     const emit = async (appId: string, event: Omit<SimulationRoomEventV1, "roomId" | "schemaVersion" | "occurredAt">) => {
       await this.options.publish({ schemaVersion: 1, occurredAt: new Date().toISOString(), ...event, body: event.body || event.title, roomId, roomName: "Preview Studio", data: { ...event.data, tenantId, appId, inputId: job.id, epoch: input.epoch ?? "initial" } }, `studio:${job.id}:${sequence++}`);
@@ -177,7 +177,7 @@ export class SimulationRoomRuntime {
       if (!outputs) await emit("chat-gateway", { lane: "app", direction: "preview", title: "Routing result", body: input.message.startsWith("!") ? "No enabled command produced a response. Check that its flow is installed and its trigger matches. Provider-only and assistant actions require their connected runtime." : "Message delivered. No app produced an output for this message.", provider });
       receipts.prepare("UPDATE inputs SET state='done' WHERE id=?").run(job.id);
       return { delivery: delivered.delivery, duplicate: delivered.duplicate, outputs };
-    } finally { for (const resource of stores.reverse()) resource.close(); receipts.close(); }
+    } finally { for (const resource of stores.reverse()) await resource.close(); receipts.close(); }
   }
 }
 

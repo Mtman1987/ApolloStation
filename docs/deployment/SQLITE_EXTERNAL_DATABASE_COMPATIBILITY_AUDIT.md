@@ -208,3 +208,27 @@ A repository-wide GitHub code search for `DatabaseSync` returned at least 100 ma
 - `packages/provider-grants-core/src/credential-authority.ts`
 
 **Important correction to the earlier summary:** this inventory proves the persistence surface is broader than the priority apps alone. It includes Commlink, MountainView, Stellar Core, Companion, HearMeOut, and Discord Stream Hub subsystems. Do not migrate only the obvious top-level database while leaving auxiliary processes pointing at old local paths; the runtime service inventory and per-app database ownership map must be reconciled before cutover.
+
+
+
+## First StreamWeaver async persistence pilot (2026-11-05)
+
+The isolated `streamweaver_social_reactions` queue has an async record-store implementation in PR #428. Production selection is explicit via `STREAMWEAVER_SOCIAL_REACTIONS_STORE=turso` and uses the StreamWeaver database credentials; simulation runtimes are deliberately forced to local SQLite. The donor-action executor and reconciliation worker now await queue operations, preserving delivery-ID idempotency, pending/waiting states, attempts, retry behavior, recent-reaction history and tenant isolation. Chat Gateway and simulation shutdown paths await the provider's async store close when selected.
+
+The pilot includes `npm run db:migrate:streamweaver-social-reactions:turso -- --source <sqlite-path>`, dry-run by default with read-only SQLite integrity check, deterministic digest, empty-destination guard, transactional import and verification. The StreamWeaver parity workflow builds and tests the async store and importer. No Turso credentials or production records have been used. This is a low-risk queue pilot only; StreamWeaver ride/economy, TikTok, secure-choice, relay, flow, translation, runtime settings, persona and other SQLite stores remain unmigrated. The StreamWeaver service is not database-complete or Hostless-ready.
+
+
+
+### StreamWeaver Bic counters (2026-11-05)
+
+The tenant-isolated Bic counter now has an async record-store adapter in PR #428. Runtime selection is explicit with `STREAMWEAVER_BIC_STORE=turso`, sharing the StreamWeaver Turso database credentials. Simulation mode is forced to SQLite. The adapter stores each tenant's counter, victim counts, blacklist and idempotency receipts as one transactional aggregate record, so concurrent increments and replay protection are atomic. The existing command and voice Bic runtime awaits the store operation before emitting counter and overlay events.
+
+A dry-run-first importer is available as `npm run db:migrate:streamweaver-bic:turso -- --source <sqlite-path>`. It opens the source read-only, checks SQLite integrity, captures counters/victims/blacklist/operation receipts, computes a deterministic digest, and supports an atomic import into an empty tenant namespace. Tests cover concurrent updates, idempotency, blacklist protection, legacy merge and migration preservation. No live Turso credentials or production data have been used. This is a second isolated persistence pilot, not a full StreamWeaver cutover; the other app stores remain SQLite.
+
+
+
+## StreamWeaver bot-action reply receipts pilot (2026-11-05)
+
+The durable delayed-reply receipt queue (`streamweaver_bot_action_replies`) now has an async record-store implementation in the StreamWeaver pilot branch. Production selection is explicit with `STREAMWEAVER_BOT_ACTION_REPLIES_STORE=turso`, sharing only the StreamWeaver Turso credentials; simulations stay on SQLite. The chat consumer awaits receipt reads, first-write-wins remember, and acknowledgement before returning. The provider awaits receipt-store initialization and shutdown, and its reconciliation worker awaits the async completion flush. Existing safeguards remain: request/tenant identity lock, persisted first response, delayed completion separate from acknowledgement, retry backoff, job ownership validation, and stable egress idempotency keys.
+
+The dry-run-first importer is `npm run db:migrate:streamweaver-bot-action-replies:turso -- --source <sqlite-path>`. It reads SQLite read-only, verifies integrity, hashes a deterministic snapshot, refuses occupied target namespaces, imports receipts and tenant indexes in one record-store transaction, and verifies per-tenant counts. No production credentials or records were used. This remains a second narrow pilot; StreamWeaver's other SQLite domains are still outstanding.
