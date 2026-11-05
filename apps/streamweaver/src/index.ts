@@ -71,3 +71,5 @@ export * from "./cloudflare-image-provider.js";
 export * from "./pollinations-image-provider.js";
 
 export * from "./tts-text.js";
+
+export * from "./async-generation-settings.js";
