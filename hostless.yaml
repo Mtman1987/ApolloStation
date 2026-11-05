@@ -1,6 +1,6 @@
 build:
   system: auto
-  command: "npm ci && npm run build"
+  command: "npm ci && npx tsc -b apps/spmt-service apps/spacemountain-web && node scripts/build-rtc-browser.mjs"
 working_directory: /
 build_context_directory: /
 start_command: "npm run hostless:node1"
