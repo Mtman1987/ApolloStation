@@ -444,7 +444,7 @@ export class SupervisedChatGatewayService {
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
-  async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); const clean = !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash; const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname); if (!clean || !(url.protocol === "https:" || (url.protocol === "http:" && loopback))) throw new Error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin"); return url.origin; }
