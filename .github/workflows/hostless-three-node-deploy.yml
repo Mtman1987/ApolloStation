@@ -13,7 +13,7 @@ on:
       - "tsconfig*.json"
       - ".github/workflows/hostless-three-node-deploy.yml"
   push:
-    branches: [main, ci/hostless-gated-three-node-deploy]
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy:
@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -59,56 +61,39 @@ jobs:
         run: npm test
 
   deploy-three-nodes:
-    name: Deploy Node 1, Node 2, and Node 3
+    name: Discover, create if needed, and deploy all three nodes
     needs: full-test-suite
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     environment: production
     if: >-
       ${{ needs.full-test-suite.result == 'success' &&
-          vars.HOSTLESS_RELEASE_APPROVED == 'true' &&
-          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOSTLESS_AUTO_DEPLOY == 'true') ||
-           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.deploy == true }}
     steps:
-      - name: Install verified Hostless CLI
+      - name: Check out the tested main commit
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
-      - name: Validate deployment targets and tokens without printing secrets
-        env:
-          NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
-          NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
-          NODE3_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
-          NODE1_APP: ${{ vars.HOSTLESS_NODE1_APP }}
-          NODE1_PROJECT: ${{ vars.HOSTLESS_NODE1_PROJECT }}
-          NODE2_APP: ${{ vars.HOSTLESS_NODE2_APP }}
-          NODE2_PROJECT: ${{ vars.HOSTLESS_NODE2_PROJECT }}
-          NODE3_APP: ${{ vars.HOSTLESS_NODE3_APP }}
-          NODE3_PROJECT: ${{ vars.HOSTLESS_NODE3_PROJECT }}
-        run: |
-          set -euo pipefail
-          for name in NODE1_TOKEN NODE2_TOKEN NODE3_TOKEN NODE1_APP NODE1_PROJECT NODE2_APP NODE2_PROJECT NODE3_APP NODE3_PROJECT; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Required Hostless secret/variable is missing: $name"
-              exit 1
-            fi
-          done
-          echo "All three node credentials and deployment targets are present."
-      - name: Deploy Node 1 — SPMT authority and SpaceMountain ingress
+      - name: Deploy Node 1 — SPMT authority, SpaceMountain, OverlayBay
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
-          APP: ${{ vars.HOSTLESS_NODE1_APP }}
-          PROJECT: ${{ vars.HOSTLESS_NODE1_PROJECT }}
-        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
-      - name: Deploy Node 2 — Chat Gateway, StreamWeaver, and Nebula
+        run: node scripts/hostless/ensure-node-app.mjs node1 "$GITHUB_SHA"
+      - name: Deploy Node 2 — Chat Gateway, StreamWeaver, Nebula
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
-          APP: ${{ vars.HOSTLESS_NODE2_APP }}
-          PROJECT: ${{ vars.HOSTLESS_NODE2_PROJECT }}
-        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
-      - name: Deploy Node 3 — Discord Stream Hub and Lounge
+        run: node scripts/hostless/ensure-node-app.mjs node2 "$GITHUB_SHA"
+      - name: Deploy Node 3 — Discord Stream Hub, Lounge
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
-          APP: ${{ vars.HOSTLESS_NODE3_APP }}
-          PROJECT: ${{ vars.HOSTLESS_NODE3_PROJECT }}
-        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
+        run: node scripts/hostless/ensure-node-app.mjs node3 "$GITHUB_SHA"
