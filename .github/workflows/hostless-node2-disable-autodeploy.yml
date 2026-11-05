@@ -1,0 +1,50 @@
+name: Disable Hostless automatic Node 2 deployments
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hostless-node2-disable-autodeploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-hostless-node2-settings
+  cancel-in-progress: false
+
+jobs:
+  disable-auto-deploy:
+    name: Make Apollo Actions the sole Node 2 deploy controller
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Disable automatic Git push deployments for Node 2
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+        run: |
+          set -euo pipefail
+          API="https://api.hostless.cloud/v1/apps/apollo-node-2"
+          curl -fsS -X PATCH "$API" \
+            -H "Authorization: $HOSTLESS_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data '{"autoDeployOnPush":false}' \
+            -o /tmp/hostless-update.json
+          curl -fsS "$API" \
+            -H "Authorization: $HOSTLESS_TOKEN" \
+            -H "Accept: application/json" \
+            -o /tmp/hostless-app.json
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          const update = JSON.parse(fs.readFileSync("/tmp/hostless-update.json", "utf8"));
+          const detail = JSON.parse(fs.readFileSync("/tmp/hostless-app.json", "utf8"));
+          const app = detail.app ?? detail;
+          if (app.autoDeployOnPush !== false) {
+            console.error("Hostless did not confirm autoDeployOnPush=false.");
+            console.error(JSON.stringify({ updateStatus: update.status, autoDeployOnPush: app.autoDeployOnPush }));
+            process.exit(1);
+          }
+          console.log("Verified: apollo-node-2 autoDeployOnPush=false. GitHub Actions now controls Node 2 deployments.");
+          NODE
