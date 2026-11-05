@@ -132,6 +132,5 @@ jobs:
           APOLLO_RUNTIME_NODE1_DSH_DISCORD_PUBLIC_KEY: ${{ secrets.DSH_DISCORD_PUBLIC_KEY }}
           APOLLO_RUNTIME_NODE1_DSH_DISCORD_CLIENT_ID: ${{ secrets.DSH_DISCORD_CLIENT_ID }}
           APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_ORIGIN: ${{ secrets.SPMT_PUBLIC_ORIGIN }}
-          APOLLO_RUNTIME_NODE1_DSH_RAID_PILE_STORE: ${{ secrets.DSH_RAID_PILE_STORE }}
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
