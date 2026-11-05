@@ -90,3 +90,35 @@ npm run db:migrate:nebula-game-mixes:turso -- --source /absolute/path/to/nebula.
 ```
 
 The destination table must be empty. The source is opened read-only and is never modified. Do not enable `NEBULA_ARCADE_REQUIRE_TURSO=1` until the import reports `verified: true` and the deployed readiness endpoint reports all three stores ready in Turso mode.
+
+
+## Nebula Tag Turso runtime and data import
+
+The Nebula Tag command runtime, moderator control surface, direct Tag HTTP routes, and OBS overlay can use the asynchronous record store. SQLite remains the default. Do not enable the Turso mode until the legacy Tag data import has been verified.
+
+Set these protected environment values on the Nebula Arcade workload:
+
+- `NEBULA_ARCADE_TAG_STORE=turso`
+- `NEBULA_ARCADE_TURSO_DATABASE_URL`
+- `NEBULA_ARCADE_TURSO_AUTH_TOKEN`
+
+The Tag store uses the `nebula-arcade` service namespace in the shared Turso database. The same URL/token pair can also be used by the Nebula Game Mix importer/runtime; Mosaic continues to use its separately documented `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` settings unless configured otherwise.
+
+Build before running the importer because it loads the compiled async store:
+
+```sh
+npm run build
+npm run db:migrate:nebula-tag:turso -- --source /absolute/path/to/nebula-arcade.sqlite
+```
+
+The default is a read-only dry run. It runs SQLite `quick_check` and reports each tenant's revision, player count, command receipt count, pending outbox count, and source digest. Apply only after reviewing that report:
+
+```sh
+npm run db:migrate:nebula-tag:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
+```
+
+The importer preserves Tag state, command idempotency receipts, and pending delivery outbox records in one destination transaction per tenant. It refuses to overwrite a tenant that already has Tag state, commands, or pending deliveries. It verifies imported state/revision and pending outbox counts. The SQLite source is opened read-only and is never changed. Run this against the recovered SQLite database before turning on the Turso runtime.
+
+Existing Tag points/immunity/rotation settings are also imported idempotently from the local `nebula_arcade_settings` table at startup. Subsequent moderator changes are written to the async Tag settings record.
+
+The Nebula readiness response now includes `tagStoreReady` and `tagStoreMode`. With `NEBULA_ARCADE_REQUIRE_TURSO=1`, readiness requires Tag, Mosaic, Mosaic control, and Game Mix to report Turso mode and healthy stores. This is a readiness gate, not an automatic data migration.

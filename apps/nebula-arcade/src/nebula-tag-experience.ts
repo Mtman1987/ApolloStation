@@ -1,7 +1,7 @@
 import { SqliteNebulaNetwork } from "./arcade-network.js";
 import { DatabaseSync } from "node:sqlite";
 import { assertNebulaTagStateV1, type NebulaTagInboundMessageV1, type NebulaTagPlayerStateV1, type NebulaTagStateV1 } from "./nebula-tag.js";
-import { NebulaTagRuntime, type StoredNebulaTagCommandV1, type NebulaTagDeliveryReportV1 } from "./nebula-tag-runtime.js";
+import { NebulaTagRuntime, type StoredNebulaTagCommandV1, type StoredNebulaTagStateV1, type NebulaTagDeliveryReportV1 } from "./nebula-tag-runtime.js";
 import { migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 
 export interface NebulaTagChannelSettingsV1 {
@@ -172,9 +172,14 @@ export type NebulaTagExperienceOutcomeV1 =
   | { kind: "reply"; code: string; message: string; route: "chat" | "overlay" }
   | { kind: "executed"; code: string; message: string; route: "chat" | "overlay"; execution: StoredNebulaTagCommandV1 & { kind: "result"; delivery: NebulaTagDeliveryReportV1 } };
 
+export interface NebulaTagExperienceRuntime {
+  getState(tenantId: string): StoredNebulaTagStateV1 | Promise<StoredNebulaTagStateV1>;
+  ingest(message: NebulaTagInboundMessageV1): ReturnType<NebulaTagRuntime["ingest"]>;
+}
+
 export class NebulaTagExperienceService {
   private readonly cursors = new Map<string, { kind: "players" | "live"; page: number; expiresAt: number }>();
-  constructor(private readonly runtime: NebulaTagRuntime, private readonly experience: NebulaTagExperienceStore, private readonly pinUserId: string, private readonly now: () => string = () => new Date().toISOString()) {}
+  constructor(private readonly runtime: NebulaTagExperienceRuntime, private readonly experience: NebulaTagExperienceStore, private readonly pinUserId: string, private readonly now: () => string = () => new Date().toISOString()) {}
 
   async ingest(message: NebulaTagInboundMessageV1, presence: NebulaTagPresenceV1 = {}): Promise<NebulaTagExperienceOutcomeV1> {
     const settings = this.experience.getChannelSettings(message.tenantId, message.channelId); const parsed = operationalCommand(message.text); const moderator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
@@ -197,12 +202,12 @@ export class NebulaTagExperienceService {
     }
     if (parsed?.kind === "players" || parsed?.kind === "live" || parsed?.kind === "more") {
       const key = `${message.tenantId}:${message.userId}`; const cursor = this.cursors.get(key); const nowMs = Date.parse(this.now()); const kind = parsed.kind === "more" && cursor && cursor.expiresAt > nowMs ? cursor.kind : parsed.kind === "live" ? "live" : "players"; const page = parsed.kind === "more" && cursor && cursor.expiresAt > nowMs ? cursor.page : 0;
-      const result = buildNebulaTagDirectoryPage(this.runtime.getState(message.tenantId).state, { kind, page, now: message.occurredAt, presence });
+      const result = buildNebulaTagDirectoryPage((await this.runtime.getState(message.tenantId)).state, { kind, page, now: message.occurredAt, presence });
       this.cursors.set(key, { kind, page: (result.page + 1) % result.totalPages, expiresAt: nowMs + 30 * 60 * 1_000 });
       return this.reply(settings, message, kind, result.message);
     }
     if (parsed?.kind === "pinrank") {
-      const ranking = getNebulaTagPinRanking(this.runtime.getState(message.tenantId).state, this.pinUserId);
+      const ranking = getNebulaTagPinRanking((await this.runtime.getState(message.tenantId)).state, this.pinUserId);
       return this.reply(settings, message, "pinrank", ranking.length ? `Pin's Top 5: ${ranking.map((entry, index) => `#${index + 1} ${entry.username}: ${entry.count}`).join(" | ")}` : "Pin hasn't tagged anyone yet!");
     }
     const result = await this.runtime.ingest(message);

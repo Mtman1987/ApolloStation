@@ -63,7 +63,10 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if (!(await mosaics.health()).ready) throw new NebulaHostError(503, "Nebula Mosaic control persistence is unavailable");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
+        let tagBody:Record<string,unknown>={};try{tagBody=await tagResponse.json() as Record<string,unknown>;}catch{}
+        if(!tagResponse.ok||tagBody.tagStoreReady!==true)throw new NebulaHostError(503,"Nebula Tag persistence is unavailable");
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
@@ -199,7 +202,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   return {
     server,
     async listen() { if (mosaics instanceof AsyncNebulaMosaicRecordStore) await mosaics.initialize(); await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async close() { if (server.listening) await close(server); await controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
