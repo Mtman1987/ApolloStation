@@ -219,3 +219,11 @@ The browser control surface now selects `AsyncNebulaGameRuntimeStore` when `NEBU
 ### Full-Turso readiness now fails closed on tabletop
 
 The live host's `NEBULA_ARCADE_REQUIRE_FULL_TURSO=1` gate now explicitly checks tabletop persistence before the other newly migrated Nebula stores. Until an async tabletop adapter is implemented and selected, readiness returns HTTP 503 with a tabletop-specific reason; it must not report full persistence readiness while Bingo rewards, Quackverse trades, command receipts, and the media outbox still use SQLite. The health payload also reports `tabletopStoreReady`, `tabletopStoreMode`, and `tabletopStoreRequired`. A regression test exercises this failure mode. This is a safety gate, not a completed tabletop migration.
+
+
+
+### Tabletop and arcade-network persistence are coupled
+
+The additional source audit confirms that `nebula_media_outbox` is created and owned by `SqliteNebulaNetwork`, not solely by tabletop. The Quackverse pack path inserts into that shared outbox inside the tabletop transaction, while the provider/media workers read and update it through `network.pending()`, `network.jobs()`, and `network.updateJob()`. Moving only the tabletop command writes to Turso would strand queued work in the wrong store or break atomicity.
+
+The network store also owns player enrollment, excluded-game preferences, tenant blacklist, game settings, presence, and the media outbox. Its blacklist transaction reaches across Tag state, Tag channels, arcade memberships, game-runtime player memberships, and Quackverse tabletop seats. Those side effects must be migrated as a coordinated transaction boundary, not left as SQLite-only writes after a Turso cutover. The full-Turso readiness gate now separately reports and requires `networkStoreMode: "turso"` as well as tabletop. Both intentionally remain `sqlite` until their adapters and caller migrations are implemented and tested.
