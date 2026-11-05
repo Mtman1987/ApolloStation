@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${HOSTLESS_TOKEN:?HOSTLESS_NODE3_TOKEN is required}"
-# One explicit FREE request. No billing writes, volume creation, or paid fallback.
+# Provider rejects tier on creation. Request only a small no-volume app.
+# No billing writes, paid fallback, retries, or account transfers.
 node --input-type=module <<'NODE'
 const projectId = '6aecd3d98f9b6b3471dff17a';
 const base = 'https://api.hostless.cloud/v1';
@@ -26,14 +27,14 @@ if (items.length) {
   throw new Error('Project is no longer empty; refusing duplicate creation');
 }
 const body = {
-  name: 'node3', projectId, tier: 'FREE',
+  name: 'node3', projectId,
   gitPlatform: 'Github', gitRepo: 'Mtman1987/ApolloStation',
   gitBranch: 'node3-bootstrap-free', gitCommitHash: '10c36e525d9dfde5bc564e24c18802abf4d90544',
   containerPort: 8000, dockerFilePath: 'Dockerfile', buildSystem: 'auto', hostlessFilePath: 'hostless.yaml',
   webProcess: {minCpu:0.01,maxCpu:0.1,minMemory:128,maxMemory:256,minReplicas:1,maxReplicas:1},
   autoDeployOnPush: false
 };
-console.log(JSON.stringify({creating:body.name,projectId,tier:body.tier,maxCpu:0.1,maxMemory:256,replicas:1,storage:'none',paidFallback:false}));
+console.log(JSON.stringify({creating:body.name,projectId,maxCpu:0.1,maxMemory:256,replicas:1,storage:'none',paidFallback:false}));
 const created = await request('/apps', body);
 console.log(JSON.stringify({created:true,name:created.name,tier:created.tier,status:created.status,url:created.url,id:created.id ?? created._id}));
 const app = await request('/apps/node3?projectId=' + projectId);
