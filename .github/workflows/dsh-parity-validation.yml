@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/discord-stream-hub/**"
+      - "scripts/migrate-dsh-raid-pile-to-turso.mjs"
       - "scripts/migrate-dsh-lounge-to-turso.mjs"
       - "scripts/migrate-dsh-mtfixit-to-turso.mjs"
       - "apps/nebula-arcade/**"
