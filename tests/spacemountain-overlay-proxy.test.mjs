@@ -141,7 +141,7 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
   const bootstrapped = validateIntegratedWebEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000" });
   assert.equal(bootstrapped.spmtOrigin, "http://127.0.0.1:3000");
   assert.equal(bootstrapped.nebulaArcadeOrigin, undefined);
-  assert.deepEqual(bootstrapped.greenAppOrigins, {});
+  assert.equal(bootstrapped.greenAppOrigins, undefined);
 });
 
 test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS node", async () => {
