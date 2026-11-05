@@ -127,7 +127,7 @@ jobs:
           const role = process.env.NODE_ROLE;
           const required = role === "node1"
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
-            : ["SPMT_ORIGIN", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL", "NEBULA_ARCADE_TENANT_ID", "NEBULA_ARCADE_CHANNEL_ID", "NEBULA_ARCADE_PUBLIC_ORIGIN"];
+            : ["SPMT_ORIGIN", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"];
           const missing = required.filter((name) => !process.env[name]?.trim());
           if (missing.length) {
             console.error("Missing ApolloStation Actions secrets required by " + role + ": " + missing.join(", "));
@@ -145,15 +145,10 @@ jobs:
           }
           if (role === "node2") {
             let origin;
-            let publicOrigin;
-            try { origin = new URL(process.env.SPMT_ORIGIN); publicOrigin = new URL(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN); }
-            catch { console.error("SPMT_ORIGIN and NEBULA_ARCADE_PUBLIC_ORIGIN must be valid URLs."); process.exit(1); }
+            try { origin = new URL(process.env.SPMT_ORIGIN); }
+            catch { console.error("SPMT_ORIGIN must be a valid URL."); process.exit(1); }
             if (!["https:", "http:"].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
               console.error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin.");
-              process.exit(1);
-            }
-            if (publicOrigin.protocol !== "https:" || publicOrigin.username || publicOrigin.password || publicOrigin.pathname !== "/" || publicOrigin.search || publicOrigin.hash) {
-              console.error("NEBULA_ARCADE_PUBLIC_ORIGIN must be a credential-free HTTPS origin.");
               process.exit(1);
             }
           }
