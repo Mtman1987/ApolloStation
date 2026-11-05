@@ -34,7 +34,13 @@ export class NebulaControlSurface {
   if(options.client)this.tagRuntime=asyncTagStore?new AsyncNebulaTagRuntime(asyncTagStore,options.client):new NebulaTagRuntime(this.tagStore as SqliteNebulaTagStore,options.client);
   this.experience=new SqliteNebulaTagExperienceStore(options.databasePath);
  }
- async close(){await this.gameReady;this.art.close();this.network.close();await this.games.close();this.tabletop.close();this.experience.close();if(this.tagStore instanceof AsyncNebulaTagRecordStore)await this.tagStore.close();else this.tagStore.close();}
+ close(){
+  this.art.close();this.network.close();this.tabletop.close();this.experience.close();
+  if(this.games instanceof AsyncNebulaGameRuntimeStore||this.tagStore instanceof AsyncNebulaTagRecordStore){
+   return Promise.all([this.gameReady,this.tagReady]).then(async()=>{await this.games.close();await this.tagStore.close();});
+  }
+  this.games.close();this.tagStore.close();
+ }
  async handle(method:string,path:string,body:Record<string,unknown>,player:NebulaBrowserPlayer){
   await Promise.all([this.tagReady,this.gameReady]);
   const {tenantId:tenant}=this.options,state=await this.gameState(tenant),rooms=[...new Set([this.options.channelId,...(this.options.channels??[]),...Object.keys(state.channels)])],channel=String(body.channel||this.options.channelId),game=String(body.gameId||'quackverse'),now=new Date().toISOString();
