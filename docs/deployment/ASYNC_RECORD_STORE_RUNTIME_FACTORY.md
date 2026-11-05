@@ -122,3 +122,130 @@ The importer preserves Tag state, command idempotency receipts, and pending deli
 Existing Tag points/immunity/rotation settings are also imported idempotently from the local `nebula_arcade_settings` table at startup. Subsequent moderator changes are written to the async Tag settings record.
 
 The Nebula readiness response now includes `tagStoreReady` and `tagStoreMode`. With `NEBULA_ARCADE_REQUIRE_TURSO=1`, readiness requires Tag, Mosaic, Mosaic control, and Game Mix to report Turso mode and healthy stores. This is a readiness gate, not an automatic data migration.
+
+
+## Nebula player/game runtime Turso caller integration
+
+The provider ingress, authenticated moderator/control surface, and live HTTP host now select async game-runtime, action-history, and activity stores when NEBULA_ARCADE_GAME_RUNTIME_STORE=turso. Player enrollment, balances/leaderboards, game commands, check-in awards, game-action receipts/history, channel activity, player membership, and pending command choices await their selected stores. The default remains SQLite.
+
+Set these protected environment values on the Node 2 Nebula workload only after the importer has reported verified=true:
+
+- NEBULA_ARCADE_GAME_RUNTIME_STORE=turso
+- NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL
+- NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN
+
+The game-runtime, action-history, activity, and game-input adapters share the nebula-arcade service namespace and the same Node 2 Turso credentials. They are separate from Tag, Mosaic, and Game Mix selection; do not assume enabling one enables the others. The async stores are initialized before provider ingress, moderator controls, or readiness-dependent work uses them. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected. NEBULA_ARCADE_REQUIRE_TURSO=1 retains its existing Tag/Mosaic/Game Mix readiness contract. Set NEBULA_ARCADE_REQUIRE_FULL_TURSO=1 as well when the Node 2 cutover is ready; the live host then additionally requires game runtime, action history, activity, and game input feed to report Turso mode.
+
+Build, then dry-run the importer against the recovered SQLite source:
+
+    npm run build
+    npm run db:migrate:nebula-game-runtime:turso -- --source /absolute/path/to/nebula-arcade.sqlite
+
+Review tenant/runtime-key counts and the source digest. Apply only to the intended empty Turso namespace:
+
+    npm run db:migrate:nebula-game-runtime:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
+
+The importer preserves the normalized game runtime state, player balances/progress, score ledger, processed command IDs, and check-in bonus receipts. It refuses populated destination keys, verifies restored state, and never modifies the SQLite source. Do not enable the runtime until the report is verified and restart/read-after-write checks pass.
+
+**Remaining Nebula SQLite domains:** tabletop/Bingo/Quackverse state (including atomic points awards and media outbox), network/enrollment/outbox state, Tag experience/support/overlay messages, dashboard message pointers, and Quackverse art still have separate SQLite stores. Action history and activity now have async adapters and an importer, but the new importer must pass CI and be executed against the recovered source before cutover. The remaining domains each require their own async contract, domain parity tests, safe importer/restore verification, and runtime caller migration.
+
+
+### Game action and activity import
+
+The action-history, activity, and game-input stores have a separate dry-run-first importer. It reads the legacy action, channel configuration, member activity, pending-choice, and sequenced game-input tables from the same SQLite source using a read-only connection, checks SQLite integrity, and reports counts plus a SHA-256 digest:
+
+    npm run db:migrate:nebula-action-activity:turso -- --source /absolute/path/to/nebula-arcade.sqlite
+
+After reviewing the report, apply only when the corresponding Turso namespaces are empty:
+
+    npm run db:migrate:nebula-action-activity:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
+
+The importer verifies destination counts in each tenant namespace and never modifies the source SQLite file. It is independent of the game-runtime importer; run and retain both reports. Do not enable the production Turso cutover until both reports verify and restart/read-after-write checks pass.
+
+## Nebula tabletop migration contract (not yet cut over)
+
+The remaining SqliteNebulaTabletopRuntime is not a single independent state blob. Its SQLite transaction currently coordinates these records:
+
+| SQLite source | Domain record namespace | Required key |
+|---|---|---|
+| nebula_tabletop | tabletop-state | channel_id + game_id (Bingo is normalized to @arcade) |
+| nebula_tabletop_receipts | tabletop-command-receipts | input_id |
+| nebula_quackverse_trade_receipts | quackverse-trade-receipts | actor_id + request_id |
+| nebula_media_outbox | tabletop-media-outbox | provider:connectionId:messageId |
+| nebula_game_runtime | existing game-runtime | default |
+
+These are logical target namespaces; an implementation may choose a different physical record layout, but it must preserve the keys and atomicity. In particular:
+
+- A shared Bingo claim/suggest/flip/free command updates shared-board state, the game-runtime player ledger/balance, and the command receipt in one transaction. The existing host's separate runtime.update() call after tabletop.execute() is not an acceptable Turso cutover design.
+- A personal Bingo claim updates the personal board, player score/ledger, win record when applicable, and command receipt atomically.
+- Quackverse pack commands update the player's collection, last-pack metadata, media outbox item, and command receipt atomically.
+- Quackverse trades update both affected collections and the actor/request idempotency receipt atomically. Replaying the same request ID must return the stored result without transferring cards twice.
+- succeeded() must read the durable receipt from the selected backend; observeBingo() and ingestBingoTranscript() must await their writes before the caller acknowledges or serves a snapshot.
+- Legacy room consolidation (scope-v2) must be idempotent and retain original rows until the import/verification report is accepted. Do not silently merge or overwrite a populated destination.
+- Media outbox records must preserve status and updated_at so pending deliveries can resume after a process restart.
+
+The async tabletop adapter must be wired into both NebulaArcadeProviderRuntime and the live HTTP host, including snapshot, command execution, success/receipt checks, transcript ingestion, trade endpoints, and shutdown. Extend NEBULA_ARCADE_REQUIRE_FULL_TURSO=1 to report tabletop readiness and return 503 unless this adapter is selected and healthy. The importer must open the SQLite source read-only, run integrity validation, export all four tabletop/outbox tables plus the coupled game-runtime state, compute a deterministic digest, refuse non-empty destination keys, import in one transaction, and verify per-namespace counts and digest.
+
+Until those conditions and restart/idempotency/rollback/recovery tests pass, tabletop remains SQLite-backed and the full Nebula Turso readiness gate must stay disabled. No source snapshot should be imported as part of code validation.
+
+### Tabletop caller inventory (verified against the current branch)
+
+The migration surface is wider than the provider ingress and live HTTP host. The current synchronous tabletop instance is also constructed or called by:
+
+- `apps/nebula-arcade/src/control-surface.ts`: browser state snapshot, trade snapshot, trade mutation, Bingo/Quackverse play, and command receipt validation. Its surrounding game-runtime reads currently use the synchronous SQLite store.
+- `apps/nebula-arcade/src/media-delivery.ts`: generated Bingo phrase completion writes through `execute()` and then checks `succeeded()`; this worker must await the selected tabletop backend.
+- `apps/chat-gateway/src/simulation-runtime.ts`: preview snapshots instantiate the SQLite tabletop store directly. This is a simulation/preview path and must remain explicitly SQLite/synthetic or be given a compatible async preview path; it must never silently read production data from a local file during a Turso cutover.
+- `apps/nebula-arcade/src/provider-runtime.ts`: provider ingress uses tabletop execution, receipt checks, Bingo observation/transcript ingestion, and media delivery; all readiness and shutdown paths must await tabletop initialization and close.
+- `apps/nebula-arcade/src/nebula-runtime-host-base.ts`: the HTTP host uses tabletop snapshot and action execution, and its health endpoint must include tabletop mode/health in the full-Turso gate.
+
+The async contract therefore needs async variants for `snapshot`, `execute`, `succeeded`, `tradeSnapshot`, `trade`, `ingestBingoTranscript`, `observeBingo`, `quackverseState`, and `importData` (or an explicit decision to keep migration-only import methods SQLite-only). The host and provider must await them at every call site. Keep the SQLite implementation as the default backend and parity oracle until all paths and migration tests pass.
+
+A further atomicity rule: avoid a separate game-runtime update after a tabletop command. The adapter must read and write the existing `game-runtime/default` record through the *same* record-store transaction as the tabletop state and receipt. The generic record-store transaction API supports this; the implementation still needs contention, rollback, and replay tests against the selected backend.
+
+
+### Cross-store mismatch found during caller audit
+
+The current `NebulaControlSurface` is not yet aligned with the provider/live-host Turso selection: it constructs `SqliteNebulaGameRuntimeStore` unconditionally for `this.games`, and its state, trade-player lookup, running, spend, and play paths use that SQLite instance. It also constructs `SqliteNebulaTabletopRuntime` unconditionally. Therefore a green live-host readiness response for the provider's async game-runtime store does **not** prove that authenticated browser controls use the same durable game-runtime record. The control surface must select and initialize the async game-runtime store under `NEBULA_ARCADE_GAME_RUNTIME_STORE=turso`, await all reads/updates, close it, and share the same Turso service/tenant namespace as the provider and host before this gate can be considered end-to-end.
+
+The Bingo phrase-generation worker in `media-delivery.ts` currently opens a fresh SQLite tabletop runtime to apply generated phrases. It must use the selected async tabletop backend or explicitly enqueue a durable command for the shared runtime; otherwise generated phrases can be written to a local file and disappear from the live Turso-backed board. The Chat Gateway simulation preview is a separate synthetic path and should be kept isolated from production credentials/data.
+
+
+### Browser control game-runtime cutover follow-up
+
+The browser control surface now selects `AsyncNebulaGameRuntimeStore` when `NEBULA_ARCADE_GAME_RUNTIME_STORE=turso`, initializes it before handling requests, awaits browser state/player reads and running/spend updates, and closes the selected store on shutdown. SQLite remains the default. This closes the game-runtime split described above, but **does not** make browser tabletop/Bingo/Quackverse state Turso-backed: the control surface still uses `SqliteNebulaTabletopRuntime`, and the tabletop atomicity/import/caller work remains a deployment blocker.
+
+
+
+### Full-Turso readiness now fails closed on tabletop
+
+The live host's `NEBULA_ARCADE_REQUIRE_FULL_TURSO=1` gate now explicitly checks tabletop persistence before the other newly migrated Nebula stores. Until an async tabletop adapter is implemented and selected, readiness returns HTTP 503 with a tabletop-specific reason; it must not report full persistence readiness while Bingo rewards, Quackverse trades, command receipts, and the media outbox still use SQLite. The health payload also reports `tabletopStoreReady`, `tabletopStoreMode`, and `tabletopStoreRequired`. A regression test exercises this failure mode. This is a safety gate, not a completed tabletop migration.
+
+
+
+### Tabletop and arcade-network persistence are coupled
+
+The additional source audit confirms that `nebula_media_outbox` is created and owned by `SqliteNebulaNetwork`, not solely by tabletop. The Quackverse pack path inserts into that shared outbox inside the tabletop transaction, while the provider/media workers read and update it through `network.pending()`, `network.jobs()`, and `network.updateJob()`. Moving only the tabletop command writes to Turso would strand queued work in the wrong store or break atomicity.
+
+The network store also owns player enrollment, excluded-game preferences, tenant blacklist, game settings, presence, and the media outbox. Its blacklist transaction reaches across Tag state, Tag channels, arcade memberships, game-runtime player memberships, and Quackverse tabletop seats. Those side effects must be migrated as a coordinated transaction boundary, not left as SQLite-only writes after a Turso cutover. The full-Turso readiness gate now separately reports and requires `networkStoreMode: "turso"` as well as tabletop. Both intentionally remain `sqlite` until their adapters and caller migrations are implemented and tested.
+
+
+
+### Async tabletop adapter and caller wiring
+
+`AsyncNebulaTabletopRuntime` is now implemented on the shared `nebula-arcade` record-store namespace. Select it with `NEBULA_ARCADE_TABLETOP_STORE=turso`; it uses the existing server-side `NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL` and `NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN`. The provider ingress, browser control surface, live HTTP host, and Bingo phrase-generation worker now await the selected tabletop backend. Media delivery can read/update the async tabletop outbox, so Quackverse pack jobs created in the same transaction are not stranded in the SQLite network queue.
+
+Implementation note: the existing synchronous tabletop domain engine runs against a unique, short-lived SQLite scratch database hydrated from the active record-store transaction. Its scratch file is deleted before return; durable state, receipts, trade receipts, media outbox and the coupled `game-runtime/default` record are read/written through the one async record-store transaction. It is not a persistent SQLite fallback. The 75-test Nebula parity job now builds the adapter and exercises Bingo reward/receipt atomicity, replay, trade idempotency, failed-trade rollback, outbox restart persistence, and concurrent commands. The media worker's async outbox read/update path is included in the follow-up regression test.
+
+This does **not** complete the network migration. `SqliteNebulaNetwork` still owns enrollment, blacklist, settings, presence and related jobs; blacklist updates also touch Tag and Quackverse state. `networkStoreMode` therefore remains SQLite and the full-Turso readiness gate remains blocked. A read-only/dry-run importer for all tabletop and coupled network rows is also still required before any player data can be imported.
+
+
+
+### Tabletop source importer
+
+Added `npm run db:migrate:nebula-tabletop:turso -- --source <sqlite-path> --tenant <tenant-id>`. It is dry-run by default, opens the source read-only, runs `PRAGMA integrity_check`, and reports a deterministic digest/counts for tabletop state, command receipts, Quackverse trade receipts, media outbox, and the coupled default game-runtime row. `--apply` requires the server-side Nebula game-runtime Turso URL/token, refuses populated destination namespaces, refuses a conflicting pre-imported game-runtime record, writes all namespaces and a migration receipt in one record-store transaction, and verifies destination counts. No production credentials or player data have been used in this work. The importer and its empty-destination/mismatch tests are now in the Nebula CI suite.
+
+
+
+### Safety fence on partial tabletop activation
+
+Although the async tabletop adapter is wired through provider, browser, live-host and media-delivery callers, `NEBULA_ARCADE_TABLETOP_STORE=turso` is now rejected at startup until the coupled arcade-network outbox and blacklist transactions are also migrated. This prevents a partial cutover where Quackverse pack writes land in Turso but blacklist seat updates or other media jobs remain on SQLite. The full-Turso readiness gate independently requires both `tabletopStoreMode=turso` and `networkStoreMode=turso`. Remove the startup fence only after the async network adapter and its cross-domain transaction tests are complete.
