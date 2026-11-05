@@ -17,7 +17,7 @@ async function shutdown() {
 process.once("SIGTERM", () => void shutdown());
 process.once("SIGINT", () => void shutdown());
 
-// Chat Gateway is a background worker, not the public Node 2 web process.
+// Node 2 deployment recovery: Chat Gateway is a background worker, not the public Node 2 web process.
 // A temporary SPMT/auth/database/provider failure must not take StreamWeaver
 // offline. Keep this process supervised and retry with bounded backoff.
 while (!stopping) {
