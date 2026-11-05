@@ -79,12 +79,12 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         await runtime.get(options.tenantId);
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if (!(await mosaics.health()).ready) throw new NebulaHostError(503, "Nebula Mosaic control persistence is unavailable");
+        const requireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO==="1";
         const gameRuntimeStoreMode=runtime instanceof AsyncNebulaGameRuntimeStore?"turso":"sqlite";
         const gameActionStoreMode=actions instanceof AsyncNebulaGameActionStore?"turso":"sqlite";
         const activityStoreMode=activity instanceof AsyncNebulaArcadeActivityStore?"turso":"sqlite";
         if(requireTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
         if(requireTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
-        const requireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO==="1";
         if(requireTurso&&gameRuntimeStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game runtime must use Turso for production readiness");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
         const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
@@ -230,7 +230,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   };
 }
 
-async async function handleAction(response: ServerResponse, body: Record<string, unknown>, options: NebulaArcadeSandboxHostOptions, runtime: SqliteNebulaGameRuntimeStore|AsyncNebulaGameRuntimeStore, actions: SqliteNebulaGameActionStore|AsyncNebulaGameActionStore, inputs: SqliteNebulaGameInputStore, tabletop: SqliteNebulaTabletopRuntime, activity: SqliteNebulaArcadeActivityStore) {
+async function handleAction(response: ServerResponse, body: Record<string, unknown>, options: NebulaArcadeSandboxHostOptions, runtime: SqliteNebulaGameRuntimeStore|AsyncNebulaGameRuntimeStore, actions: SqliteNebulaGameActionStore|AsyncNebulaGameActionStore, inputs: SqliteNebulaGameInputStore, tabletop: SqliteNebulaTabletopRuntime, activity: SqliteNebulaArcadeActivityStore|AsyncNebulaArcadeActivityStore) {
   const gameId = string(body.gameId, "gameId", 80).toLowerCase(); if (!GAME_IDS.has(gameId)) throw new NebulaHostError(400, "Unknown Nebula game");
   const checked = validateNebulaGameAction(gameId, typeof body.action === "string" ? body.action : "join", array(body.args));
   const channel = string(body.channel ?? options.channelId, "channel", 80).replace(/^#/, "").toLowerCase(), username = string(body.username, "username", 120).toLowerCase(), displayName = string(body.displayName ?? body.username, "displayName", 120), userId = string(body.userId ?? username, "userId", 160);
