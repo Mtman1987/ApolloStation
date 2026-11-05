@@ -25,6 +25,11 @@ export interface AsyncNebulaTagSettings {
   forceMinutes?: number;
 }
 
+interface TagCommandReceipt {
+  occurredAt: string;
+  result: NebulaTagCommandResultV1;
+}
+
 interface PendingDelivery {
   id: string;
   tenantId: string;
@@ -124,11 +129,12 @@ export class AsyncNebulaTagRecordStore {
     requireId(command.commandId, "commandId");
     return this.records.transaction(async (tx) => {
       const current = await readState(tx, command.tenantId);
-      const prior = await tx.get<NebulaTagCommandResultV1>("tag-commands", command.tenantId, command.commandId);
+      const prior = await tx.get<TagCommandReceipt | NebulaTagCommandResultV1>("tag-commands", command.tenantId, command.commandId);
       if (prior) {
+        const priorResult = "result" in prior ? prior.result : prior;
         return {
           ...current,
-          result: { ...prior, status: "duplicate", stateChanged: false },
+          result: { ...priorResult, status: "duplicate", stateChanged: false },
           duplicate: true,
         };
       }
@@ -149,7 +155,7 @@ export class AsyncNebulaTagRecordStore {
         duplicate: false,
       };
       await tx.put("tag-state", command.tenantId, "current", { revision, state: applied.state });
-      await tx.put("tag-commands", command.tenantId, command.commandId, applied.result);
+      await tx.put<TagCommandReceipt>("tag-commands", command.tenantId, command.commandId, { occurredAt: command.occurredAt, result: applied.result });
       if (applied.result.event || applied.result.xpAward) {
         const id = `nebula-arcade:tag-outbox:${encodeURIComponent(command.tenantId)}:${encodeURIComponent(command.commandId)}`;
         await tx.put<PendingDelivery>("tag-outbox", command.tenantId, id, {
@@ -219,7 +225,7 @@ export class AsyncNebulaTagRecordStore {
       ]);
       if (current.revision !== 0 || commands.length || outbox.length) throw new Error("Nebula Tag destination already contains state, commands, or pending deliveries");
       if (snapshot.revision > 0) await tx.put("tag-state", snapshot.tenantId, "current", { revision: snapshot.revision, state });
-      for (const item of snapshot.commands) await tx.put("tag-commands", snapshot.tenantId, item.commandId, item.result);
+      for (const item of snapshot.commands) await tx.put<TagCommandReceipt>("tag-commands", snapshot.tenantId, item.commandId, { occurredAt: item.occurredAt, result: item.result });
       for (const item of snapshot.outbox) {
         const id = `nebula-arcade:tag-outbox:${encodeURIComponent(snapshot.tenantId)}:${encodeURIComponent(item.commandId)}`;
         await tx.put<PendingDelivery>("tag-outbox", snapshot.tenantId, id, {
