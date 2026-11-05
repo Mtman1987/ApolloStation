@@ -114,7 +114,8 @@ function syncRuntimeSecrets(projectId, appName) {
   for (const [key, value] of entries) {
     runCli(["env", "set", `${key}=${value}`, "--write-only", "--app", appName, "--project", String(projectId)], `Set runtime secret ${key}`);
   }
-  console.log(`Synchronized ${entries.length} runtime secrets to ${appName}.`);
+  runCli(["env", "set", `APOLLO_NODE_ROLE=${nodeKey}`, "--app", appName, "--project", String(projectId)], `Set node role for ${appName}`);
+  console.log(`Synchronized ${entries.length} runtime secrets and node role to ${appName}.`);
 }
 
 const node = nodes[nodeKey];
