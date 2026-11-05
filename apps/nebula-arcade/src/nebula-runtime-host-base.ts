@@ -90,11 +90,11 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const gameInputStoreMode=inputs instanceof AsyncNebulaGameInputStore?"turso":"sqlite";
         // Tabletop remains SQLite until its atomic async adapter and importer land.
         const tabletopStoreMode="sqlite";
+        if(requireFullTurso&&tabletopStoreMode!=="turso")throw new NebulaHostError(503,"Nebula tabletop state, Bingo rewards, Quackverse trades, receipts, and media outbox must use Turso for production readiness");
         if(requireFullTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
         if(requireFullTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
         if(requireFullTurso&&gameInputStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game input feed must use Turso for production readiness");
         if(requireFullTurso&&gameRuntimeStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game runtime must use Turso for production readiness");
-        if(requireFullTurso&&tabletopStoreMode!=="turso")throw new NebulaHostError(503,"Nebula tabletop state, Bingo rewards, Quackverse trades, receipts, and media outbox must use Turso for production readiness");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
         const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
         let tagBody:Record<string,unknown>={};try{tagBody=await tagResponse.json() as Record<string,unknown>;}catch{}
