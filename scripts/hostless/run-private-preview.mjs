@@ -14,6 +14,7 @@ if (publicUrl.protocol !== "https:" || !(publicUrl.hostname.endsWith(".hostless.
 const root = process.cwd();
 const baseEnv = {
   ...process.env,
+  APOLLO_PRIVATE_PREVIEW: "1",
   SPMT_RUNTIME_MODE: "sandbox",
   SPMT_OUTBOUND_MODE: "disabled",
   SPMT_SANDBOX_ID: "apollo-hostless-private-preview",
