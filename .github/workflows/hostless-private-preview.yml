@@ -14,15 +14,16 @@ on:
 permissions:
   contents: read
 
+# v2 lets the repaired run proceed even if an older run is stuck in apt.
 concurrency:
-  group: apollo-hostless-private-preview
+  group: apollo-hostless-private-preview-v2
   cancel-in-progress: false
 
 jobs:
   test:
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy == true) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,9 +33,10 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install media test dependencies
+        timeout-minutes: 12
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo timeout 5m apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo timeout 5m apt-get install --yes -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 ffmpeg
           ffmpeg -version
           ffprobe -version
       - run: npm ci
