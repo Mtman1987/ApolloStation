@@ -208,3 +208,11 @@ A repository-wide GitHub code search for `DatabaseSync` returned at least 100 ma
 - `packages/provider-grants-core/src/credential-authority.ts`
 
 **Important correction to the earlier summary:** this inventory proves the persistence surface is broader than the priority apps alone. It includes Commlink, MountainView, Stellar Core, Companion, HearMeOut, and Discord Stream Hub subsystems. Do not migrate only the obvious top-level database while leaving auxiliary processes pointing at old local paths; the runtime service inventory and per-app database ownership map must be reconciled before cutover.
+
+
+
+## Discord Stream Hub MtFixIt intake pilot (2026-11-05)
+
+The DSH MtFixIt report receipt table (`dsh_mtfixit_reports`) has an async record-store implementation in a separate pilot branch. Production selection is explicit via `DSH_MTFIXIT_STORE=turso`, using the Node 3 DSH database credentials `DSH_TURSO_DATABASE_URL` and `DSH_TURSO_AUTH_TOKEN`; default remains SQLite. The live worker awaits store initialization before handling `!mtfixit` and awaits store close during shutdown. Existing operations-log and coder-job idempotency keys remain stable; report receipts preserve job ID, reporter, redacted description, owner-notified flag, reply-sent flag and creation time. This adapter only creates an evidence-backed coder job and notification; it does not approve, merge or deploy changes.
+
+The dry-run-first importer is `npm run db:migrate:dsh-mtfixit:turso -- --source <sqlite-path>`. It opens the source read-only, checks SQLite integrity, computes a deterministic digest, refuses a populated target, imports all tenant/event receipts in one transaction, and verifies counts. Focused tests cover restart-safe duplicate handling, credential redaction and importer idempotency. No production credentials or reports were used. This is one narrow DSH slice, not completion of Node 3 persistence; Discord Stream Hub's other stores and Lounge persistence remain outstanding.
