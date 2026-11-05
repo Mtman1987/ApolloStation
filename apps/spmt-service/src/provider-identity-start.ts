@@ -1,3 +1,4 @@
+// No runtime change: this marker only cancels a stale full-release run before the Node 2-only deployment.
 import {parseTwitchBotRoles} from "./twitch-bot-api.js";
 import { createSpmtServiceWithProviderIdentity } from "./provider-identity-host.js";
 import { createSpmtOutputGateway } from "./output-gateway.js";
