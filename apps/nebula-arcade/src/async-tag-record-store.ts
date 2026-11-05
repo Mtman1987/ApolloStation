@@ -180,7 +180,7 @@ function requireId(value: string, name: string): void {
 
 function safeError(value: string): string {
   return value
-    .replace(/\\bBearer\\s+\\S+/gi, "Bearer [REDACTED]")
-    .replace(/((?:token|secret|password|authorization)\\s*[:=]\\s*)\\S+/gi, "$1[REDACTED]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/((?:token|secret|password|authorization)\s*[:=]\s*)\S+/gi, "$1[REDACTED]")
     .slice(0, 1_000);
 }
