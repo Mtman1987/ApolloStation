@@ -1,0 +1,57 @@
+name: ApolloStation Hostless Node 2 fast deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/chat-gateway/**"
+      - "apps/streamweaver/**"
+      - "apps/nebula-arcade/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-hostless-node2-fast-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-node2:
+    name: Deploy Node 2 only — Chat Gateway / StreamWeaver
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - name: Check out the exact Node 2 commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify Node 2 launch helpers
+        run: |
+          node --check scripts/hostless/ensure-node-app.mjs
+          node --check scripts/hostless/start-node.mjs
+          node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Deploy Node 2 using existing runtime secrets
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ secrets.SPMT_ORIGIN }}
+          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
+          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
+          APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          APOLLO_NODE_ROLE: node2
+        run: node scripts/hostless/ensure-node-app.mjs node2 "${GITHUB_SHA}"
