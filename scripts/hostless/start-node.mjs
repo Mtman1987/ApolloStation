@@ -13,8 +13,14 @@ const node1 = [
 const node2 = [
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: process.env.PORT ?? "8080" }],
-  ["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }],
 ];
+// Nebula is tenant-scoped. Do not invent a tenant/channel before the owner has
+// completed first-run workspace provisioning; keep the other Node 2 services up.
+if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID && process.env.NEBULA_ARCADE_PUBLIC_ORIGIN) {
+  node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }]);
+} else {
+  console.warn("Nebula Arcade deferred: workspace tenant, state channel, and public origin have not been provisioned yet.");
+}
 const node3 = [
   ["apps/discord-stream-hub/dist/live-worker-start.js", {}],
   ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.PORT ?? "8080" }],
