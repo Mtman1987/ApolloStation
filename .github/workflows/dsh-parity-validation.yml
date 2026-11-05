@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/discord-stream-hub/**"
+      - "scripts/migrate-dsh-raid-pile-to-turso.mjs"
       - "scripts/migrate-dsh-lounge-to-turso.mjs"
       - "scripts/migrate-dsh-mtfixit-to-turso.mjs"
       - "apps/nebula-arcade/**"
@@ -41,4 +42,4 @@ jobs:
       - name: Compile all apps and packages
         run: npm run build
       - name: Run focused Discord Stream Hub regressions
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/dsh-live-monitor.test.mjs tests/dsh-lounge-state.test.mjs tests/dsh-discord-live-publisher.test.mjs tests/dsh-points-parity.test.mjs tests/dsh-production-points-parity.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/dsh-live-monitor.test.mjs tests/dsh-lounge-state.test.mjs tests/dsh-discord-live-publisher.test.mjs tests/dsh-points-parity.test.mjs tests/dsh-production-points-parity.test.mjs tests/dsh-async-mtfixit-intake.test.mjs tests/dsh-mtfixit-migration.test.mjs tests/dsh-async-raid-pile-store.test.mjs tests/dsh-raid-pile-migration.test.mjs

@@ -47,6 +47,7 @@
     "db:migrate:nebula-action-activity:turso": "node scripts/migrate-nebula-action-activity-to-turso.mjs",
     "db:migrate:nebula-tabletop:turso": "node scripts/migrate-nebula-tabletop-to-turso.mjs",
     "db:migrate:dsh-mtfixit:turso": "node scripts/migrate-dsh-mtfixit-to-turso.mjs",
+    "db:migrate:dsh-raid-pile:turso": "node scripts/migrate-dsh-raid-pile-to-turso.mjs",
     "db:migrate:dsh-lounge:turso": "node scripts/migrate-dsh-lounge-to-turso.mjs",
     "db:migrate:streamweaver-social-reactions:turso": "node scripts/migrate-streamweaver-social-reactions-to-turso.mjs",
     "db:migrate:streamweaver-bot-action-replies:turso": "node scripts/migrate-streamweaver-bot-action-replies-to-turso.mjs",
