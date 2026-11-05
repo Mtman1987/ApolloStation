@@ -1,6 +1,6 @@
 name: Hostless runtime log diagnostics
 # Check current Node 2 release after disabling automatic Git deployments.
-# Also capture the Node 2-only launcher port/bind retry.
+# Also capture the Node 2-only launcher port/bind retry and app-level start command.
 
 on:
   push:
