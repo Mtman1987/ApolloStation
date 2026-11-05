@@ -51,3 +51,28 @@ test("async social reaction jobs survive restart and preserve tenant isolation",
     await rm(t.directory, { recursive: true, force: true });
   }
 });
+
+test("social action executor and reconciler await the async store", async () => {
+  const t = await fixture();
+  try {
+    const events = [];
+    const client = { publishEvent: async (...args) => { events.push(args); return {}; } };
+    const { StreamWeaverSocialActionExecutor, StreamWeaverSocialReactionReconciler } = await import("../apps/streamweaver/dist/donor-social-actions.js");
+    const executor = new StreamWeaverSocialActionExecutor(client, t.store);
+    const invocation = {
+      tenantId: "tenant-a", deliveryId: "delivery-social-1", canonicalTrigger: "!boop",
+      actor: { userId: "alice-id", providerUserId: "alice-provider", username: "alice", displayName: "Alice" },
+      target: { userId: "bob-id", providerUserId: "bob-provider", username: "bob" },
+      provider: "twitch", channelId: "room-a",
+    };
+    assert.equal(await executor.execute(invocation), undefined);
+    assert.equal((await t.store.pending()).length, 1);
+    const reconciler = new StreamWeaverSocialReactionReconciler(t.store, client, () => undefined);
+    const result = await reconciler.runOnce();
+    assert.deepEqual(result, { observed: 1, waiting: 0, published: 0, failed: 1 });
+    assert.equal(await t.store.count("tenant-a"), 1);
+    assert.equal((await t.store.pending()).length, 0);
+    assert.equal(events.length, 2);
+    assert.match((await t.store.recent("tenant-a"))[0], /Alice/);
+  } finally { await t.close(); }
+});
