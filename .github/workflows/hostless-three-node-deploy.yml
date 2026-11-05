@@ -1,0 +1,114 @@
+name: ApolloStation Hostless three-node release
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "services/**"
+      - "scripts/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/hostless-three-node-deploy.yml"
+  push:
+    branches: [main, ci/hostless-gated-three-node-deploy]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy all three Hostless nodes after the full test suite passes"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-hostless-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-test-suite:
+    name: Full ApolloStation test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install media test tools
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          ffmpeg -version
+      - name: Audit SQLite ownership and persistence surface
+        run: |
+          node scripts/audit-sqlite-usage.mjs --json > /tmp/apollo-sqlite-audit.json
+          node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
+      - name: Build and run every Node regression test
+        run: npm test
+
+  deploy-three-nodes:
+    name: Deploy Node 1, Node 2, and Node 3
+    needs: full-test-suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    if: >-
+      ${{ needs.full-test-suite.result == 'success' &&
+          vars.HOSTLESS_RELEASE_APPROVED == 'true' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOSTLESS_AUTO_DEPLOY == 'true') ||
+           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
+    steps:
+      - name: Install verified Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Validate deployment targets and tokens without printing secrets
+        env:
+          NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          NODE3_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
+          NODE1_APP: ${{ vars.HOSTLESS_NODE1_APP }}
+          NODE1_PROJECT: ${{ vars.HOSTLESS_NODE1_PROJECT }}
+          NODE2_APP: ${{ vars.HOSTLESS_NODE2_APP }}
+          NODE2_PROJECT: ${{ vars.HOSTLESS_NODE2_PROJECT }}
+          NODE3_APP: ${{ vars.HOSTLESS_NODE3_APP }}
+          NODE3_PROJECT: ${{ vars.HOSTLESS_NODE3_PROJECT }}
+        run: |
+          set -euo pipefail
+          for name in NODE1_TOKEN NODE2_TOKEN NODE3_TOKEN NODE1_APP NODE1_PROJECT NODE2_APP NODE2_PROJECT NODE3_APP NODE3_PROJECT; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required Hostless secret/variable is missing: $name"
+              exit 1
+            fi
+          done
+          echo "All three node credentials and deployment targets are present."
+      - name: Deploy Node 1 — SPMT authority and SpaceMountain ingress
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APP: ${{ vars.HOSTLESS_NODE1_APP }}
+          PROJECT: ${{ vars.HOSTLESS_NODE1_PROJECT }}
+        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
+      - name: Deploy Node 2 — Chat Gateway, StreamWeaver, and Nebula
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          APP: ${{ vars.HOSTLESS_NODE2_APP }}
+          PROJECT: ${{ vars.HOSTLESS_NODE2_PROJECT }}
+        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
+      - name: Deploy Node 3 — Discord Stream Hub and Lounge
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
+          APP: ${{ vars.HOSTLESS_NODE3_APP }}
+          PROJECT: ${{ vars.HOSTLESS_NODE3_PROJECT }}
+        run: hostless deploy --wait --timeout 1800 --app "$APP" --project "$PROJECT" --commit "$GITHUB_SHA"
