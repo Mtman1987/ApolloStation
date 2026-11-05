@@ -42,13 +42,16 @@ jobs:
             "/apps"
           ];
           const safe = (value, depth = 0) => {
-            if (depth > 5 || value == null) return value;
-            if (Array.isArray(value)) return value.slice(0, 20).map(v => safe(v, depth + 1));
-            if (typeof value !== "object") return value;
+            if (depth > 7 || value == null) return value;
+            if (Array.isArray(value)) return value.slice(0, 30).map(v => safe(v, depth + 1));
+            if (typeof value !== "object") return typeof value === "string" ? value.slice(0, 300) : value;
             const out = {};
-            const allowed = /^(id|name|status|state|plan|tier|free|eligible|enabled|active|limit|limits|usage|used|remaining|allowance|resource|resources|app|apps|project|projects|invoice|invoices|credit|balance|amount|currency|cycle|period|startDate|endDate|message|error|code|paymentRequired|requiresPayment|hasPaymentMethod|canCreate|canDeploy|reason|type|count|total|storage|cpu|memory|database)$/i;
             for (const [k,v] of Object.entries(value)) {
-              if (allowed.test(k)) out[k] = safe(v, depth + 1);
+              if (/(token|secret|password|authorization|cookie|cardnumber|cvc|cvv|email|phone|address|paymentmethodid|clientsecret)/i.test(k)) {
+                out[k] = "[redacted]";
+              } else {
+                out[k] = safe(v, depth + 1);
+              }
             }
             return out;
           };
