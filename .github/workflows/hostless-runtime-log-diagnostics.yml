@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   collect:
@@ -50,6 +51,22 @@ jobs:
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
     steps:
+      - name: Resolve exact Node 2 deployment from the triggering run
+        id: deployment
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          JOBS="$(gh api "repos/$REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100")"
+          JOB_ID="$(printf '%s' "$JOBS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s).jobs||[];const x=j.find(v=>v.name.startsWith("Deploy Node 2"));if(x)process.stdout.write(String(x.id));})')"
+          if [ -z "$JOB_ID" ]; then echo "No Node 2 deployment job exists in source run."; exit 0; fi
+          LOG="$(gh run view "$SOURCE_RUN_ID" --job "$JOB_ID" --repo "$REPOSITORY" --log 2>/dev/null || true)"
+          DEPLOYMENT_ID="$(printf '%s\\n' "$LOG" | grep -Eo 'Deployment [a-f0-9]{24}: DEPLOYMENT_QUEUED' | tail -n1 | awk '{print $2}' || true)"
+          if [ -n "$DEPLOYMENT_ID" ]; then echo "id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"; echo "Resolved exact Node 2 deployment: $DEPLOYMENT_ID"; else echo "Could not extract a deployment ID from the Node 2 job log."; fi
+
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
@@ -63,7 +80,7 @@ jobs:
           TARGET: ${{ inputs.target }}
           EVENT_NAME: ${{ github.event_name }}
           SINCE: ${{ inputs.since || '2h' }}
-          DEPLOYMENT_ID: ${{ inputs.deployment_id || '6aecfaa76873e14c934c67f6' }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id || steps.deployment.outputs.id || '' }}
         run: |
           set +e
           mkdir -p hostless-diagnostics
