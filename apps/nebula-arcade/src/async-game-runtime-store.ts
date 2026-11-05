@@ -35,9 +35,12 @@ export class AsyncNebulaGameRuntimeStore {
   async get(tenantId: string, runtimeKey = "default"): Promise<NebulaGameRuntimeStateV1> {
     const tenant = cleanId(tenantId, "tenantId");
     const key = cleanId(runtimeKey, "runtimeKey");
-    const stored = await this.records.get<Partial<NebulaGameRuntimeStateV1>>("game-runtime", tenant, key);
+    const stored = await this.records.get<{ state?: Partial<NebulaGameRuntimeStateV1> } | Partial<NebulaGameRuntimeStateV1>>("game-runtime", tenant, key);
     if (!stored) return defaultNebulaGameRuntimeState();
-    try { return normalizeNebulaGameRuntimeState(stored); }
+    try {
+      const value = "state" in stored ? stored.state : stored;
+      return normalizeNebulaGameRuntimeState(value ?? {});
+    }
     catch (error) { throw new NebulaGameRuntimeCorruptionError(tenant, key, error); }
   }
 
