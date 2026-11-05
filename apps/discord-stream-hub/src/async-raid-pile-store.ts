@@ -40,7 +40,7 @@ export class AsyncDshRaidPileStore {
     db=new DatabaseSync(databasePath,{timeout:5000});db.exec("PRAGMA foreign_keys=ON;");
     if(snapshot)hydrate(db,snapshot);
     const result=work(store);
-    if(persist)await tx.put(NAMESPACE,id,"current",readSnapshot(db));
+    if(persist){await tx.put("raid-pile-tenants","_index",id,{tenantId:id});await tx.put(NAMESPACE,id,"current",readSnapshot(db));}
     return result;
    }finally{try{db?.close();}catch{}try{store?.close();}catch{}rmSync(directory,{recursive:true,force:true});}
   });
