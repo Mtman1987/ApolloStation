@@ -1,4 +1,4 @@
-name: ApolloStation Hostless three-node release
+name: ApolloStation Hostless two-node release
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "Deploy all three Hostless nodes after full validation"
+        description: "Deploy Node 1 and Node 2 after full validation"
         required: true
         type: boolean
         default: false
@@ -77,7 +77,7 @@ jobs:
     environment: production
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 2
       matrix:
         include:
           - node: node1
@@ -88,10 +88,6 @@ jobs:
             label: "Node 2 — Chat Gateway / StreamWeaver / Nebula"
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
-          - node: node3
-            label: "Node 3 — Discord Stream Hub / Lounge"
-            app: apollo-node-3
-            hostless_secret: HOSTLESS_NODE3_TOKEN
     steps:
       - name: Check out the exact validated commit
         uses: actions/checkout@v4
@@ -126,7 +122,5 @@ jobs:
           APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
           APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
-          APOLLO_RUNTIME_NODE3_TURSO_AUTH_TOKEN: ${{ secrets.NODE3_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE3_TURSO_DATABASE_URL: ${{ secrets.NODE3_TURSO_DATABASE_URL }}
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
