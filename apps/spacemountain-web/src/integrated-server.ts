@@ -1,4 +1,5 @@
 import { attachHearMeOutRtcProxy } from "./rtc-upgrade-proxy.js";
+import { timingSafeEqual } from "node:crypto";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { resolve } from "node:path";
@@ -17,11 +18,18 @@ export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpa
 }
 
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
+  const previewPassword = process.env.SPMT_RUNTIME_MODE === "sandbox" ? process.env.APOLLO_PREVIEW_PASSWORD : undefined;
+  if (process.env.SPMT_RUNTIME_MODE === "sandbox" && (!previewPassword || previewPassword.length < 8)) throw new Error("APOLLO_PREVIEW_PASSWORD (at least 8 characters) is required for the private sandbox preview");
   if(options.hearMeOutActivityClientId&&!/^\d{5,30}$/.test(options.hearMeOutActivityClientId))throw new Error("Invalid HearMeOut Activity client ID");
   const activityOrigin=options.hearMeOutActivityClientId?`https://${options.hearMeOutActivityClientId}.discordsays.com`:undefined;
   for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
+    if (previewPassword && !["/health/ready", "/health/live"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
+      response.writeHead(401, { "www-authenticate": 'Basic realm="ApolloStation private preview", charset="UTF-8"', "cache-control": "no-store" });
+      response.end("Private preview — sign in to continue.");
+      return;
+    }
     // Validate the browser origin before rewriting it for a loopback app.
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET") && request.headers.origin) {
       let sameOrigin = false;
@@ -61,6 +69,15 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
   return{server:outer,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==="string")throw new Error("SpaceMountain parity base host did not bind a TCP port");basePort=address.port;await listen(outer,options.port??8080,options.host??"0.0.0.0");},async close(){closeRtc();if(outer.listening)await close(outer);await base.close();}};
 }
 
+function isPreviewAuthorized(header:string|undefined,password:string):boolean{
+  if(!header?.startsWith("Basic "))return false;
+  let decoded:string;
+  try{decoded=Buffer.from(header.slice(6),"base64").toString("utf8");}catch{return false;}
+  const separator=decoded.indexOf(":");
+  if(separator<0||decoded.slice(0,separator)!=="owner")return false;
+  const supplied=Buffer.from(decoded.slice(separator+1),"utf8"),expected=Buffer.from(password,"utf8");
+  return supplied.byteLength===expected.byteLength&&timingSafeEqual(supplied,expected);
+}
 function greenAppForPath(pathname:string):GreenAppId|undefined{for(const appId of GREEN_APP_IDS)if(pathname===`/apps/${appId}`||pathname.startsWith(`/apps/${appId}/`)||pathname===`/api/${appId}`||pathname.startsWith(`/api/${appId}/`)||pathname===`/health/${appId}`)return appId;return undefined;}
 function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue:string,path:string,rewriteOrigin:boolean){
   const target=validateProxyOrigin(originValue);
