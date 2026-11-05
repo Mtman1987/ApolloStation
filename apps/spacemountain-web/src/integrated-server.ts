@@ -8,6 +8,7 @@ import { createIntegratedSpaceMountainWebHost as createBaseIntegratedHost, type 
 import { validateIntegratedWebEnvironment } from "./server.js";
 
 const SPMT_OVERLAY=/^\/v1\/overlay(?:\/|$)/;
+const SPMT_API=/^\/v1(?:\/|$)/;
 const NEBULA_RUNTIME=/^(?:\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula-game-mix\.js$|\/overlay\/game-mix\/)/;
 const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
 type GreenAppId=typeof GREEN_APP_IDS[number];
@@ -59,6 +60,9 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
     if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);
+    // Node 2 reaches the private SPMT authority through Node 1 public ingress.
+    // Forward the complete versioned API, not just overlay endpoints.
+    if(SPMT_API.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     const activityPath = url.pathname === '/activity' || url.pathname === '/activity-lite' || url.pathname === '/watch' || url.pathname === '/lounge-media/player' || url.pathname === '/spotlight-media' || url.pathname.startsWith('/spotlight-media/') || url.pathname.startsWith('/api/spotlight-media/') || url.pathname.startsWith('/api/watch/broadcast/') || (url.pathname === '/' && url.searchParams.has('frame_id')) || url.pathname === '/api/watch/activity-default' || /^\/api\/watch\/sessions\/[^/]+\/(?:state|broadcast\/[^/]+|screen\/[a-f0-9-]{36}\/[^/]+)$/.test(url.pathname) || url.pathname === '/api/discord/interactions';
     const app=activityPath?'hearmeout':greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
       const path=url.pathname===`/health/${app}`?"/health/ready":url.pathname+url.search;
