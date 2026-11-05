@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
-// Preserve Hostless injected port before applying local fallbacks for other nodes. This Node 2 launcher is deployed independently.
+// Preserve Hostless injected port before applying local fallbacks for other nodes. Node 2 is bound explicitly and its app-level start command is provisioned.
 const hostlessPort = process.env.PORT;
 const node1 = [
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
