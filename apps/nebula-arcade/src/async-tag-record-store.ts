@@ -120,7 +120,7 @@ export class AsyncNebulaTagRecordStore {
   }
 
   async markDeliveryComplete(id: string): Promise<void> {
-    requireId(id, "deliveryId");
+    requireDeliveryId(id);
     const tenantId = outboxTenant(id);
     await this.records.delete("tag-outbox", tenantId, id);
   }
@@ -170,6 +170,13 @@ function outboxTenant(id: string): string {
   const split = remainder.indexOf(":");
   if (split < 1) throw new Error("deliveryId is invalid");
   return decodeURIComponent(remainder.slice(0, split));
+}
+
+function requireDeliveryId(value: string): void {
+  if (!value || value.trim() !== value || value.length > 500 || !/^nebula-arcade:tag-outbox:[A-Za-z0-9._~%-]+:[A-Za-z0-9._~%-]+$/.test(value)) {
+    throw new Error("deliveryId is invalid");
+  }
+  outboxTenant(value);
 }
 
 function requireId(value: string, name: string): void {
