@@ -1,0 +1,103 @@
+name: ApolloStation Hostless three-node release
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "services/**"
+      - "scripts/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".github/workflows/hostless-three-node-deploy.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy all three Hostless nodes after the full test suite passes"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-hostless-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-test-suite:
+    name: Full ApolloStation test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate Hostless automation helper syntax
+        run: node --check scripts/hostless/ensure-node-app.mjs
+      - name: Install media test tools
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          ffmpeg -version
+      - name: Audit SQLite ownership and persistence surface
+        run: |
+          node scripts/audit-sqlite-usage.mjs --json > /tmp/apollo-sqlite-audit.json
+          node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
+      - name: Build and run every Node regression test
+        run: npm test
+
+  deploy-three-nodes:
+    name: Discover, create if needed, and deploy all three nodes
+    needs: full-test-suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    if: >-
+      ${{ needs.full-test-suite.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.deploy == true }}
+    steps:
+      - name: Check out the tested main commit
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Check out main as a local tracking branch
+        run: git switch --force-create main --track origin/main
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Deploy Node 1 — SPMT authority, SpaceMountain, OverlayBay
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+        run: node scripts/hostless/ensure-node-app.mjs node1 "$GITHUB_SHA"
+      - name: Deploy Node 2 — Chat Gateway, StreamWeaver, Nebula
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+        run: node scripts/hostless/ensure-node-app.mjs node2 "$GITHUB_SHA"
+      - name: Deploy Node 3 — Discord Stream Hub, Lounge
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
+        run: node scripts/hostless/ensure-node-app.mjs node3 "$GITHUB_SHA"
