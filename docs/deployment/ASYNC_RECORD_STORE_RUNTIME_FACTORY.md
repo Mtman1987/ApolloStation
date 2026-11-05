@@ -126,7 +126,7 @@ The Nebula readiness response now includes `tagStoreReady` and `tagStoreMode`. W
 
 ## Nebula player/game runtime Turso caller integration
 
-The provider ingress and authenticated moderator/control surface now select the same async game-runtime store when NEBULA_ARCADE_GAME_RUNTIME_STORE=turso. The provider's player enrollment, score/points/leaderboard reads, game command claims, membership updates, activity scoring, check-in bonus awards, announcement routing, Discord dashboard state, and moderator wallet/running-game controls await the async store. The default remains SQLite.
+The provider ingress, authenticated moderator/control surface, and live HTTP host now select async game-runtime, action-history, and activity stores when NEBULA_ARCADE_GAME_RUNTIME_STORE=turso. Player enrollment, balances/leaderboards, game commands, check-in awards, game-action receipts/history, channel activity, player membership, and pending command choices await their selected stores. The default remains SQLite.
 
 Set these protected environment values on the Node 2 Nebula workload only after the importer has reported verified=true:
 
@@ -134,7 +134,7 @@ Set these protected environment values on the Node 2 Nebula workload only after 
 - NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL
 - NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN
 
-This game-runtime adapter uses the nebula-arcade service namespace. It is a separate setting from Tag and Mosaic selection; do not assume enabling one enables the others. The async store is initialized before provider ingress, moderator controls, or readiness-dependent work uses it. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected.
+The game-runtime, action-history, and activity adapters share the nebula-arcade service namespace and the same Node 2 Turso credentials. They are separate from Tag, Mosaic, and Game Mix selection; do not assume enabling one enables the others. The async stores are initialized before provider ingress, moderator controls, or readiness-dependent work uses them. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected. With NEBULA_ARCADE_REQUIRE_TURSO=1, the live host readiness endpoint requires game runtime, action history, and activity to report Turso mode.
 
 Build, then dry-run the importer against the recovered SQLite source:
 
@@ -147,4 +147,17 @@ Review tenant/runtime-key counts and the source digest. Apply only to the intend
 
 The importer preserves the normalized game runtime state, player balances/progress, score ledger, processed command IDs, and check-in bonus receipts. It refuses populated destination keys, verifies restored state, and never modifies the SQLite source. Do not enable the runtime until the report is verified and restart/read-after-write checks pass.
 
-**Remaining Nebula SQLite domains:** game actions, arcade activity/choice state, game inputs, tabletop/Bingo/Quackverse state, network/enrollment/outbox state, Tag experience/support/overlay messages, dashboard message pointers, and Quackverse art still have separate SQLite stores. This PR does not claim those domains are Turso-backed. Each requires its own async contract, domain parity tests, safe importer/restore verification, and runtime caller migration.
+**Remaining Nebula SQLite domains:** game inputs, tabletop/Bingo/Quackverse state (including atomic points awards and media outbox), network/enrollment/outbox state, Tag experience/support/overlay messages, dashboard message pointers, and Quackverse art still have separate SQLite stores. Action history and activity now have async adapters and an importer, but the new importer must pass CI and be executed against the recovered source before cutover. The remaining domains each require their own async contract, domain parity tests, safe importer/restore verification, and runtime caller migration.
+
+
+### Game action and activity import
+
+The action-history and activity stores have a separate dry-run-first importer. It reads the legacy action, channel configuration, member activity, and pending-choice tables from the same SQLite source using a read-only connection, checks SQLite integrity, and reports counts plus a SHA-256 digest:
+
+    npm run db:migrate:nebula-action-activity:turso -- --source /absolute/path/to/nebula-arcade.sqlite
+
+After reviewing the report, apply only when the corresponding Turso namespaces are empty:
+
+    npm run db:migrate:nebula-action-activity:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
+
+The importer verifies destination counts in each tenant namespace and never modifies the source SQLite file. It is independent of the game-runtime importer; run and retain both reports. Do not enable the production Turso cutover until both reports verify and restart/read-after-write checks pass.
