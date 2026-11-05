@@ -71,3 +71,4 @@ export * from "./mosaic-generation.js";
 export * from "./mosaic-overlay.js";
 
 export * from "./async-tag-record-store.js";
+export * from "./async-nebula-tag-runtime.js";
