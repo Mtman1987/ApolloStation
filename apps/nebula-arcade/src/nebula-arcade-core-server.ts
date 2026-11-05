@@ -133,7 +133,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         if(isNebulaChannelOptedOut(experienceStore,options.tenantId,options.channelId))throw new SandboxError(403,"This channel has opted out of all Nebula Arcade games");
         const body = await readJson(request);
         const outcome = await runtime.reconcileRotation({ tenantId: options.tenantId, channelId: options.channelId, now: optionalIso(body.now) ?? new Date().toISOString(), liveUserIds: stringArray(body.liveUserIds, 200) });
-        return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
+        return json(response, 200, { outcome, stored: await runtime.getState(options.tenantId) });
       }
       if (url.pathname === "/v1/nebula-arcade/tag/overlay" || url.pathname.startsWith("/v1/nebula-arcade/tag/overlay/")) {
         const adapted = await overlay.handle({ method: request.method ?? "GET", path: url.pathname }, principal);
