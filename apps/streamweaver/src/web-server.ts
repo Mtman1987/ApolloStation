@@ -86,7 +86,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
       return true;
     }
     return await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url);
-  }, close: () => {secureChoice?.close();controls.close();} });
+  }, close: async () => {secureChoice?.close();await controls.close();} });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `
