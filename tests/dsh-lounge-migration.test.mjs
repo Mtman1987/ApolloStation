@@ -31,6 +31,7 @@ test("DSH Lounge importer snapshots and restores all four tenant records atomica
 test("DSH Lounge importer refuses occupied namespaces",async()=>{
  const t=await fixture();try{
   const db=new DatabaseSync(t.sourcePath,{readOnly:true}),snapshot=readDshLoungeSnapshot(db);db.close();
+  await t.store.put("lounge-tenants","_index","tenant-other",{tenantId:"tenant-other"});
   await t.store.put("lounge-host","tenant-other","current",{persistent:"idle"});
   await assert.rejects(importDshLoungeSnapshot(t.store,snapshot,"migration-one"),/namespaces are not empty/);
   assert.equal((await t.store.list("lounge-migrations","_index")).length,0);
