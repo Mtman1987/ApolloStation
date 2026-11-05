@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
+// Preserve Hostless injected port before applying local fallbacks for other nodes.
+const hostlessPort = process.env.PORT;
 const node1 = [
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
   ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.DSH_WEB_PORT ?? "3201", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite" }],
@@ -12,7 +14,7 @@ const node1 = [
 ];
 const node2 = [
   ["apps/chat-gateway/dist/service-start.js", {}],
-  ["apps/streamweaver/dist/web-server.js", { PORT: process.env.PORT ?? "8080" }],
+  ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
 ];
 // Nebula is tenant-scoped. Do not invent a tenant/channel before the owner has
 // completed first-run workspace provisioning; keep the other Node 2 services up.
