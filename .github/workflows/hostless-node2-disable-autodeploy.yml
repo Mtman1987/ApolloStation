@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-node2-settings
-  cancel-in-progress: false
+  group: apollo-hostless-release
+  cancel-in-progress: true
 
 jobs:
   disable-auto-deploy:
