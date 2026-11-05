@@ -42,7 +42,7 @@ jobs:
         run: |
           node --input-type=module - <<'NODE'
           const { GH_TOKEN, RUN_ID, EXPECTED_SHA, REPOSITORY, GITHUB_OUTPUT } = process.env;
-          if (!/^\\d+$/.test(RUN_ID ?? "")) throw new Error("A numeric prior Actions run ID is required.");
+          if (!/^\d+$/.test(RUN_ID ?? "")) throw new Error("A numeric prior Actions run ID is required.");
           if (!/^[0-9a-f]{40}$/i.test(EXPECTED_SHA ?? "")) throw new Error("A full 40-character commit SHA is required.");
           const headers = { authorization: `Bearer ${GH_TOKEN}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" };
           async function get(path) {
