@@ -122,3 +122,29 @@ The importer preserves Tag state, command idempotency receipts, and pending deli
 Existing Tag points/immunity/rotation settings are also imported idempotently from the local `nebula_arcade_settings` table at startup. Subsequent moderator changes are written to the async Tag settings record.
 
 The Nebula readiness response now includes `tagStoreReady` and `tagStoreMode`. With `NEBULA_ARCADE_REQUIRE_TURSO=1`, readiness requires Tag, Mosaic, Mosaic control, and Game Mix to report Turso mode and healthy stores. This is a readiness gate, not an automatic data migration.
+
+
+## Nebula player/game runtime Turso caller integration
+
+The provider ingress and authenticated moderator/control surface now select the same async game-runtime store when NEBULA_ARCADE_GAME_RUNTIME_STORE=turso. The provider's player enrollment, score/points/leaderboard reads, game command claims, membership updates, activity scoring, check-in bonus awards, announcement routing, Discord dashboard state, and moderator wallet/running-game controls await the async store. The default remains SQLite.
+
+Set these protected environment values on the Node 2 Nebula workload only after the importer has reported verified=true:
+
+- NEBULA_ARCADE_GAME_RUNTIME_STORE=turso
+- NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL
+- NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN
+
+This game-runtime adapter uses the nebula-arcade service namespace. It is a separate setting from Tag and Mosaic selection; do not assume enabling one enables the others. The async store is initialized before provider ingress, moderator controls, or readiness-dependent work uses it. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected.
+
+Build, then dry-run the importer against the recovered SQLite source:
+
+    npm run build
+    npm run db:migrate:nebula-game-runtime:turso -- --source /absolute/path/to/nebula-arcade.sqlite
+
+Review tenant/runtime-key counts and the source digest. Apply only to the intended empty Turso namespace:
+
+    npm run db:migrate:nebula-game-runtime:turso -- --source /absolute/path/to/nebula-arcade.sqlite --apply
+
+The importer preserves the normalized game runtime state, player balances/progress, score ledger, processed command IDs, and check-in bonus receipts. It refuses populated destination keys, verifies restored state, and never modifies the SQLite source. Do not enable the runtime until the report is verified and restart/read-after-write checks pass.
+
+**Remaining Nebula SQLite domains:** game actions, arcade activity/choice state, game inputs, tabletop/Bingo/Quackverse state, network/enrollment/outbox state, Tag experience/support/overlay messages, dashboard message pointers, and Quackverse art still have separate SQLite stores. This PR does not claim those domains are Turso-backed. Each requires its own async contract, domain parity tests, safe importer/restore verification, and runtime caller migration.
