@@ -208,3 +208,11 @@ A repository-wide GitHub code search for `DatabaseSync` returned at least 100 ma
 - `packages/provider-grants-core/src/credential-authority.ts`
 
 **Important correction to the earlier summary:** this inventory proves the persistence surface is broader than the priority apps alone. It includes Commlink, MountainView, Stellar Core, Companion, HearMeOut, and Discord Stream Hub subsystems. Do not migrate only the obvious top-level database while leaving auxiliary processes pointing at old local paths; the runtime service inventory and per-app database ownership map must be reconciled before cutover.
+
+
+
+## First StreamWeaver async persistence pilot (2026-11-05)
+
+The isolated `streamweaver_social_reactions` queue has an async record-store implementation in PR #428. Production selection is explicit via `STREAMWEAVER_SOCIAL_REACTIONS_STORE=turso` and uses the StreamWeaver database credentials; simulation runtimes are deliberately forced to local SQLite. The donor-action executor and reconciliation worker now await queue operations, preserving delivery-ID idempotency, pending/waiting states, attempts, retry behavior, recent-reaction history and tenant isolation. Chat Gateway and simulation shutdown paths await the provider's async store close when selected.
+
+The pilot includes `npm run db:migrate:streamweaver-social-reactions:turso -- --source <sqlite-path>`, dry-run by default with read-only SQLite integrity check, deterministic digest, empty-destination guard, transactional import and verification. The StreamWeaver parity workflow builds and tests the async store and importer. No Turso credentials or production records have been used. This is a low-risk queue pilot only; StreamWeaver ride/economy, TikTok, secure-choice, relay, flow, translation, runtime settings, persona and other SQLite stores remain unmigrated. The StreamWeaver service is not database-complete or Hostless-ready.
