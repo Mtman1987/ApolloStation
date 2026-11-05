@@ -138,7 +138,7 @@ if (matching.length > 1) fail(`Multiple apps named ${node.app} exist in project 
 if (matching.length === 0) {
   console.log(`App ${node.app} does not exist. Creating it; Hostless may start an initial deployment automatically.`);
   runCli(
-    ["create", "app", node.app, "--project", String(projectId), "--yes", "--wait", "--json"],
+    ["create", "app", node.app, "--project", String(projectId), "--branch", process.env.GITHUB_REF_NAME ?? "main", "--yes", "--wait", "--json"],
     `Create ${node.app}`,
   );
 }
