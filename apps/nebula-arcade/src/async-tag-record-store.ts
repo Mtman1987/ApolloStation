@@ -55,7 +55,7 @@ export class AsyncNebulaTagRecordStore {
 
   initialize(): Promise<void> { return this.records.initialize(); }
   health(): Promise<{ ready: boolean }> { return this.records.health(); }
-  close(): Promise<void> { return this.records.close(); }
+  async close(): Promise<void> { await this.records.close(); }
 
   async getState(tenantId: string): Promise<StoredNebulaTagStateV1> {
     requireId(tenantId, "tenantId");
