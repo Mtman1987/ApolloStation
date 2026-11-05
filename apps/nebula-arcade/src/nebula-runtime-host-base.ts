@@ -4,6 +4,7 @@ import { renderNebulaControlPage, NEBULA_CONTROL_JS } from "./control-page.js";
 import { NEBULA_MOSAIC_LIBRARY_JS } from "./mosaic-library.js";
 import { applyNebulaWidgetSettings } from "./game-settings.js";
 import { SqliteNebulaArcadeActivityStore, NEBULA_ACTIVITY_CSS, NEBULA_ACTIVITY_HTML, NEBULA_ACTIVITY_JS } from "./arcade-activity.js";
+import { AsyncNebulaArcadeActivityStore } from "./async-arcade-activity-store.js";
 import { SqliteNebulaTagExperienceStore, isNebulaChannelOptedOut } from "./nebula-tag-experience.js";
 import type { NormalizedChatMessageV1 } from "@spmt/contracts";
 import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
@@ -49,7 +50,9 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const mixes = options.gameMixTursoDatabaseUrl && options.gameMixTursoAuthToken
     ? new TursoNebulaGameMixStore(new TursoHttpAdapter({ url: options.gameMixTursoDatabaseUrl, authToken: options.gameMixTursoAuthToken }))
     : new AsyncSqliteNebulaGameMixStore(options.databasePath);
-  const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
+  const asyncActivity=gameRuntimeMode==="turso"?new AsyncNebulaArcadeActivityStore({mode:"turso",url:process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!,authToken:process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN!}):undefined;
+  const activity=asyncActivity??new SqliteNebulaArcadeActivityStore(options.databasePath);
+  const activityReady=asyncActivity?asyncActivity.initialize():Promise.resolve();
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
   const mosaicTursoDatabaseUrl = options.mosaicTursoDatabaseUrl ?? process.env.TURSO_DATABASE_URL;
   const mosaicTursoAuthToken = options.mosaicTursoAuthToken ?? process.env.TURSO_AUTH_TOKEN;
@@ -68,23 +71,26 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
     try {
       const url = new URL(request.url ?? "/", "http://nebula.green");
       if(request.method==="GET"&&url.pathname==="/health/ready"){
-        await Promise.all([runtimeReady,actionsReady]);
+        await Promise.all([runtimeReady,actionsReady,activityReady]);
         if(runtime instanceof AsyncNebulaGameRuntimeStore){const runtimeHealth=await runtime.health();if(!runtimeHealth.ready)throw new NebulaHostError(503,"Nebula game runtime persistence is unavailable");}
         else runtime.integrityCheck();
         if(actions instanceof AsyncNebulaGameActionStore){const actionHealth=await actions.health();if(!actionHealth.ready)throw new NebulaHostError(503,"Nebula game action persistence is unavailable");}
+        if(activity instanceof AsyncNebulaArcadeActivityStore){const activityHealth=await activity.health();if(!activityHealth.ready)throw new NebulaHostError(503,"Nebula arcade activity persistence is unavailable");}
         await runtime.get(options.tenantId);
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
         if (!(await mosaics.health()).ready) throw new NebulaHostError(503, "Nebula Mosaic control persistence is unavailable");
         const gameRuntimeStoreMode=runtime instanceof AsyncNebulaGameRuntimeStore?"turso":"sqlite";
         const gameActionStoreMode=actions instanceof AsyncNebulaGameActionStore?"turso":"sqlite";
+        const activityStoreMode=activity instanceof AsyncNebulaArcadeActivityStore?"turso":"sqlite";
         if(requireTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
+        if(requireTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
         const requireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO==="1";
         if(requireTurso&&gameRuntimeStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game runtime must use Turso for production readiness");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
         const tagResponse=await fetch(`http://127.0.0.1:${corePort}/health/ready`,{signal:AbortSignal.timeout(3000)});
         let tagBody:Record<string,unknown>={};try{tagBody=await tagResponse.json() as Record<string,unknown>;}catch{}
         if(!tagResponse.ok||tagBody.tagStoreReady!==true)throw new NebulaHostError(503,"Nebula Tag persistence is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameRuntimeStoreReady:true,gameRuntimeStoreMode,gameRuntimeStoreRequired:requireTurso,gameActionStoreReady:true,gameActionStoreMode,gameActionStoreRequired:requireTurso,activityStoreReady:true,activityStoreMode,activityStoreRequired:requireTurso,tagStoreReady:true,tagStoreMode:tagBody.tagStoreMode==="turso"?"turso":"sqlite",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
@@ -219,8 +225,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
 
   return {
     server,
-    async listen() { await Promise.all([runtimeReady,actionsReady]); if (mosaics instanceof AsyncNebulaMosaicRecordStore) await mosaics.initialize(); await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); await controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); await actions.close(); await runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async listen() { await Promise.all([runtimeReady,actionsReady,activityReady]); if (mosaics instanceof AsyncNebulaMosaicRecordStore) await mosaics.initialize(); await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
+    async close() { if (server.listening) await close(server); await controls.close(); await activity.close(); policy.close(); await mosaics.close(); await mixes.close(); await actions.close(); await runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
@@ -244,15 +250,15 @@ async async function handleAction(response: ServerResponse, body: Record<string,
   }, "default", now);
   const action = await actions.record({ tenantId: options.tenantId, channel, gameId, actorId: userId, username, displayName, action: checked.action, args: checked.args, message: String(body.message ?? "").slice(0,500), occurredAt: now.toISOString() });
   inputs.append(message,[gameId],options.channelId);
-  const actorId=`spmt:${userId}`; activity.observe(options.tenantId,options.channelId,actorId,message.text,now.getTime());
-  if(!["start","stop","status"].includes(checked.action)) activity.membership(options.tenantId,options.channelId,actorId,gameId,checked.action!=="leave",now.getTime());
+  const actorId=`spmt:${userId}`; await activity.observe(options.tenantId,options.channelId,actorId,message.text,now.getTime());
+  if(!["start","stop","status"].includes(checked.action)) await activity.membership(options.tenantId,options.channelId,actorId,gameId,checked.action!=="leave",now.getTime());
   return json(response, 200, { handled: true, action, ...(result ? {result} : {}), game: updated.result, activeGameIds: resolveNebulaChannelGameIds(updated.state, channel) });
 }
 
-async function gameMixState(tenantId: string, channelId: string, mix: NebulaGameMixV1, runtimeStore: SqliteNebulaGameRuntimeStore|AsyncNebulaGameRuntimeStore, actionStore: SqliteNebulaGameActionStore|AsyncNebulaGameActionStore, activityStore: SqliteNebulaArcadeActivityStore) {
+async function gameMixState(tenantId: string, channelId: string, mix: NebulaGameMixV1, runtimeStore: SqliteNebulaGameRuntimeStore|AsyncNebulaGameRuntimeStore, actionStore: SqliteNebulaGameActionStore|AsyncNebulaGameActionStore, activityStore: SqliteNebulaArcadeActivityStore|AsyncNebulaArcadeActivityStore) {
   const runtime = await runtimeStore.get(tenantId), gameIds = mix.layers.filter((layer) => layer.enabled).map((layer) => layer.gameId), recent = await actionStore.list(tenantId, { channel: channelId, gameIds, limit: 100 }), newest = new Map<string, (typeof recent)[number]>();
-  const runningGameIds=resolveNebulaChannelGameIds(runtime,channelId,activityStore.configuredGames(tenantId,channelId)),runningOverlayGameIds=gameIds.filter((gameId)=>runningGameIds.includes(gameId));
-  const activity=activityStore.snapshot(tenantId,channelId,gameIds,runningGameIds);
+  const runningGameIds=resolveNebulaChannelGameIds(runtime,channelId,await activityStore.configuredGames(tenantId,channelId)),runningOverlayGameIds=gameIds.filter((gameId)=>runningGameIds.includes(gameId));
+  const activity=await activityStore.snapshot(tenantId,channelId,gameIds,runningGameIds);
   for (const action of recent) newest.set(action.gameId, action);
   let visibleGameIds = [...runningOverlayGameIds];
   if (mix.mode === "activity") { const current = [...recent].reverse().find((action)=>runningOverlayGameIds.includes(action.gameId)); visibleGameIds = current ? [current.gameId] : visibleGameIds.slice(0,1); }
