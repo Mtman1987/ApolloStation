@@ -64,7 +64,7 @@ jobs:
           JOB_ID="$(printf '%s' "$JOBS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s).jobs||[];const x=j.find(v=>v.name.startsWith("Deploy Node 2"));if(x)process.stdout.write(String(x.id));})')"
           if [ -z "$JOB_ID" ]; then echo "No Node 2 deployment job exists in source run."; exit 0; fi
           LOG="$(gh run view "$SOURCE_RUN_ID" --job "$JOB_ID" --repo "$REPOSITORY" --log 2>/dev/null || true)"
-          DEPLOYMENT_ID="$(printf '%s\\n' "$LOG" | grep -Eo 'Deployment [a-f0-9]{24}: DEPLOYMENT_QUEUED' | tail -n1 | awk '{print $2}' || true)"
+          DEPLOYMENT_ID="$(printf '%s\\n' "$LOG" | grep -Eo 'Deployment [a-f0-9]{24}: DEPLOYMENT_QUEUED' | tail -n1 | awk '{print $2}' | tr -d ':' || true)"
           if [ -n "$DEPLOYMENT_ID" ]; then echo "id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"; echo "Resolved exact Node 2 deployment: $DEPLOYMENT_ID"; else echo "Could not extract a deployment ID from the Node 2 job log."; fi
 
       - name: Install Hostless CLI
@@ -89,10 +89,15 @@ jobs:
             echo "Skipping $NODE because target is $TARGET."
             exit 0
           fi
+          API="https://api.hostless.cloud/v1/apps/$APP"
+          curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API" -o hostless-diagnostics/app-detail.json
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
             echo "Timestamp (UTC): $(date -u +%FT%TZ)"
+            echo
+            echo "===== HOSTLESS APP STATE ====="
+            node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/app-detail.json","utf8")); const a=d.app??d; const pick=(o,keys)=>Object.fromEntries(keys.filter(k=>o?.[k]!==undefined).map(k=>[k,o[k]])); console.log(JSON.stringify({...pick(a,["id","name","status","state","appState","url","appUrl","publicUrl","defaultDomain","domains","containerPort"]),...pick(d,["status","state"])},null,2));'
             echo
             echo "===== RECENT ERROR LOGS ====="
           } | tee hostless-diagnostics/summary.txt
