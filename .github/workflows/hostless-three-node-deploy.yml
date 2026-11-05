@@ -21,7 +21,6 @@ on:
       - "apps/discord-stream-hub/**"
       - "packages/**"
       - "services/**"
-      - "scripts/hostless/start-node.mjs"
       - "hostless.yaml"
       - "package.json"
       - "package-lock.json"
