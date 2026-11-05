@@ -122,7 +122,7 @@ export class StreamWeaverProviderRuntime {
     const socialReactionStoreMode=options.simulation===true?"sqlite":process.env.STREAMWEAVER_SOCIAL_REACTIONS_STORE??"sqlite";
     if(socialReactionStoreMode!=="sqlite"&&socialReactionStoreMode!=="turso")throw new Error("STREAMWEAVER_SOCIAL_REACTIONS_STORE must be sqlite or turso");
     if(socialReactionStoreMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_SOCIAL_REACTIONS_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");
-    const asyncSocialReactionStore=socialReactionStoreMode==="turso"?new AsyncStreamWeaverSocialReactionStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!,now:options.now}):undefined;
+    const asyncSocialReactionStore=socialReactionStoreMode==="turso"?new AsyncStreamWeaverSocialReactionStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!,...(options.now?{now:options.now}:{})}):undefined;
     this.socialReactions=asyncSocialReactionStore??new SqliteStreamWeaverSocialReactionStore(options.databasePath,options.now);
     this.socialReactionReady=asyncSocialReactionStore?asyncSocialReactionStore.initialize():Promise.resolve();
     this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>options.simulation===true?undefined:this.settings.get(tenant)?.ownerCanonicalUserId);
