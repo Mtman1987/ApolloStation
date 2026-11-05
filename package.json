@@ -42,7 +42,8 @@
     "db:migrate:nebula-game-mixes:turso": "node scripts/migrate-nebula-game-mixes-to-turso.mjs",
     "db:stage-recovered-json:turso": "node scripts/stage-recovered-json-to-turso.mjs",
     "db:test:turso:live": "node --test tests/turso-live-runtime.test.mjs",
-    "db:migrate:nebula-tag:turso": "node scripts/migrate-nebula-tag-to-turso.mjs"
+    "db:migrate:nebula-tag:turso": "node scripts/migrate-nebula-tag-to-turso.mjs",
+    "db:migrate:streamweaver-social-reactions:turso": "node scripts/migrate-streamweaver-social-reactions-to-turso.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
