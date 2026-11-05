@@ -49,8 +49,7 @@ jobs:
       - name: Validate Hostless launch and deploy helpers
         run: |
           node --check scripts/hostless/ensure-node-app.mjs
-          node --check scripts/hostless/run-private-preview.mjs
-          node --check scripts/hostless/deploy-private-preview.mjs
+          node --check scripts/hostless/start-node.mjs
       - name: Install media test tools
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
