@@ -18,7 +18,7 @@ export async function importStreamWeaverGenerationSnapshot(store,snapshot,migrat
  return store.transaction(async tx=>{
   const prior=await tx.get(MIGRATIONS,"_index",migrationId);if(prior){if(prior.digest!==snapshot.digest)throw new Error("Migration ID already exists with a different StreamWeaver generation source digest");return{imported:false,duplicate:true,counts:snapshot.counts,digest:snapshot.digest};}
   if((await tx.list(TENANTS,"_index")).length||(await tx.list(MIGRATIONS,"_index")).length)throw new Error("Turso StreamWeaver generation namespaces are not empty");
-  if(snapshot.catalog&&await tx.get(CATALOG,"_global","current"))throw new Error("Turso StreamWeaver generation catalog is not empty");
+  if(await tx.get(CATALOG,"_global","current"))throw new Error("Turso StreamWeaver generation catalog is not empty");
   for(const tenant of snapshot.tenants){if((await tx.list(SETTINGS,tenant)).length||(await tx.list(CHECKPOINTS,tenant)).length)throw new Error(`Turso StreamWeaver generation destination is not empty for ${tenant}`);}
   for(const tenant of snapshot.tenants)await tx.put(TENANTS,"_index",tenant,{tenantId:tenant});
   for(const row of snapshot.settings)await tx.put(SETTINGS,row.tenant,row.surface,row.body);
