@@ -6,6 +6,7 @@ import { nebulaSettingFields, validateNebulaSettings } from './game-settings.js'
 import { SqliteNebulaNetwork } from './arcade-network.js';
 import { SqliteNebulaTabletopRuntime } from './tabletop-runtime.js';
 import { SqliteNebulaGameRuntimeStore } from './game-runtime-store.js';
+import { AsyncNebulaGameRuntimeStore } from "./async-game-runtime-store.js";
 import { getOrCreateNebulaPlayer, getNebulaGameStats, spendNebulaGamePoints, claimNebulaGameCommand, setNebulaChannelGameRunning, resolveNebulaChannelGameIds } from './game-runtime.js';
 import { SqliteNebulaTagStore, NebulaTagRuntime } from './nebula-tag-runtime.js';
 import { AsyncNebulaTagRecordStore, type AsyncNebulaTagSettings } from "./async-tag-record-store.js";
