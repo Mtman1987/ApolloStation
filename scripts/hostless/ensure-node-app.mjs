@@ -103,10 +103,12 @@ function syncRuntimeSecrets(projectId, appName) {
   }
   if (Object.keys(bundle).length === 0) fail("No explicitly mapped GitHub Actions runtime secrets were supplied.");
   const excluded = new Set(["HOSTLESS_NODE1_TOKEN", "HOSTLESS_NODE2_TOKEN", "HOSTLESS_NODE3_TOKEN", "GITHUB_TOKEN"]);
+  const nodePrefix = nodeKey.toUpperCase() + "_";
   const entries = Object.entries(bundle).filter(([key, value]) =>
     /^[A-Z][A-Z0-9_]{1,127}$/.test(key) && !excluded.has(key) &&
-    !/^HOSTLESS_.*TOKEN$/.test(key) && typeof value === "string" && value.length > 0
-  );
+    !/^HOSTLESS_.*TOKEN$/.test(key) && key.startsWith(nodePrefix) &&
+    typeof value === "string" && value.length > 0
+  ).map(([key, value]) => [key.slice(nodePrefix.length), value]);
   if (entries.length === 0) fail("No runtime secrets were present in the GitHub Actions secret bundle.");
   console.log(`Synchronizing ${entries.length} GitHub Actions secrets to ${appName} (values are write-only and never logged).`);
   for (const [key, value] of entries) {
