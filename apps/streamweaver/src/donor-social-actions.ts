@@ -3,6 +3,7 @@ import type { StreamWeaverCapabilityExecutorV1 } from "./donor-command-services.
 import type { StreamWeaverDonorCommandInvocationV1 } from "./donor-command-runtime.js";
 import { STREAMWEAVER_DONOR_ACTION_FIRED } from "./donor-event-actions.js";
 import type { SqliteStreamWeaverBicStore, StreamWeaverBicMutationV1 } from "./bic-store.js";
+import type { AsyncStreamWeaverBicStore } from "./async-bic-store.js";
 import { findBestStreamWeaverUsernameMatch, type StreamWeaverChatterV1 } from "./username-matcher.js";
 import { SqliteStreamWeaverSocialReactionStore, type StreamWeaverSocialReactionRecord } from "./social-reaction-store.js";
 import { AsyncStreamWeaverSocialReactionStore } from "./async-social-reaction-store.js";
@@ -38,7 +39,7 @@ export interface StreamWeaverBicChatterSourceV1 {
   list(input: { tenantId: string; provider: string; channelId: string }): Promise<readonly StreamWeaverChatterV1[]> | readonly StreamWeaverChatterV1[];
 }
 export interface StreamWeaverBicRuntimeOptionsV1 {
-  store: SqliteStreamWeaverBicStore;
+  store: SqliteStreamWeaverBicStore | AsyncStreamWeaverBicStore;
   client: Pick<SpmtClient, "publishEvent">;
   chatters?: StreamWeaverBicChatterSourceV1;
   resolveThiefDisplayName?: (tenantId: string, invocation?: StreamWeaverDonorCommandInvocationV1) => Promise<string> | string;
@@ -87,7 +88,7 @@ export class StreamWeaverBicRuntime {
   }
 
   async record(input: { tenantId: string; target: string; displayName: string; thiefDisplayName: string; idempotencyKey: string; donorActionId: string; donorActionName: string; source: string }): Promise<StreamWeaverBicMutationV1> {
-    const result = this.options.store.steal(input.tenantId, input.target, input.displayName, input.idempotencyKey);
+    const result = await this.options.store.steal(input.tenantId, input.target, input.displayName, input.idempotencyKey);
     const payload = {
       schemaVersion: 1,
       total: result.total,
