@@ -89,7 +89,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const activityStoreMode=activity instanceof AsyncNebulaArcadeActivityStore?"turso":"sqlite";
         const gameInputStoreMode=inputs instanceof AsyncNebulaGameInputStore?"turso":"sqlite";
         // Tabletop remains SQLite until its atomic async adapter and importer land.
-        const tabletopStoreMode="sqlite";
+        const tabletopStoreMode: string="sqlite";
         if(requireFullTurso&&tabletopStoreMode!=="turso")throw new NebulaHostError(503,"Nebula tabletop state, Bingo rewards, Quackverse trades, receipts, and media outbox must use Turso for production readiness");
         if(requireFullTurso&&gameActionStoreMode!=="turso")throw new NebulaHostError(503,"Nebula game action history must use Turso for production readiness");
         if(requireFullTurso&&activityStoreMode!=="turso")throw new NebulaHostError(503,"Nebula arcade activity must use Turso for production readiness");
