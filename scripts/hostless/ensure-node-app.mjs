@@ -137,9 +137,9 @@ async function resolveNode1Origin() {
 async function clearDeferredNebulaRuntime(appName) {
   // A previous deployment may have left write-only Nebula values on Hostless.
   // Remove them explicitly while no real workspace tenant/config has been provisioned.
-  const response = await request(`/apps/${encodeURIComponent(appName)}/environment-variables`);
-  const variables = rows(response, ["environmentVariables", "variables", "items", "data"]);
-  if (!variables) fail("Hostless environment-variable endpoint returned an unexpected response shape; refusing to deploy Node 2 with possibly stale Nebula settings.");
+  const appDetails = await request(`/apps/${encodeURIComponent(appName)}`);
+  const variables = appDetails?.appState?.environmentVariables ?? appDetails?.environmentVariables;
+  if (!Array.isArray(variables)) fail("Hostless app details did not expose environment-variable names; refusing to deploy Node 2 with possibly stale Nebula settings.");
   const existing = new Set(variables.map((item) => item?.name ?? item?.key).filter((value) => typeof value === "string"));
   const deferredKeys = [
     "NEBULA_ARCADE_WORKER_CREDENTIAL",
