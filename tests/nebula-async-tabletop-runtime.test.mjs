@@ -75,6 +75,11 @@ test("async tabletop preserves Quackverse trade idempotency and durable pack out
     assert.equal(outbox.length, 1);
     assert.equal(outbox[0].key, "twitch:connection-a:pack-once");
     assert.equal(outbox[0].value.status, "pending");
+    const pending = await runtime.pendingOutbox("tenant-a");
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].updated_at, outbox[0].value.updatedAt);
+    await runtime.updateOutbox("tenant-a", pending[0].id, "working", { ...pending[0].body, startedAt: "2026-11-05T12:01:00.000Z" });
+    assert.equal((await runtime.pendingOutbox("tenant-a"))[0].status, "working");
   } finally {
     await records.close();
     await runtime.close();
