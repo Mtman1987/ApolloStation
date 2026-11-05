@@ -111,6 +111,10 @@ jobs:
           RECENT_STATUS=${PIPESTATUS[0]}
           echo "Recent log command exit code: $RECENT_STATUS" | tee -a hostless-diagnostics/summary.txt
 
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            DEPLOYMENT_ID="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/deployments.json","utf8")); const rows=Array.isArray(d)?d:(d.items??d.deployments??d.data??[]); const x=rows[0]; process.stdout.write(String(x?.id??x?._id??""));')"
+            if [ -n "$DEPLOYMENT_ID" ]; then echo "Resolved latest Hostless deployment from the app deployment list: $DEPLOYMENT_ID"; fi
+          fi
           if [ -n "$DEPLOYMENT_ID" ]; then
             echo "===== DEPLOYMENT LOGS: $DEPLOYMENT_ID =====" | tee -a hostless-diagnostics/summary.txt
             hostless logs --app "$APP" --deployment "$DEPLOYMENT_ID" 2>&1 | tee hostless-diagnostics/deployment.log
