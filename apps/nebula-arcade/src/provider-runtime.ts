@@ -2,6 +2,7 @@ import { NebulaMediaDelivery } from "./media-delivery.js";
 import { SqliteNebulaNetwork } from "./arcade-network.js";
 import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
 import { SqliteNebulaGameInputStore } from "./game-inputs.js";
+import { AsyncNebulaGameInputStore } from "./async-game-input-store.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import type { ExecutionTargetV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
@@ -69,7 +70,8 @@ export class NebulaArcadeProviderRuntime {
   private readonly media:NebulaMediaDelivery;
   private readonly network:SqliteNebulaNetwork;
   private readonly tabletop: SqliteNebulaTabletopRuntime;
-  private readonly inputStore: SqliteNebulaGameInputStore;
+  private readonly inputStore: SqliteNebulaGameInputStore | AsyncNebulaGameInputStore;
+  private readonly inputStoreReady: Promise<void>;
   private readonly activity: SqliteNebulaArcadeActivityStore | AsyncNebulaArcadeActivityStore;
   private readonly activityReady: Promise<void>;
   private readonly tagStore: SqliteNebulaTagStore | AsyncNebulaTagRecordStore;
@@ -94,7 +96,9 @@ export class NebulaArcadeProviderRuntime {
     if (gameRuntimeStoreMode !== "sqlite" && gameRuntimeStoreMode !== "turso") throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE must be sqlite or turso");
     if (gameRuntimeStoreMode === "turso" && (!process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL || !process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN)) throw new Error("NEBULA_ARCADE_GAME_RUNTIME_STORE=turso requires NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL and NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN");
     this.tabletop = new SqliteNebulaTabletopRuntime(options.databasePath);
-    this.inputStore = new SqliteNebulaGameInputStore(options.databasePath);
+    const asyncInputStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaGameInputStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
+    this.inputStore = asyncInputStore ?? new SqliteNebulaGameInputStore(options.databasePath);
+    this.inputStoreReady = asyncInputStore ? asyncInputStore.initialize() : Promise.resolve();
     const asyncActivityStore = gameRuntimeStoreMode === "turso" ? new AsyncNebulaArcadeActivityStore({ mode: "turso", url: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL!, authToken: process.env.NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN! }) : undefined;
     const activityStore = asyncActivityStore ?? new SqliteNebulaArcadeActivityStore(options.databasePath);
     this.activity = activityStore;
@@ -151,7 +155,7 @@ export class NebulaArcadeProviderRuntime {
     return result;
   }
   async reconcile() {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
     const delivery = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenant of this.options.config.tenants) {
       await this.flushAnnouncements(tenant.tenantId);
@@ -184,11 +188,11 @@ export class NebulaArcadeProviderRuntime {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady]);
-    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); await this.activity.close(); this.dashboardStore?.close(); await this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
+    this.media.close();this.network.close();this.tabletop.close(); await this.inputStore.close(); await this.activity.close(); this.dashboardStore?.close(); await this.actionStore.close(); await this.mosaicRuntime.close(); await this.gameStore.close(); this.experienceStore.close(); await this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
-    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady]);
+    await Promise.all([this.mosaicReady, this.tagReady, this.gameStoreReady, this.actionStoreReady, this.activityReady, this.inputStoreReady]);
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
     const message=delivery.message, channel=this.channels.get(messageKey(message)), experience=this.experiences.get(message.tenantId);
     if (!channel || !experience || message.actor.isBot) return;
@@ -298,7 +302,7 @@ export class NebulaArcadeProviderRuntime {
     }
     if(accepted.length){
       const normalizedText=selected?`spmt ${selected.gameId} ${selected.command} ${selected.args.join(" ")}`.trim():message.text;
-      this.inputStore.append({...message,text:normalizedText},accepted,channel.stateChannelId);
+      await this.inputStore.append({...message,text:normalizedText},accepted,channel.stateChannelId);
       await this.gameStore.update(message.tenantId,state=>{if(claimNebulaGameCommand(state,`activity:${delivery.deliveryId}`))recordNebulaGameChatActivity(state,{channel:channel.stateChannelId,userId:actor,username:message.actor.username,displayName:message.actor.displayName,message:normalizedText,profileGameIds:accepted,eligibleGameIds:accepted},now);});
     }
     if(replies.length)await this.reply(message,delivery.deliveryId,"game-action",replies.join(" "));
