@@ -57,6 +57,25 @@ export class AsyncNebulaTabletopRuntime {
     return Boolean(await this.records.get("tabletop-command-receipts", message.tenantId, id));
   }
 
+  async pendingOutbox(tenant: string, limit = 50): Promise<Array<{ id: string; kind: string; body: Record<string, any>; status: string; updated_at: string }>> {
+    await this.initialize();
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("outbox limit must be from 1 to 100");
+    const rows = await this.records.list<{ kind: string; body: Record<string, any>; status: string; updatedAt: string }>("tabletop-media-outbox", tenant);
+    return rows.map((row) => ({ id: row.key, ...row.value }))
+      .filter((row) => !["done", "failed", "cancelled"].includes(row.status))
+      .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id.localeCompare(b.id))
+      .slice(0, limit);
+  }
+
+  async updateOutbox(tenant: string, id: string, status: string, body: unknown, now = new Date().toISOString()): Promise<void> {
+    await this.initialize();
+    await this.records.transaction(async (tx) => {
+      const current = await tx.get<{ kind: string; body: unknown; status: string; updatedAt: string }>("tabletop-media-outbox", tenant, id);
+      if (!current) return;
+      await tx.put("tabletop-media-outbox", tenant, id, { ...current, body, status, updatedAt: now });
+    });
+  }
+
   async tradeSnapshot(tenant: string, actorId: string, players: Record<string, { username?: string; displayName?: string }> = {}, now = Date.now()): Promise<ReturnType<SqliteNebulaTabletopRuntime["tradeSnapshot"]>> {
     return this.withScratch(tenant, (runtime) => runtime.tradeSnapshot(tenant, actorId, players, now), false);
   }
