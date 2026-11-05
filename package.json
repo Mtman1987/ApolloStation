@@ -44,7 +44,8 @@
     "db:test:turso:live": "node --test tests/turso-live-runtime.test.mjs",
     "db:migrate:nebula-tag:turso": "node scripts/migrate-nebula-tag-to-turso.mjs",
     "db:migrate:nebula-game-runtime:turso": "node scripts/migrate-nebula-game-runtime-to-turso.mjs",
-    "db:migrate:nebula-action-activity:turso": "node scripts/migrate-nebula-action-activity-to-turso.mjs"
+    "db:migrate:nebula-action-activity:turso": "node scripts/migrate-nebula-action-activity-to-turso.mjs",
+    "db:migrate:nebula-tabletop:turso": "node scripts/migrate-nebula-tabletop-to-turso.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
