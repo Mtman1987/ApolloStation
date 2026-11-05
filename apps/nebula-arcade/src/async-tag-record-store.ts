@@ -84,6 +84,24 @@ export class AsyncNebulaTagRecordStore {
     await this.records.put("tag-settings", tenantId, "@arcade", settings);
   }
 
+  async importSettings(tenantId: string, settings: AsyncNebulaTagSettings, migrationId: string): Promise<{ imported: boolean; duplicate: boolean }> {
+    requireId(tenantId, "tenantId");
+    requireId(migrationId, "migrationId");
+    validateSettings(settings);
+    return this.records.transaction(async (tx) => {
+      const receipt = await tx.get<{ importedAt: string }>("tag-settings-migrations", tenantId, migrationId);
+      if (receipt) return { imported: false, duplicate: true };
+      const existing = await tx.get<AsyncNebulaTagSettings>("tag-settings", tenantId, "@arcade");
+      if (existing && Object.keys(existing).length) {
+        await tx.put("tag-settings-migrations", tenantId, migrationId, { importedAt: new Date().toISOString(), skippedExisting: true });
+        return { imported: false, duplicate: false };
+      }
+      await tx.put("tag-settings", tenantId, "@arcade", settings);
+      await tx.put("tag-settings-migrations", tenantId, migrationId, { importedAt: new Date().toISOString(), skippedExisting: false });
+      return { imported: true, duplicate: false };
+    });
+  }
+
   async rotationRules(tenantId: string): Promise<NebulaTagRotationRulesV1> {
     const settings = await this.settings(tenantId);
     return {
