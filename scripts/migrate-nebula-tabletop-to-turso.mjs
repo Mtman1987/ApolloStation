@@ -48,7 +48,7 @@ export async function importNebulaTabletopSnapshot(store, snapshot, migrationId)
   const groups = [[TABLETOP, snapshot.tabletop], [RECEIPTS, snapshot.commandReceipts], [TRADES, snapshot.tradeReceipts], [OUTBOX, snapshot.mediaOutbox]];
   return store.transaction(async (tx) => {
     const prior = await tx.get(MIGRATIONS, tenant, migrationId);
-    if (prior) return { imported: false, duplicate: true, counts: snapshot.counts, digest: snapshot.digest };
+    if (prior) { if (prior.digest !== snapshot.digest) throw new Error("Migration ID already exists with a different tabletop source digest"); return { imported: false, duplicate: true, counts: snapshot.counts, digest: snapshot.digest }; }
     for (const [namespace] of groups) {
       const existing = await tx.list(namespace, tenant);
       if (existing.length) throw new Error(`Turso destination is not empty for ${namespace} / ${tenant}`);
