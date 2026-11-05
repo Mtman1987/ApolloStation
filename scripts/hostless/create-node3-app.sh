@@ -3,13 +3,13 @@ set -euo pipefail
 
 : "${HOSTLESS_TOKEN:?HOSTLESS_NODE3_TOKEN is required}"
 
-# Node 3 starts with an empty Hostless account: create its free project first,
-# then create the app inside that newly linked project. Do not deploy or test.
-hostless create project Node3 --yes --json
-
+# Node 3's project already exists. Pin the request to that exact project and
+# the dedicated bootstrap branch, whose hostless.yaml requests only 0.1 vCPU,
+# 128 MB RAM, one replica, and no volume or database.
 hostless create app Node3 \
+  --project 6aecd3d98f9b6b3471dff17a \
   --repo Mtman1987/ApolloStation \
   --platform Github \
-  --branch main \
+  --branch node3-bootstrap-free \
   --yes \
   --json
