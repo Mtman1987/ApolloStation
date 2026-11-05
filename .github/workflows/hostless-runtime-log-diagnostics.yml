@@ -96,6 +96,16 @@ jobs:
           curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/deployments" -o hostless-diagnostics/deployments.json
           curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/metrics/cpu-usage" -o hostless-diagnostics/cpu-usage.json
           curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/metrics/memory-usage" -o hostless-diagnostics/memory-usage.json
+          APP_URL="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/app-detail.json","utf8")); const a=d.app??d; process.stdout.write(String(a.url??a.appUrl??a.publicUrl??""));')"
+          if [ -n "$APP_URL" ]; then
+            if curl -fsS --max-time 20 "$APP_URL/health/ready" -o hostless-diagnostics/health-ready.json; then
+              echo "HTTP readiness passed for $APP: $APP_URL/health/ready"
+            else
+              echo "HTTP readiness did not pass for $APP: $APP_URL/health/ready (curl exit $?)"
+            fi
+          else
+            echo "No public app URL was returned for $APP; HTTP readiness was not tested."
+          fi
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
