@@ -134,7 +134,7 @@ Set these protected environment values on the Node 2 Nebula workload only after 
 - NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL
 - NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN
 
-The game-runtime, action-history, activity, and game-input adapters share the nebula-arcade service namespace and the same Node 2 Turso credentials. They are separate from Tag, Mosaic, and Game Mix selection; do not assume enabling one enables the others. The async stores are initialized before provider ingress, moderator controls, or readiness-dependent work uses them. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected. With NEBULA_ARCADE_REQUIRE_TURSO=1, the live host readiness endpoint requires game runtime, action history, activity, and game input feed to report Turso mode.
+The game-runtime, action-history, activity, and game-input adapters share the nebula-arcade service namespace and the same Node 2 Turso credentials. They are separate from Tag, Mosaic, and Game Mix selection; do not assume enabling one enables the others. The async stores are initialized before provider ingress, moderator controls, or readiness-dependent work uses them. Missing credentials fail closed; there is no silent SQLite fallback after Turso is explicitly selected. NEBULA_ARCADE_REQUIRE_TURSO=1 retains its existing Tag/Mosaic/Game Mix readiness contract. Set NEBULA_ARCADE_REQUIRE_FULL_TURSO=1 as well when the Node 2 cutover is ready; the live host then additionally requires game runtime, action history, activity, and game input feed to report Turso mode.
 
 Build, then dry-run the importer against the recovered SQLite source:
 
