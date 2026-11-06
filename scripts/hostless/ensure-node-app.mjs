@@ -19,7 +19,7 @@ function fail(message) {
   process.exit(1);
 }
 
-if (!nodes[nodeKey]) fail("Pass node1, node2, or node3.");
+if (!nodes[nodeKey]) fail("Pass node1 or node2; this deployment uses two nodes.");
 if (!token) fail("HOSTLESS_TOKEN is not set.");
 if (!commit) fail("No commit SHA was supplied.");
 
