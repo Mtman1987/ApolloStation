@@ -84,7 +84,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
     assert.match(html, /Stella is the app-neutral Community Assistant/);
     assert.match(html, /Tenant personas remain in the separate apps/);
-    assert.doesNotMatch(html, /Add developer app/);
+    assert.match(html, /<dialog id="developer-dialog"/);
     assert.doesNotMatch(html, /SpaceMountain ecosystem · ApolloStation build/);
     assert.doesNotMatch(html, /Developer docs/);
     assert.match(html, /sandbox-auth-status/);
