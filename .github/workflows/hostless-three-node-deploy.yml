@@ -25,6 +25,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"
+      - "scripts/hostless/**"
+      - ".github/workflows/hostless-three-node-deploy.yml"
   workflow_dispatch:
     inputs:
       deploy:
@@ -195,6 +197,7 @@ jobs:
           SPMT_PROVIDER_CREDENTIAL_KEY: ${{ secrets.SPMT_PROVIDER_CREDENTIAL_KEY }}
           MOSAIC_STREAMWEAVER_SERVICE_TOKEN: ${{ secrets.MOSAIC_STREAMWEAVER_SERVICE_TOKEN }}
           DSH_RUNTIME_CONFIG_JSON: ${{ secrets.DSH_RUNTIME_CONFIG_JSON }}
+          NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
         run: |
           node --input-type=module - <<'NODE'
           const role = process.env.NODE_ROLE;
@@ -203,7 +206,7 @@ jobs:
             : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
           const requiredForLiveTesting = role === "node1"
             ? ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SPMT_PROVIDER_CREDENTIAL_KEY", "DSH_RUNTIME_CONFIG_JSON", "DSH_WORKER_CREDENTIAL"]
-            : ["MOSAIC_STREAMWEAVER_SERVICE_TOKEN", "NEBULA_ARCADE_TENANT_ID", "NEBULA_ARCADE_CHANNEL_ID"];
+            : ["MOSAIC_STREAMWEAVER_SERVICE_TOKEN", "NEBULA_ARCADE_TENANT_ID", "NEBULA_ARCADE_CHANNEL_ID", "NEBULA_ARCADE_RUNTIME_CONFIG_JSON"];
           const missing = [...required, ...requiredForLiveTesting].filter((name) => !process.env[name]?.trim());
           if (missing.length) {
             console.error("Missing ApolloStation Actions secrets required by " + role + ": " + missing.join(", "));
@@ -215,11 +218,12 @@ jobs:
               process.exit(1);
             }
           }
-          if (role === "node1") {
+          const runtimeConfigName = role === "node1" ? "DSH_RUNTIME_CONFIG_JSON" : "NEBULA_ARCADE_RUNTIME_CONFIG_JSON";
+          if (role === "node1" || role === "node2") {
             let config;
-            try { config = JSON.parse(process.env.DSH_RUNTIME_CONFIG_JSON); } catch { console.error("DSH_RUNTIME_CONFIG_JSON must be valid JSON."); process.exit(1); }
+            try { config = JSON.parse(process.env[runtimeConfigName]); } catch { console.error(runtimeConfigName + " must be valid JSON."); process.exit(1); }
             if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) {
-              console.error("DSH_RUNTIME_CONFIG_JSON must contain at least one configured tenant.");
+              console.error(runtimeConfigName + " must contain at least one configured tenant.");
               process.exit(1);
             }
           }
@@ -274,6 +278,8 @@ jobs:
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: "/tmp/apollo-nebula-runtime.json"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_DATABASE_PATH: "/tmp/apollo-nebula-arcade.sqlite"
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
