@@ -73,3 +73,4 @@ for (const [file, overrides] of services) {
   child.once("exit", code => { if (!stopping) { console.error("Apollo service exited; stopping this node:", file, code); stop(code || 1); } });
 }
 console.log(`ApolloStation ${role} started ${services.length} supervised production services.`);
+// Deployment trigger: validated ApolloStation production-shell release.
