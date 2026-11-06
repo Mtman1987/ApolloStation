@@ -61,50 +61,7 @@ test("production SPMT startup seeds the first-party Shipyard catalog idempotentl
     for (const app of apps) {
       assert.equal(app.status, "active");
       assert.equal(new URL(app.launchUrl).origin, "https://apollo-node-1.hostless.app");
-      assert.match(app.launchUrl, new RegExp(`/apps/${app.appId}import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer as createNetServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import test from "node:test";
-import { createSpmtService, validateSandboxServiceEnvironment } from "../apps/spmt-service/dist/index.js";
-import { createSpaceMountainWebHost, validateSandboxWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
-import { nebulaArcadeCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
-import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index.js";
-import { SpmtClient } from "../packages/sdk/dist/index.js";
-
-async function withSandbox(run) {
-  const directory = mkdtempSync(join(tmpdir(), "spmt-web-sandbox-"));
-  const spmt = createSpmtService({
-    databasePath: join(directory, "spmt-green-sandbox.sqlite"),
-    webhookKey: Buffer.alloc(32, 9),
-    host: "127.0.0.1",
-    port: 0,
-    publicBaseUrl: "https://test-green.sprites.app",
-    runtimeMode: "sandbox",
-    sandboxFixtures: true,
-    sandboxOwnerUsername: "mtman1987",
-    buildSha: "test-green",
-  });
-  let web;
-  try {
-    await spmt.listen();
-    const spmtAddress = spmt.server.address();
-    assert.ok(spmtAddress && typeof spmtAddress !== "string");
-    web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, buildSha: "test-green" });
-    await web.listen();
-    const webAddress = web.server.address();
-    assert.ok(webAddress && typeof webAddress !== "string");
-    await run({ spmt, base: `http://127.0.0.1:${webAddress.port}` });
-  } finally {
-    if (web) await web.close();
-    await spmt.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-}
-
-));
+      assert.ok(app.launchUrl.endsWith("/apps/" + app.appId));
     }
   } finally {
     await service.close();
