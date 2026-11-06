@@ -68,9 +68,9 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
     try { loadDshLiveRuntimeConfig(options.runtimeConfigPath); runtimeConfigReady = true; }
     catch (error) { console.warn("Discord Stream Hub tenant features deferred: runtime config is not ready.", error instanceof Error ? error.message : String(error)); }
   }
-  const configuredOptions = runtimeConfigReady ? options : { ...options, runtimeConfigPath: undefined };
+  const { runtimeConfigPath: _runtimeConfigPath, ...baseOptions } = options;
   const applicationStore = runtimeConfigReady && options.databasePath && options.discordPublicKey && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
-  const controls = new DshWebControls({ ...configuredOptions, applicationInteractionsReady: Boolean(applicationStore) });
+  const controls = new DshWebControls({ ...baseOptions, ...(runtimeConfigReady && options.runtimeConfigPath ? { runtimeConfigPath: options.runtimeConfigPath } : {}), applicationInteractionsReady: Boolean(applicationStore) });
   const interactions = applicationStore ? new DshDiscordApplicationInteractions({ publicKey: options.discordPublicKey!, publicOrigin: options.publicOrigin!, config: loadDshLiveRuntimeConfig(options.runtimeConfigPath!), store: applicationStore,respond:interaction=>controls.interaction(interaction),...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{}) }) : undefined;
   const workflowOptions = runtimeConfigReady && options.databasePath ? {
     ...options, databasePath: options.databasePath, runtimeConfigPath: options.runtimeConfigPath!,
