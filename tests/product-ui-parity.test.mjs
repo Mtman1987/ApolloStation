@@ -61,7 +61,7 @@ test("Nebula and SpaceMountain use the same theme language without sharing one b
 
 test("private host uses the product chrome and serves explicit local artwork", () => {
   assert.match(hostSource, /auth-product-logo/);
-  assert.match(hostSource, /PRIVATE PREVIEW/);
-  assert.match(hostSource, /isolated from Blue/);
+  assert.match(hostSource, /SPMT ECOSYSTEM/);
+  assert.match(hostSource, /connected through SPMT/);
   for (const asset of ["space-logo-main.png", "space-logo-header.png", "model-rocket.png", "theme-solar-flare-background.webp", "commlink-communications-background.webp", "stellar-core-background.webp", "mission-control-background.webp"]) assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
 });
