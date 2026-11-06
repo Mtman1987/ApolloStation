@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   verify-prior-release:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     name: Verify prior full validation and Node 1 success
     runs-on: ubuntu-latest
     outputs:
