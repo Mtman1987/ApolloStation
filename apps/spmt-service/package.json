@@ -29,6 +29,9 @@
     "@spmt/provider-grants-core": "0.1.0",
     "@spmt/runtime": "0.1.0",
     "@spmt/stellar-core": "0.1.0",
-    "@spmt/streamweaver": "0.1.0"
+    "@spmt/streamweaver": "0.1.0",
+    "@spmt/discord-stream-hub": "0.1.0",
+    "@spmt/hearmeout": "0.1.0",
+    "@spmt/nebula-arcade": "0.1.0"
   }
 }
