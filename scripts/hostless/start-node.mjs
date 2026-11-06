@@ -1,54 +1,102 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 const role = process.env.APOLLO_NODE_ROLE;
-// Optional live workers start only when their complete runtime configuration is present.
-// A stale enable flag must not crash the core node; the worker is simply deferred until
-// its versioned tenant configuration is provisioned.
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
-// Preserve Hostless injected port before applying local fallbacks for other nodes. Node 2 is bound explicitly and its app-level start command is provisioned.
 const hostlessPort = process.env.PORT;
+
+function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyConfig, allowEmpty = true }) {
+  const configPath = path || fallbackPath;
+  let config = emptyConfig;
+  if (json) {
+    try { config = JSON.parse(json); }
+    catch { throw new Error(`${label}_RUNTIME_CONFIG_JSON must contain valid JSON.`); }
+  }
+  if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+    throw new Error(`${label} runtime config must be a version 1 tenant configuration.`);
+  }
+  if (!allowEmpty && config.tenants.length === 0) {
+    throw new Error(`${label} runtime config must contain at least one tenant.`);
+  }
+  mkdirSync(resolve(configPath, ".."), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+  return { configPath, config };
+}
+
 const node1 = [
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
-  ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.DSH_WEB_PORT ?? "3201", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite" }],
-  ...(process.env.DSH_RUNTIME_CONFIG_JSON ? (() => {
-    const configPath = process.env.DSH_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-dsh-runtime.json";
-    let config;
-    try { config = JSON.parse(process.env.DSH_RUNTIME_CONFIG_JSON); }
-    catch { throw new Error("DSH_RUNTIME_CONFIG_JSON must contain valid versioned JSON."); }
-    if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants)) throw new Error("DSH_RUNTIME_CONFIG_JSON must be a version 1 tenant configuration.");
-    writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
-    return [["apps/discord-stream-hub/dist/live-worker-start.js", {
+];
+
+const dshConfigRequested = Boolean(process.env.DSH_RUNTIME_CONFIG_JSON || process.env.DSH_RUNTIME_CONFIG_PATH || process.env.SPMT_DSH_LIVE_RUNTIME_ENABLED === "1");
+let dshConfig;
+if (dshConfigRequested) {
+  dshConfig = writeVersionedRuntimeConfig({
+    json: process.env.DSH_RUNTIME_CONFIG_JSON,
+    path: process.env.DSH_RUNTIME_CONFIG_PATH,
+    fallbackPath: "/tmp/apollo-dsh-runtime.json",
+    label: "DSH",
+    emptyConfig: { schemaVersion: 1, pollIntervalSeconds: 60, tenants: [] },
+  });
+  process.env.DSH_RUNTIME_CONFIG_PATH = dshConfig.configPath;
+  if (dshConfig.config.tenants.length === 0) {
+    console.warn("DSH live worker deferred: valid owner-only runtime config has no provisioned tenants or provider connections.");
+  } else {
+    node1.push(["apps/discord-stream-hub/dist/live-worker-start.js", {
       SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
       DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite",
-      DSH_RUNTIME_CONFIG_PATH: configPath,
-    }]];
-  })() : []),
-  ["apps/spacemountain-web/dist/integrated-server.js", { PORT: process.env.PORT ?? "8080", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201" }],
-];
-const node2 = [
-  ...(process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON ? (() => {
-    const configPath = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-nebula-runtime.json";
-    let config;
-    try { config = JSON.parse(process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON); }
-    catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must contain valid versioned JSON."); }
-    if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be a version 1 configuration with at least one tenant.");
-    writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
-    process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = configPath;
-    return [];
-  })() : []),
+      DSH_RUNTIME_CONFIG_PATH: dshConfig.configPath,
+    }]);
+  }
+}
+node1.push(
+  ["apps/discord-stream-hub/dist/web-server.js", {
+    PORT: process.env.DSH_WEB_PORT ?? "3201",
+    SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+    DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite",
+    ...(dshConfig ? { DSH_RUNTIME_CONFIG_PATH: dshConfig.configPath } : {}),
+  }],
+  ["apps/spacemountain-web/dist/integrated-server.js", {
+    PORT: process.env.PORT ?? "8080",
+    SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+    DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201",
+  }],
+);
+
+const node2 = [];
+const nebulaConfigRequested = Boolean(
+  process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON ||
+  process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH ||
+  process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1",
+);
+if (nebulaConfigRequested) {
+  const nebulaConfig = writeVersionedRuntimeConfig({
+    json: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON,
+    path: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH,
+    fallbackPath: "/tmp/apollo-nebula-runtime.json",
+    label: "NEBULA_ARCADE",
+    emptyConfig: { schemaVersion: 1, revision: "owner-only-unconfigured", tenants: [] },
+  });
+  process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
+  if (nebulaConfig.config.tenants.length === 0) {
+    console.warn("Nebula Arcade provider runtime is safely configured with zero tenants; no external accounts will be connected.");
+  }
+}
+node2.push(
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
-];
-// Nebula runs on Node 2 with the workspace tenant/channel supplied by the release workflow.
+);
+
+// Nebula's separate public game server is enabled only after its workspace
+// tenant, channel, and public origin are explicitly provisioned.
 if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID && process.env.NEBULA_ARCADE_PUBLIC_ORIGIN) {
   node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }]);
 } else {
-  console.warn("Nebula Arcade deferred: workspace tenant, state channel, and public origin have not been provisioned yet.");
+  console.warn("Nebula Arcade public game server deferred: workspace tenant, state channel, and public origin have not been provisioned yet.");
 }
+
 const services = ({ node1, node2 })[role];
 if (!services) throw new Error("APOLLO_NODE_ROLE must be node1 or node2");
 if (!process.env.PORT) process.env.PORT = "8080";
@@ -70,5 +118,3 @@ for (const [file, overrides] of services) {
   child.once("exit", code => { if (!stopping) { console.error("Apollo service exited; stopping this node:", file, code); stop(code || 1); } });
 }
 console.log(`ApolloStation ${role} started ${services.length} supervised production services.`);
-// Deployment trigger: validated ApolloStation production-shell release.
-// Deployment trigger: re-run validated two-node release after homepage test correction.
