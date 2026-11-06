@@ -7,7 +7,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#f97316">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <meta name="description" content="SpaceMountain.Live is the home of the SPMT ecosystem, Shipyard apps, workspace, and connected community services.">
+  <meta name="description" content="SpaceMountain.Live is the production SPMT ecosystem home, with its Shipyard app catalog, workspace, and connected community services.">
   <title>SpaceMountain.Live · SPMT Ecosystem</title>
   <link rel="stylesheet" href="/assets/web/sandbox.css">
   <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/contracts/human-reference":"/assets/contracts/human-reference.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
