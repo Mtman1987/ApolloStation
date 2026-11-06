@@ -4,6 +4,12 @@ import { resolve } from "node:path";
 import { writeFileSync } from "node:fs";
 
 const role = process.env.APOLLO_NODE_ROLE;
+if (role === "node1" && process.env.SPMT_DSH_LIVE_RUNTIME_ENABLED === "1" && !process.env.DSH_RUNTIME_CONFIG_JSON) {
+  throw new Error("Discord Stream Hub live worker is enabled but DSH_RUNTIME_CONFIG_JSON is missing.");
+}
+if (role === "node2" && process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1" && !process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON) {
+  throw new Error("Nebula provider runtime is enabled but NEBULA_ARCADE_RUNTIME_CONFIG_JSON is missing.");
+}
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
 // Preserve Hostless injected port before applying local fallbacks for other nodes. Node 2 is bound explicitly and its app-level start command is provisioned.
