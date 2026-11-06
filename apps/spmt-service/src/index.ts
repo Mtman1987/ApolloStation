@@ -46,6 +46,11 @@ import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 import { assertAppCatalogRegistrationV1, assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
+import { streamweaverCatalogRegistration } from "@spmt/streamweaver";
+import { nebulaArcadeCatalogRegistration } from "@spmt/nebula-arcade";
+import { discordStreamHubCatalogRegistration } from "@spmt/discord-stream-hub";
+import { hearMeOutCatalogRegistration } from "@spmt/hearmeout";
+import { stellarCoreCatalogRegistration } from "@spmt/stellar-core";
 
 const USER_SCOPES = ["media:read","media:write","identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
@@ -111,6 +116,18 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const auth = new AuthService({ store, refreshRotationKey: options.webhookKey });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
+  // Keep the production Shipyard catalog populated from the first-party app manifests.
+  // registerApp is an idempotent upsert: it preserves existing tenant installs and data.
+  if (runtimeMode === "production") {
+    const appUrl = (appId: string) => new URL(`/apps/${appId}`, publicBaseUrl).toString();
+    for (const app of [
+      streamweaverCatalogRegistration(appUrl("streamweaver")),
+      nebulaArcadeCatalogRegistration(appUrl("nebula-arcade")),
+      discordStreamHubCatalogRegistration(appUrl("discord-stream-hub")),
+      hearMeOutCatalogRegistration(appUrl("hearmeout")),
+      stellarCoreCatalogRegistration(appUrl("stellar-core")),
+    ]) control.registerApp(app);
+  }
   const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store, undefined, { enforceLimits: runtimeMode !== "sandbox" });
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const fetchImpl = options.fetchImpl ?? fetch;
