@@ -202,7 +202,7 @@ jobs:
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
             : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
           const requiredForLiveTesting = role === "node1"
-            ? ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SPMT_PROVIDER_CREDENTIAL_KEY", "DSH_RUNTIME_CONFIG_JSON"]
+            ? ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SPMT_PROVIDER_CREDENTIAL_KEY", "DSH_RUNTIME_CONFIG_JSON", "DSH_WORKER_CREDENTIAL"]
             : ["MOSAIC_STREAMWEAVER_SERVICE_TOKEN", "NEBULA_ARCADE_TENANT_ID", "NEBULA_ARCADE_CHANNEL_ID"];
           const missing = [...required, ...requiredForLiveTesting].filter((name) => !process.env[name]?.trim());
           if (missing.length) {
@@ -212,6 +212,14 @@ jobs:
           for (const name of required.filter((name) => name.endsWith("_WORKER_CREDENTIAL"))) {
             if ((process.env[name] ?? "").length < 32) {
               console.error(name + " must be at least 32 characters.");
+              process.exit(1);
+            }
+          }
+          if (role === "node1") {
+            let config;
+            try { config = JSON.parse(process.env.DSH_RUNTIME_CONFIG_JSON); } catch { console.error("DSH_RUNTIME_CONFIG_JSON must be valid JSON."); process.exit(1); }
+            if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) {
+              console.error("DSH_RUNTIME_CONFIG_JSON must contain at least one configured tenant.");
               process.exit(1);
             }
           }
