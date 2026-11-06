@@ -19,6 +19,9 @@ on:
       - "apps/spacemountain-web/**"
       - "apps/spacemountain/**"
       - "apps/discord-stream-hub/**"
+      - "apps/chat-gateway/**"
+      - "apps/streamweaver/**"
+      - "apps/nebula-arcade/**"
       - "packages/**"
       - "services/**"
       - "hostless.yaml"
@@ -135,7 +138,7 @@ jobs:
 
   deploy-node:
     name: Deploy ${{ matrix.label }}
-    needs: [full-test-suite, detect-deploy-targets]
+    needs: [full-test-suite]
     if: >-
       ${{ needs.full-test-suite.result == 'success' &&
           github.ref == 'refs/heads/main' &&
@@ -242,10 +245,7 @@ jobs:
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
-      - name: Deploy only this node using its own Hostless token
-        if: >-
-          ${{ (matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
-              (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true') }}
+      - name: Deploy this node using its own Hostless token
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
