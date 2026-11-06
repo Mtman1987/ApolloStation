@@ -11,7 +11,6 @@ const api = process.env.HOSTLESS_API_URL ?? "https://api.hostless.cloud/v1";
 const nodes = {
   node1: { label: "Node 1 — SPMT authority / SpaceMountain / OverlayBay", app: "apollo-node-1" },
   node2: { label: "Node 2 — Chat Gateway / StreamWeaver / Nebula", app: "apollo-node-2" },
-  node3: { label: "Node 3 — Discord Stream Hub / Lounge", app: "apollo-node-3" },
 };
 
 function fail(message) {
@@ -136,7 +135,7 @@ async function resolveNode1Origin() {
 
 async function clearDeferredNebulaRuntime(appName) {
   // A previous deployment may have left write-only Nebula values on Hostless.
-  // Remove them explicitly while no real workspace tenant/config has been provisioned.
+  // Clear stale values first; the current deployment bundle is applied immediately afterward.
   // Hostless documents this dedicated endpoint for listing variable names.
   // The app-details endpoint intentionally omits them, so do not infer from it.
   const variableResponse = await request(`/apps/${encodeURIComponent(appName)}/environment-variables`);
@@ -147,6 +146,7 @@ async function clearDeferredNebulaRuntime(appName) {
     "NEBULA_ARCADE_WORKER_CREDENTIAL",
     "NEBULA_ARCADE_DATABASE_PATH",
     "NEBULA_ARCADE_RUNTIME_CONFIG_PATH",
+    "NEBULA_ARCADE_RUNTIME_CONFIG_JSON",
     "NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED",
     "NEBULA_ARCADE_TENANT_ID",
     "NEBULA_ARCADE_CHANNEL_ID",
@@ -159,7 +159,7 @@ async function clearDeferredNebulaRuntime(appName) {
     if (!existing.has(key)) continue;
     runCli(["env", "unset", key, "--app", appName, "--project", String(idOf(project))], `Remove deferred Node 2 setting ${key}`);
   }
-  console.log("Cleared stale Nebula runtime settings; Node 2 will defer Nebula until workspace provisioning.");
+  console.log("Cleared stale Nebula runtime settings before applying the current Node 2 configuration.");
 }
 
 function syncRuntimeSecrets(projectId, appName) {
