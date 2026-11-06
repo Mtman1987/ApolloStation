@@ -32,7 +32,7 @@ test("async tabletop keeps Bingo claim, Game Points ledger, and receipt in one d
   const games = new AsyncNebulaGameRuntimeStore({ mode: "sqlite", databasePath: t.databasePath });
   await games.initialize();
   try {
-    const now = Date.parse("2026-11-05T12:00:00.000Z");
+    const now = Date.now();
     await t.runtime.ingestBingoTranscript("tenant-a", "room-a", "hello chat", now);
     const input = message({ messageId: "bingo-claim-1", text: "spmt bingo shared A1", occurredAt: new Date(now + 1000).toISOString() });
     const first = await t.runtime.execute(input);
