@@ -358,7 +358,7 @@ function setNamedValue(name: string, value: string) {
 async function installApp(app: SpaceMountainAppCardV1) {
   const principal = requirePrincipal();
   const scopeText = app.allowedScopes.length ? app.allowedScopes.join(", ") : "no delegated scopes";
-  if (!window.confirm(`Install ${app.name} in this sandbox with ${scopeText}?`)) return;
+  if (!window.confirm(`Install ${app.name} in your SpaceMountain workspace with ${scopeText}?`)) return;
   setStatus(`Installing ${app.name} through the public SPMT SDK…`, "working");
   try {
     await controller.installApp(principal.tenantIds[0]!, app.appId, app.allowedScopes);
@@ -391,7 +391,7 @@ async function openConversation(conversation: Record<string, unknown>) {
     const reply = conversationReplyForm(conversation, principal.actorId);
     if (reply) dialogBody.append(reply);
     if (!dialog.open) dialog.showModal();
-    setStatus("Sandbox open · Commlink data came from SPMT.", "ready");
+    setStatus("SpaceMountain connected · Commlink data synced from SPMT.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
 }
 
@@ -691,7 +691,8 @@ async function logout() {
   registryFingerprint = "";
   registeredAppIds.clear();
   developerDialog.close();
-  showAuth("Signed out of the isolated sandbox.");
+  window.history.replaceState(null, "", "/");
+  showAuth("Signed out.");
 }
 
 async function fetchForumPosts(tenantId:string){const result=await spmt.listCommlinkForumPosts(tenantId,{limit:50});const details=await Promise.all(result.posts.slice(0,4).map(async post=>({...post,replies:(await spmt.getCommlinkForumPost(tenantId,post.id)).replies})));return [...details,...result.posts.slice(4)];}
