@@ -11,11 +11,7 @@ type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
-const status = element<HTMLElement>("sandbox-status");
 const authStatus = element<HTMLElement>("sandbox-auth-status");
-const refreshButton = element<HTMLButtonElement>("refresh-shell");
-const logoutButton = element<HTMLButtonElement>("logout");
-const openDeveloperButton = element<HTMLButtonElement>("open-developer-console");
 const developerDialog = element<HTMLDialogElement>("developer-dialog");
 const closeDeveloperButton = element<HTMLButtonElement>("close-developer-console");
 const developerForm = element<HTMLFormElement>("developer-form");
@@ -51,9 +47,6 @@ const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 registerForm.addEventListener("submit", (event) => void submitRegistration(event));
-refreshButton.addEventListener("click", () => void restoreShell());
-logoutButton.addEventListener("click", () => void logout());
-openDeveloperButton.addEventListener("click", () => openDeveloperConsole());
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
@@ -163,9 +156,6 @@ async function loadShell() {
     void retryEggCompletions();
     authView.hidden = true;
     shellView.hidden = false;
-    refreshButton.hidden = false;
-    logoutButton.hidden = false;
-    openDeveloperButton.hidden = !principal.scopes.includes("apps:register");
     if (shellUi) shellUi.update(snapshot);
     else shellUi = new SpaceMountainShellUi({
       root: shellRoot,
@@ -199,12 +189,12 @@ async function loadShell() {
     const providerLinkError = query.get("providerLinkError");
     if (providerLinked) setStatus(`${providerLinked} is now linked to your SPMT identity.`, "ready");
     else if (providerLinkError) setStatus(providerLinkError, "error");
-    else setStatus("Sandbox open", "ready");
+    else setStatus("SPMT session connected.", "ready");
     if (providerLinked || providerLinkError) {
       query.delete("providerLinked"); query.delete("providerLinkError");
       window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
     }
-    if (window.location.hash === "#developer-console" && !openDeveloperButton.hidden && !developerDialog.open) openDeveloperConsole();
+    if (window.location.hash === "#developer-console" && principal.scopes.includes("apps:register") && !developerDialog.open) openDeveloperConsole();
   } finally {
     loading = false;
   }
@@ -732,14 +722,11 @@ async function watchRegistry() {
 function showAuth(detail: string) {
   shellView.hidden = true;
   authView.hidden = false;
-  refreshButton.hidden = true;
-  logoutButton.hidden = true;
-  openDeveloperButton.hidden = true;
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
 }
 
 function showSessionUnavailable(detail: string) {
-  if (!currentPrincipal) { authView.hidden = true; shellView.hidden = true; refreshButton.hidden = false; logoutButton.hidden = true; openDeveloperButton.hidden = true; }
+  if (!currentPrincipal) { authView.hidden = true; shellView.hidden = true; }
   setStatus(`SPMT is temporarily unavailable; your signed-in session was retained. ${detail}`, "error");
 }
 
@@ -756,12 +743,12 @@ function authInput(form: HTMLFormElement, includeDisplayName: boolean) {
   const username = String(data.get("username") ?? "").trim();
   const password = String(data.get("password") ?? "");
   const displayName = String(data.get("displayName") ?? "").trim();
-  if (!username || password.length < 12) throw new Error("Use a username and a sandbox-only password of at least 12 characters.");
+  if (!username || password.length < 12) throw new Error("Use a username and a password of at least 12 characters.");
   return { username, password, ...(includeDisplayName ? { displayName } : {}) };
 }
 
 function requirePrincipal() {
-  if (!currentPrincipal) throw new Error("Sign in to the sandbox first.");
+  if (!currentPrincipal) throw new Error("Sign in to your SPMT account first.");
   return currentPrincipal;
 }
 
@@ -782,7 +769,7 @@ function messageCard(value: Record<string, unknown>) {
 function textBlock(value: string) { const node = document.createElement("p"); node.textContent = value; return node; }
 function delay(ms: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, ms)); }
 function apiMessage(value: unknown, fallback: string) { return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).message === "string" ? String((value as Record<string, unknown>).message) : fallback; }
-function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; authStatus.textContent = value; authStatus.dataset.kind = kind; authStatus.hidden = kind === "ready"; }
+function setStatus(value: string, kind: "ready" | "working" | "error") { authStatus.textContent = value; authStatus.dataset.kind = kind; authStatus.hidden = kind === "ready"; }
 function message(value: unknown) {
   if (value instanceof SpmtApiError) {
     try {
