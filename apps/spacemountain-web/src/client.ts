@@ -91,7 +91,7 @@ async function restoreShell() {
   try { await loadShell(); sessionRecovery.authenticated(); }
   catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
-    if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in to an isolated sandbox account.");
+    if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in with your SPMT account.");
     showSessionUnavailable(message(error));
   }
 }
@@ -115,7 +115,7 @@ async function submitRegistration(event: SubmitEvent) {
 async function authRequest(path: string, input: Record<string, string>, form: HTMLFormElement) {
   const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
   if (button) button.disabled = true;
-  setStatus("Opening the isolated SPMT session…", "working");
+  setStatus("Opening your SPMT session…", "working");
   try {
     const response = await sandboxAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -142,12 +142,12 @@ async function sandboxAuthRequest(path: string, input: Record<string, string>, r
       });
       if (response.status < 500 || !retry || attempt > 0) return response;
     } catch (error) {
-      if (!retry || attempt > 0) throw new Error("The sandbox did not answer. Tap Enter SpaceMountain to try again.", { cause: error });
+      if (!retry || attempt > 0) throw new Error("SPMT did not answer. Tap Enter SpaceMountain to try again.", { cause: error });
     }
-    setStatus("The sandbox is waking up; retrying sign-in once…", "working");
+    setStatus("SPMT is waking up; retrying sign-in once…", "working");
     await delay(750);
   }
-  throw new Error("The sandbox did not answer. Tap Enter SpaceMountain to try again.");
+  throw new Error("SPMT did not answer. Tap Enter SpaceMountain to try again.");
 }
 
 async function loadShell() {
