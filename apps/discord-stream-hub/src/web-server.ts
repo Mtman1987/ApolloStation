@@ -61,11 +61,19 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
     response.writeHead(result.status,result.headers);response.end(result.body instanceof Uint8Array?Buffer.from(result.body):result.body??"");return true;
   };
   const snapshot = productAppSnapshotHandler({ appId: "discord-stream-hub", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(DISCORD_STREAM_HUB_WEB_DESCRIPTOR) });
-  const applicationStore = options.databasePath && options.discordPublicKey && options.runtimeConfigPath && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
-  const controls = new DshWebControls({ ...options, applicationInteractionsReady: Boolean(applicationStore) });
+  // DSH is an optional install. A missing, unreadable, or malformed tenant config
+  // must not take down the app's web surface or the Apollo node that hosts it.
+  let runtimeConfigReady = false;
+  if (options.runtimeConfigPath) {
+    try { loadDshLiveRuntimeConfig(options.runtimeConfigPath); runtimeConfigReady = true; }
+    catch (error) { console.warn("Discord Stream Hub tenant features deferred: runtime config is not ready.", error instanceof Error ? error.message : String(error)); }
+  }
+  const configuredOptions = runtimeConfigReady ? options : { ...options, runtimeConfigPath: undefined };
+  const applicationStore = runtimeConfigReady && options.databasePath && options.discordPublicKey && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
+  const controls = new DshWebControls({ ...configuredOptions, applicationInteractionsReady: Boolean(applicationStore) });
   const interactions = applicationStore ? new DshDiscordApplicationInteractions({ publicKey: options.discordPublicKey!, publicOrigin: options.publicOrigin!, config: loadDshLiveRuntimeConfig(options.runtimeConfigPath!), store: applicationStore,respond:interaction=>controls.interaction(interaction),...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{}) }) : undefined;
-  const workflowOptions = options.databasePath && options.runtimeConfigPath ? {
-    ...options, databasePath: options.databasePath, runtimeConfigPath: options.runtimeConfigPath,
+  const workflowOptions = runtimeConfigReady && options.databasePath ? {
+    ...options, databasePath: options.databasePath, runtimeConfigPath: options.runtimeConfigPath!,
   } : undefined;
   const applications = workflowOptions ? new DshApplicationControls(workflowOptions) : undefined;
   const proposals = workflowOptions ? new DshProposalControls(workflowOptions) : undefined;
