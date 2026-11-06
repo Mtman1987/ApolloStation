@@ -113,8 +113,10 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
     const response = await sandboxAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : `Request failed (${response.status})`);
-    form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
+    // Keep credentials in the form until the browser session and shell are both usable.
+    // A successful /auth response alone does not prove that the browser received a usable cookie.
     await loadShell();
+    form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     sessionRecovery.authenticated();
   } catch (error) {
     setStatus(message(error), "error");
