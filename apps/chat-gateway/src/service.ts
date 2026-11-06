@@ -141,8 +141,8 @@ export function createInternalServiceTokenProvider(options: { spmtOrigin: string
   const origin = loopbackOrigin(options.spmtOrigin);
   requireId(options.serviceId, "serviceId");
   let cached: { token: string; expiresAt: number } | undefined;
-  return async () => {
-    if (cached && cached.expiresAt - Date.now() > 60_000) return cached.token;
+  return async (forceRefresh = false) => {
+    if (!forceRefresh && cached && cached.expiresAt - Date.now() > 60_000) return cached.token;
     const response = await (options.fetchImpl ?? fetch)(`${origin}/v1/auth/service-token`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ serviceId: options.serviceId, credential: options.credential }), redirect: "manual", signal: AbortSignal.timeout(5_000) });
     if (!response.ok) throw new Error(`${options.serviceId} authentication failed (${response.status})`);
     const value = await response.json() as { accessToken?: unknown; accessExpiresAt?: unknown };
