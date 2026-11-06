@@ -204,10 +204,11 @@ jobs:
           const required = role === "node1"
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
             : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
-          const requiredForLiveTesting = role === "node1"
-            ? ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SPMT_PROVIDER_CREDENTIAL_KEY", "DSH_RUNTIME_CONFIG_JSON", "DSH_WORKER_CREDENTIAL", "DSH_SERVICE_SECRET"]
-            : ["MOSAIC_STREAMWEAVER_SERVICE_TOKEN", "NEBULA_ARCADE_TENANT_ID", "NEBULA_ARCADE_CHANNEL_ID", "NEBULA_ARCADE_RUNTIME_CONFIG_JSON", "NEBULA_ARCADE_WORKER_CREDENTIAL", "DSH_SERVICE_SECRET"];
-          const missing = [...required, ...requiredForLiveTesting].filter((name) => !process.env[name]?.trim());
+          // Existing Hostless app environment is authoritative for optional integrations.
+          // Only require the shared node-to-node credentials here. Optional OAuth, DSH,
+          // Mosaic, and Nebula settings are synchronized when supplied by Actions; empty
+          // Actions values are skipped by ensure-node-app.mjs and do not erase Hostless values.
+          const missing = required.filter((name) => !process.env[name]?.trim());
           if (missing.length) {
             console.error("Missing ApolloStation Actions secrets required by " + role + ": " + missing.join(", "));
             process.exit(1);
@@ -219,20 +220,20 @@ jobs:
             }
           }
           const runtimeConfigName = role === "node1" ? "DSH_RUNTIME_CONFIG_JSON" : "NEBULA_ARCADE_RUNTIME_CONFIG_JSON";
-          if (role === "node1" || role === "node2") {
+          if (process.env[runtimeConfigName]?.trim()) {
             let config;
-            try { config = JSON.parse(process.env[runtimeConfigName]); } catch { console.error(runtimeConfigName + " must be valid JSON."); process.exit(1); }
+            try { config = JSON.parse(process.env[runtimeConfigName]); } catch { console.error(runtimeConfigName + " must be valid JSON when supplied."); process.exit(1); }
             if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) {
-              console.error(runtimeConfigName + " must contain at least one configured tenant.");
+              console.error(runtimeConfigName + " must contain at least one configured tenant when supplied.");
               process.exit(1);
             }
           }
-          if (role === "node1" && Buffer.from(process.env.SPMT_WEBHOOK_KEY, "base64url").byteLength !== 32) {
-            console.error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes.");
+          if (process.env.SPMT_WEBHOOK_KEY?.trim() && role === "node1" && Buffer.from(process.env.SPMT_WEBHOOK_KEY, "base64url").byteLength !== 32) {
+            console.error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes when supplied.");
             process.exit(1);
           }
-          if (Buffer.from(process.env.SPMT_PROVIDER_CREDENTIAL_KEY, "base64url").byteLength !== 32) {
-            console.error("SPMT_PROVIDER_CREDENTIAL_KEY must be base64url for exactly 32 bytes.");
+          if (process.env.SPMT_PROVIDER_CREDENTIAL_KEY?.trim() && Buffer.from(process.env.SPMT_PROVIDER_CREDENTIAL_KEY, "base64url").byteLength !== 32) {
+            console.error("SPMT_PROVIDER_CREDENTIAL_KEY must be base64url for exactly 32 bytes when supplied.");
             process.exit(1);
           }
           console.log("Required runtime configuration is present; values were not printed.");
