@@ -14,7 +14,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
 <body>
-  <main id="auth-view" class="auth-view" hidden>
+  <main id="auth-view" class="auth-view">
     <section class="auth-intro">
       <img class="auth-product-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
       <span>THE UNIVERSE ONLINE · SPMT ECOSYSTEM</span>
