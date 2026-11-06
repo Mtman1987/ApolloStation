@@ -255,7 +255,7 @@ jobs:
           APOLLO_RUNTIME_NODE1_TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           APOLLO_RUNTIME_NODE1_DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
           APOLLO_RUNTIME_NODE1_DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-          APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_URL: "https://spmt.live"
+          APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_URL: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE1_SPMT_RUNTIME_MODE: "production"
           APOLLO_RUNTIME_NODE1_SPMT_APP_LAUNCH_BASE_URL: "https://apollo-node-1.hostless.app"
