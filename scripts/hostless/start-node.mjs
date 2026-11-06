@@ -52,12 +52,8 @@ if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID 
 } else {
   console.warn("Nebula Arcade deferred: workspace tenant, state channel, and public origin have not been provisioned yet.");
 }
-const node3 = [
-  ["apps/discord-stream-hub/dist/live-worker-start.js", {}],
-  ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.PORT ?? "8080" }],
-];
-const services = ({ node1, node2, node3 })[role];
-if (!services) throw new Error("APOLLO_NODE_ROLE must be node1, node2, or node3");
+const services = ({ node1, node2 })[role];
+if (!services) throw new Error("APOLLO_NODE_ROLE must be node1 or node2");
 if (!process.env.PORT) process.env.PORT = "8080";
 const children = [];
 let stopping = false;
