@@ -52,7 +52,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.equal(page.headers.get("x-frame-options"), "DENY");
     assert.equal(page.headers.get("cross-origin-resource-policy"), "same-origin");
     const html = await page.text();
-    assert.match(html, /GREEN SPRITE SANDBOX/);
+    assert.match(html, /SPACEMOUNTAIN.LIVE/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
     assert.match(html, /Stella is the app-neutral Community Assistant/);
     assert.match(html, /Tenant personas remain in the separate apps/);
