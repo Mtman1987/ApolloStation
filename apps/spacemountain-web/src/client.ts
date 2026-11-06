@@ -699,7 +699,10 @@ async function logout() {
   registryFingerprint = "";
   registeredAppIds.clear();
   developerDialog.close();
-  showAuth("Signed out of the isolated sandbox.");
+  // Do not leave the browser on a full-screen workspace/overlay service URL
+  // after logout; the next sign-in should start at the SpaceMountain home.
+  window.history.replaceState(null, "", "/");
+  showAuth("Signed out.");
 }
 
 async function fetchForumPosts(tenantId:string){const result=await spmt.listCommlinkForumPosts(tenantId,{limit:50});const details=await Promise.all(result.posts.slice(0,4).map(async post=>({...post,replies:(await spmt.getCommlinkForumPost(tenantId,post.id)).replies})));return [...details,...result.posts.slice(4)];}
