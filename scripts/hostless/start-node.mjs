@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { writeFileSync } from "node:fs";
 
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
@@ -10,14 +11,26 @@ const hostlessPort = process.env.PORT;
 const node1 = [
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
   ["apps/discord-stream-hub/dist/web-server.js", { PORT: process.env.DSH_WEB_PORT ?? "3201", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite" }],
+  ...(process.env.DSH_RUNTIME_CONFIG_JSON ? (() => {
+    const configPath = process.env.DSH_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-dsh-runtime.json";
+    let config;
+    try { config = JSON.parse(process.env.DSH_RUNTIME_CONFIG_JSON); }
+    catch { throw new Error("DSH_RUNTIME_CONFIG_JSON must contain valid versioned JSON."); }
+    if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants)) throw new Error("DSH_RUNTIME_CONFIG_JSON must be a version 1 tenant configuration.");
+    writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+    return [["apps/discord-stream-hub/dist/live-worker-start.js", {
+      SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+      DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite",
+      DSH_RUNTIME_CONFIG_PATH: configPath,
+    }]];
+  })() : []),
   ["apps/spacemountain-web/dist/integrated-server.js", { PORT: process.env.PORT ?? "8080", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201" }],
 ];
 const node2 = [
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
 ];
-// Nebula is tenant-scoped. Do not invent a tenant/channel before the owner has
-// completed first-run workspace provisioning; keep the other Node 2 services up.
+// Nebula runs on Node 2 with the workspace tenant/channel supplied by the release workflow.
 if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID && process.env.NEBULA_ARCADE_PUBLIC_ORIGIN) {
   node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }]);
 } else {
