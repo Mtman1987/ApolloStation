@@ -56,6 +56,7 @@ const service = createSpmtServiceWithProviderIdentity({
   webhookKey,
   port,
   publicBaseUrl,
+  appLaunchBaseUrl: process.env.SPMT_APP_LAUNCH_BASE_URL ?? "https://apollo-node-1.hostless.app",
   runtimeMode,
   sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
   ...(checked?.sandboxOwnerUsername ? { sandboxOwnerUsername: checked.sandboxOwnerUsername } : {}),
