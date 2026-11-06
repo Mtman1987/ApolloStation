@@ -81,10 +81,14 @@ function selectProject(projects, key) {
 }
 
 function runCli(args, description) {
+  // Bound every CLI call so a stalled API/CLI cannot occupy a GitHub runner
+  // indefinitely. Deploy itself has a 30-minute Hostless wait limit below.
   const result = spawnSync("hostless", args, {
     encoding: "utf8",
     env: process.env,
     maxBuffer: 20 * 1024 * 1024,
+    timeout: 35 * 60 * 1000,
+    killSignal: "SIGTERM",
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
@@ -180,11 +184,14 @@ function syncRuntimeSecrets(projectId, appName) {
   ).map(([key, value]) => [key.slice(nodePrefix.length), value]);
   if (entries.length === 0) fail("No runtime secrets were present in the GitHub Actions secret bundle.");
   console.log(`Synchronizing ${entries.length} GitHub Actions secrets to ${appName} (values are write-only and never logged).`);
-  for (const [key, value] of entries) {
-    runCli(["env", "set", `${key}=${value}`, "--write-only", "--app", appName, "--project", String(projectId)], `Set runtime secret ${key}`);
-  }
-  runCli(["env", "set", `APOLLO_NODE_ROLE=${nodeKey}`, "--app", appName, "--project", String(projectId)], `Set node role for ${appName}`);
-  console.log(`Synchronized ${entries.length} runtime secrets and node role to ${appName}.`);
+  // Hostless accepts multiple KEY=value arguments in one env-set operation.
+  // Applying the bundle atomically avoids dozens of serial API writes (and
+  // repeated full-environment saves) on every deployment.
+  const assignments = entries.map(([key, value]) => `${key}=${value}`);
+  assignments.push(`APOLLO_NODE_ROLE=${nodeKey}`);
+  runCli(["env", "set", ...assignments, "--write-only", "--app", appName, "--project", String(projectId)],
+    `Synchronize runtime secrets for ${appName}`);
+  console.log(`Synchronized ${entries.length} runtime secrets and node role to ${appName} in one Hostless operation.`);
 }
 
 const node = nodes[nodeKey];
