@@ -27,6 +27,16 @@ const node1 = [
   ["apps/spacemountain-web/dist/integrated-server.js", { PORT: process.env.PORT ?? "8080", SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000", DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201" }],
 ];
 const node2 = [
+  ...(process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON ? (() => {
+    const configPath = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH ?? "/tmp/apollo-nebula-runtime.json";
+    let config;
+    try { config = JSON.parse(process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON); }
+    catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must contain valid versioned JSON."); }
+    if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be a version 1 configuration with at least one tenant.");
+    writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
+    process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = configPath;
+    return [];
+  })() : []),
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
 ];
