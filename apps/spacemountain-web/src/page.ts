@@ -7,15 +7,15 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#f97316">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <title>SpaceMountain Green Sandbox</title>
+  <title>SpaceMountain.Live · SPMT Ecosystem</title>
   <link rel="stylesheet" href="/assets/web/sandbox.css">
   <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/contracts/human-reference":"/assets/contracts/human-reference.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
 <body>
   <header class="sandbox-guardrail">
-    <div><strong>GREEN SPRITE SANDBOX</strong><span>private · isolated database · outbound actions off</span></div>
-    <nav aria-label="Sandbox controls">
+    <div><strong>SPACEMOUNTAIN.LIVE</strong><span>SPMT ecosystem · ApolloStation</span></div>
+    <nav aria-label="SpaceMountain controls">
       <span id="sandbox-status" class="sandbox-status" role="status" aria-live="polite">Checking SPMT…</span>
       <a href="/docs/developers">Developer docs</a>
       <button id="refresh-shell" type="button" hidden>Refresh</button>
@@ -26,8 +26,8 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <main id="auth-view" class="auth-view" hidden>
     <section class="auth-intro">
       <img class="auth-product-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
-      <span>THE UNIVERSE ONLINE · PRIVATE PREVIEW</span>
-      <p>Enter the clean SpaceMountain ecosystem running inside this private Sprite. The visual experience is shared; its data remains fully isolated from Blue.</p>
+      <span>THE UNIVERSE ONLINE · SPMT ECOSYSTEM</span>
+      <p>Welcome to the SpaceMountain ecosystem. Your apps, workspace, community tools, and live services are connected through SPMT.</p>
       <ul>
         <li>Stellar Core provides persona-neutral shared AI.</li>
         <li>Stella is the app-neutral Community Assistant.</li>
@@ -35,22 +35,22 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
         <li>Shipyard apps come from the SPMT registry.</li>
       </ul>
     </section>
-    <section class="auth-panels" aria-label="Sandbox account access">
+    <section class="auth-panels" aria-label="SpaceMountain account access">
       <p id="sandbox-auth-status" class="sandbox-auth-status" role="status" aria-live="polite" hidden></p>
       <form id="login-form" autocomplete="on">
-        <span>RETURNING TEST CAPTAIN</span>
+        <span>RETURNING CAPTAIN</span>
         <h2>Sign in</h2>
         <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" minlength="12" maxlength="256" required></label>
         <button type="submit">Enter SpaceMountain</button>
       </form>
       <form id="register-form" autocomplete="on">
-        <span>FIRST SANDBOX VISIT</span>
-        <h2>Create a test captain</h2>
+        <span>NEW TO SPACEMOUNTAIN</span>
+        <h2>Create your account</h2>
         <label>Display name<input name="displayName" autocomplete="name" maxlength="120" required></label>
         <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
         <label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
-        <button type="submit">Create isolated account</button>
+        <button type="submit">Create SpaceMountain account</button>
       </form>
     </section>
   </main>
@@ -83,7 +83,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
     <p class="developer-help">Registration adds or updates the catalog record. It does not install the app for a tenant. <a href="/docs/developers">Read the quickstart and troubleshooting guide.</a></p>
   </dialog>
   <dialog id="record-dialog"><form method="dialog"><button aria-label="Close">Close</button></form><h2 id="record-dialog-title">Commlink</h2><div id="record-dialog-body"></div></dialog>
-  <footer class="sandbox-footer">Build ${escapeHtml(buildSha)} · App registration uses the live SPMT SDK · provider actions remain off.</footer>
+  <footer class="sandbox-footer">SpaceMountain ecosystem · ApolloStation build ${escapeHtml(buildSha)}.</footer>
 </body>
 </html>`;
 }
