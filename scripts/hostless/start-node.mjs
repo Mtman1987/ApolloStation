@@ -74,3 +74,4 @@ for (const [file, overrides] of services) {
 }
 console.log(`ApolloStation ${role} started ${services.length} supervised production services.`);
 // Deployment trigger: validated ApolloStation production-shell release.
+// Deployment trigger: re-run validated two-node release after homepage test correction.
