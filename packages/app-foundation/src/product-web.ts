@@ -321,7 +321,7 @@ export function productAppLiveReadFromEnvironment(environment: NodeJS.ProcessEnv
 }
 
 async function resolveAppSession(input: { appId: string; spmtOrigin: string; request: IncomingMessage }) {
-  const origin = loopback(input.spmtOrigin);
+  const origin = validateSpmtServiceOrigin(input.spmtOrigin);
   const requestHeaders: Record<string, string> = { accept: "application/json", "x-spmt-app": input.appId };
   if (input.request.headers.cookie) requestHeaders.cookie = input.request.headers.cookie;
   const sessionResponse = await fetch(`${origin}/v1/session`, { headers: requestHeaders, redirect: "manual" });
@@ -394,9 +394,16 @@ function validateDescriptor(value: ProductAppWebDescriptorV1) {
   return value;
 }
 
-function loopback(value: string) {
+export function validateSpmtServiceOrigin(value: string) {
   const url = new URL(value);
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT origin must be a credential-free loopback HTTP origin");
+  const loopbackHost = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+  const safeLoopbackHttp = url.protocol === "http:" && loopbackHost;
+  // In the two-node Hostless topology, app services reach the SPMT authority
+  // on Node 1 over its public TLS origin. Plain HTTP remains loopback-only.
+  const safeRemoteHttps = url.protocol === "https:" && Boolean(url.hostname);
+  if ((!safeLoopbackHttp && !safeRemoteHttps) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("SPMT origin must be credential-free HTTPS or credential-free loopback HTTP");
+  }
   return url.origin;
 }
 
