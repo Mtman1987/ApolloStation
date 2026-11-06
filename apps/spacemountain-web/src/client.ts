@@ -199,7 +199,7 @@ async function loadShell() {
     const providerLinkError = query.get("providerLinkError");
     if (providerLinked) setStatus(`${providerLinked} is now linked to your SPMT identity.`, "ready");
     else if (providerLinkError) setStatus(providerLinkError, "error");
-    else setStatus("Sandbox open", "ready");
+    else setStatus("SpaceMountain connected", "ready");
     if (providerLinked || providerLinkError) {
       query.delete("providerLinked"); query.delete("providerLinkError");
       window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
@@ -366,7 +366,7 @@ function setNamedValue(name: string, value: string) {
 async function installApp(app: SpaceMountainAppCardV1) {
   const principal = requirePrincipal();
   const scopeText = app.allowedScopes.length ? app.allowedScopes.join(", ") : "no delegated scopes";
-  if (!window.confirm(`Install ${app.name} in this sandbox with ${scopeText}?`)) return;
+  if (!window.confirm(`Install ${app.name} in your SpaceMountain workspace with ${scopeText}?`)) return;
   setStatus(`Installing ${app.name} through the public SPMT SDK…`, "working");
   try {
     await controller.installApp(principal.tenantIds[0]!, app.appId, app.allowedScopes);
@@ -399,7 +399,7 @@ async function openConversation(conversation: Record<string, unknown>) {
     const reply = conversationReplyForm(conversation, principal.actorId);
     if (reply) dialogBody.append(reply);
     if (!dialog.open) dialog.showModal();
-    setStatus("Sandbox open · Commlink data came from SPMT.", "ready");
+    setStatus("SpaceMountain connected · Commlink data synced from SPMT.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
 }
 
