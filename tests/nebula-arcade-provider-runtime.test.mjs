@@ -12,10 +12,40 @@ import {
   validateNebulaArcadeProviderEnvironment,
   SqliteNebulaMosaicStore, claimNextMosaicRequest, installMosaicQueueTemplate, MOSAIC_CELL_COUNT,
 } from "../apps/nebula-arcade/dist/index.js";
-import { SupervisedChatGatewayService, validateChatGatewayWorkerEnvironment } from "../apps/chat-gateway/dist/service.js";
+import { SupervisedChatGatewayService, validateChatGatewayWorkerEnvironment, createNebulaArcadeChatReplyEgress } from "../apps/chat-gateway/dist/service.js";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 29, 12, minute)).toISOString();
+test("read-only live ingress sends only Nebula chat replies through the active provider adapter", async () => {
+  const sent = [], shadowed = [];
+  const egress = createNebulaArcadeChatReplyEgress({
+    operationMode: "read-only",
+    liveIngressEnabled: true,
+    senders: [{ provider: "twitch", send: async (message) => { sent.push(message); return { providerMessageId: "twitch-reply" }; } }],
+    shadowSend: async (message) => { shadowed.push(message); return { providerMessageId: "shadow-reply" }; },
+  });
+  const message = { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "tw-main", channelId: "channel-a", text: "Nebula reply", idempotencyKey: "nebula-reply-test" };
+  const result = await egress.send(message);
+  assert.equal(result.providerMessageId, "twitch-reply");
+  assert.deepEqual(sent, [message]);
+  assert.equal(shadowed.length, 0);
+});
+
+test("Nebula reply egress stays shadowed outside read-only live ingress", async () => {
+  const sent = [], shadowed = [];
+  const egress = createNebulaArcadeChatReplyEgress({
+    operationMode: "read-only",
+    liveIngressEnabled: false,
+    senders: [{ provider: "twitch", send: async (message) => { sent.push(message); return { providerMessageId: "twitch-reply" }; } }],
+    shadowSend: async (message) => { shadowed.push(message); return { providerMessageId: "shadow-reply" }; },
+  });
+  const message = { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "tw-main", channelId: "channel-a", text: "Nebula reply", idempotencyKey: "nebula-reply-test" };
+  const result = await egress.send(message);
+  assert.equal(result.providerMessageId, "shadow-reply");
+  assert.equal(sent.length, 0);
+  assert.deepEqual(shadowed, [message]);
+});
+
 const config = {
   schemaVersion: 1,
   revision: "test-1",
