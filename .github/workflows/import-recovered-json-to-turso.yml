@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Private GitHub release tag containing recovered-json-manifest.jsonl.gz"
+        description: "Private GitHub release tag containing the verified recovery manifest"
         required: true
         type: string
         default: apollo-recovery-2026-11-07
@@ -51,16 +51,16 @@ jobs:
           mkdir -p recovery-input
           gh release download "$RECOVERY_RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "recovered-json-manifest.jsonl.gz" \
+            --pattern "recovered-json-manifest.1.jsonl" \
             --dir recovery-input
 
       - name: Verify manifest checksum and Turso configuration
         run: |
-          test -s recovery-input/recovered-json-manifest.jsonl.gz || {
-            echo "::error::The private release must contain recovered-json-manifest.jsonl.gz."
+          test -s recovery-input/recovered-json-manifest.1.jsonl || {
+            echo "::error::The private release must contain recovered-json-manifest.1.jsonl."
             exit 1
           }
-          echo "7bcc2ae2688d77b6bdddcc2c5e84274fc02ecb7330a44970c18390e3bf95a8a2  recovery-input/recovered-json-manifest.jsonl.gz" | sha256sum -c -
+          echo "4e4385a54daa1e09ceb36bd2694e0c2dd576248a483cd1d4e8abd1ed3ef364f8  recovery-input/recovered-json-manifest.1.jsonl" | sha256sum -c -
           test -n "$TURSO_DATABASE_URL" || {
             echo "::error::Set the single shared TURSO_DATABASE_URL GitHub Actions secret or variable."
             exit 1
@@ -71,7 +71,7 @@ jobs:
           }
 
       - name: Validate manifest without writing
-        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.1.jsonl
 
       - name: Apply and read back all 5,748 records
         if: inputs.apply
