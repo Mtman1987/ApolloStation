@@ -97,7 +97,7 @@ jobs:
             console.error("Every Nebula tenant/channel must match an enabled Chat Gateway connection.");
             process.exit(1);
           }
-          appendFileSync(process.env.GITHUB_ENV, `NEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\\n`);
+          appendFileSync(process.env.GITHUB_ENV, `NEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\n`);
           console.log(`Validated Nebula runtime configuration for ${config.tenants.length} tenant(s); values were not printed.`);
           NODE
       - name: Install Hostless CLI
