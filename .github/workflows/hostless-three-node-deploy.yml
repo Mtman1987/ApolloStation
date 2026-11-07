@@ -308,6 +308,7 @@ jobs:
           NEBULA_ARCADE_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
           NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
           NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
+          CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
         run: node scripts/import-staged-nebula-tag-to-turso.mjs
       - name: Install Hostless CLI
         run: |
