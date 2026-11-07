@@ -88,7 +88,7 @@ if (nebulaConfigRequested) {
   );
   const autoConfig = {
     schemaVersion: 1,
-    revision: "hostless-owner-twitch-autowire-v2",
+    revision: "hostless-chat-gateway-connection-registry-v1",
     tenants: nebulaTenantId && pinUserId && ownerTwitchConnections.length ? [{
       tenantId: nebulaTenantId,
       pinUserId,
@@ -110,7 +110,7 @@ if (nebulaConfigRequested) {
   });
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
   if (nebulaConfig.config.tenants.length === 0) {
-    console.warn("Nebula Arcade provider runtime has zero owner-matched Twitch channels; no external accounts will be connected.");
+    console.warn("Nebula Arcade provider runtime has zero configured Twitch channels; no external accounts will be connected.");
   }
 }
 node2.push(
