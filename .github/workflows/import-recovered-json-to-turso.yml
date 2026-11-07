@@ -3,6 +3,11 @@ name: Import recovered JSON manifest to shared Turso
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Private GitHub release tag containing recovered-json-manifest.jsonl.gz"
+        required: true
+        type: string
+        default: apollo-recovery-2026-11-07
       apply:
         description: "Write the verified redacted recovery manifest into the raw staging table"
         required: true
@@ -24,6 +29,8 @@ jobs:
     env:
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      RECOVERY_RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - name: Check out main
         uses: actions/checkout@v4
@@ -39,10 +46,18 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Verify redacted recovery manifest is present
+      - name: Download the private recovery release asset
+        run: |
+          mkdir -p recovery-input
+          gh release download "$RECOVERY_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "recovered-json-manifest.jsonl.gz" \
+            --dir recovery-input
+
+      - name: Verify manifest checksum and Turso configuration
         run: |
           test -s recovery-input/recovered-json-manifest.jsonl.gz || {
-            echo "::error::Upload the redacted recovered-json-manifest.jsonl.gz to recovery-input/ on main first."
+            echo "::error::The private release must contain recovered-json-manifest.jsonl.gz."
             exit 1
           }
           echo "7bcc2ae2688d77b6bdddcc2c5e84274fc02ecb7330a44970c18390e3bf95a8a2  recovery-input/recovered-json-manifest.jsonl.gz" | sha256sum -c -
