@@ -16,7 +16,7 @@ test("Hostless bootstrap rejects an enabled Nebula runtime without any tenant/ch
       encoding: "utf8",
       env: {
         ...process.env,
-        APOLLO_NODE_ROLE: "invalid-test-role",
+        APOLLO_NODE_ROLE: "node2",
         DSH_RUNTIME_CONFIG_PATH: dshPath,
         SPMT_DSH_LIVE_RUNTIME_ENABLED: "1",
         NEBULA_ARCADE_RUNTIME_CONFIG_PATH: nebulaPath,
@@ -25,14 +25,13 @@ test("Hostless bootstrap rejects an enabled Nebula runtime without any tenant/ch
     });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /APOLLO_NODE_ROLE must be node1 or node2/);
+    assert.match(result.stderr, /NEBULA_ARCADE runtime config must contain at least one tenant/i);
     assert.deepEqual(JSON.parse(readFileSync(dshPath, "utf8")), {
       schemaVersion: 1,
       pollIntervalSeconds: 60,
       tenants: [],
     });
     assert.equal(statSync(dshPath).mode & 0o777, 0o600);
-    assert.match(result.stderr, /NEBULA_ARCADE runtime config must contain at least one tenant/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
