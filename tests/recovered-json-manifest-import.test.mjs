@@ -27,11 +27,11 @@ function record(source, tenant, path, value) {
     payload,
   };
 }
-function withManifest(records, work) {
+async function withManifest(records, work) {
   const directory = mkdtempSync(join(tmpdir(), "apollo-recovery-manifest-"));
   const path = join(directory, "manifest.jsonl.gz");
   writeFileSync(path, gzipSync(Buffer.from(records.map((item) => JSON.stringify(item)).join("\n") + "\n")));
-  try { return work(path); } finally { rmSync(directory, { recursive: true, force: true }); }
+  try { return await work(path); } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
 test("validates a canonical pre-redacted source record", () => {
