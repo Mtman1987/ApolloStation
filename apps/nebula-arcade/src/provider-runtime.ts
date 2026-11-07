@@ -234,7 +234,7 @@ export class NebulaArcadeProviderRuntime {
     if (!channel || !experience || message.actor.isBot) return;
     const channelIds=[...new Set([message.sourceChannelId??message.channelId,message.channelId,channel.stateChannelId])];
     if (isNebulaChannelOptedOut(this.experienceStore,message.tenantId,...channelIds)) return;
-    if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId)||this.network.blocked(message.tenantId,providerActorId(message),message.actor.username,channel.stateChannelId))return;
+    const providerIdentity=providerActorId(message);if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId)||(providerIdentity!==actorId(message)&&this.network.blocked(message.tenantId,providerIdentity,message.actor.username,channel.stateChannelId)))return;
     if(message.supportEvent){
       const event=message.supportEvent,state=(await this.tagRuntime.getState(message.tenantId)).state,user=tagActorId(message),presence=this.network.presence(message.tenantId,Date.parse(message.occurredAt));
       if(state.players[user]?.eligible!==false&&state.players[user]&&(event.kind!=="cheer"||event.amount>=100)&&(event.kind!=="raid"||presence?.liveUserIds.includes(user))){
@@ -455,7 +455,7 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
   return{schemaVersion:1,revision,tenants};
 }
 
-function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:tagActorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
+function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:tagActorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:message.provider==="twitch"?`provider:twitch:${mention.providerUserId}`:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
 function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??providerActorId(message);}
 function providerActorId(message:NormalizedChatMessageV1){return `provider:${message.provider}:${message.actor.providerUserId}`;}
 /** Legacy Chat Tag player IDs are Twitch provider IDs, not SPMT canonical IDs. */
