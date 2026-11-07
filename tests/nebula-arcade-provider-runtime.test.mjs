@@ -115,7 +115,7 @@ test("ambiguous commands ask the user instead of mutating two games while safe t
   actions.close();
 }));
 
-test("Quackverse deck commands read the real collection and moderator controls remain enforced", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
+test("spmt pack opens Quackverse on configured Twitch channels even when legacy config omitted the game flag", async () => {\n  const legacyConfig = structuredClone(config);\n  legacyConfig.tenants[0].channels[0].enabledGameIds = legacyConfig.tenants[0].channels[0].enabledGameIds.filter((id) => id !== "quackverse");\n  const normalized = validateNebulaArcadeProviderConfig(legacyConfig);\n  assert.ok(normalized.tenants[0].channels[0].enabledGameIds.includes("quackverse"));\n  await withRuntime(async ({ runtime, sent }) => {\n    await runtime.consumers[0].deliver(delivery("spmt-pack", "spmt pack"));\n    assert.equal(sent.length, 1);\n    assert.match(sent[0].text, /pack|duck|Quackverse/i);\n  }, { config: legacyConfig });\n});\n\ntest("Quackverse deck commands read the real collection and moderator controls remain enforced", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];
   await consumer.deliver(delivery("deck", "spmt deck"));
   assert.match(sent.at(-1).text, /Deck \(0\/20\): empty/);
