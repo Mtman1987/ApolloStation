@@ -84,7 +84,7 @@ async function main() {
   if (Object.keys(prepared.tag.players).length !== 155) {
     throw new Error(`Expected 155 converted Tag players; prepared ${Object.keys(prepared.tag.players).length}. No domain data was changed.`);
   }
-  if (prepared.tag.history.length + prepared.warnings.length < 1) {
+  if (prepared.tag.history.length === 0) {
     throw new Error("The recovered Tag history conversion returned no usable records.");
   }
 
