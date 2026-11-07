@@ -105,7 +105,7 @@ jobs:
             // identity is a deployment secret or a startup prerequisite.
             const empty = { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [] };
             appendFileSync(process.env.GITHUB_ENV,
-              `APOLLO_NODE2_NEBULA_ENABLED=1\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(empty)}\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\\n`);
+              `APOLLO_NODE2_NEBULA_ENABLED=1\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(empty)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
             console.log("No provider connections yet; starting Nebula with an empty registry, ready for OAuth connections.");
           } else {
             appendFileSync(process.env.GITHUB_ENV,
