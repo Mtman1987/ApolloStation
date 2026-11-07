@@ -331,6 +331,7 @@ export class SupervisedChatGatewayService {
     const configured=this.options.connections.findIndex(old=>old.tenantId===c.tenantId&&old.provider===c.provider&&old.connectionId===c.connectionId);
     if(configured<0)this.options.connections.push(c);else this.options.connections[configured]=c;
     if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);
+    this.nebulaArcade?.registerProviderConnection(c);
     if(c.desired)this.streamweaverImage?.addTenant(c.tenantId);
     if(c.desired)this.streamweaverAvatar?.addTenant(c.tenantId);
   }
