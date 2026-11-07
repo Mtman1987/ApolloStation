@@ -1,22 +1,13 @@
 name: ApolloStation Hostless Node 2 fast deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/chat-gateway/**"
-      - "apps/streamweaver/**"
-      - "apps/nebula-arcade/**"
-      - "scripts/hostless/start-node.mjs"
-      - "tests/hostless-runtime-config-bootstrap.test.mjs"
-      - ".github/workflows/hostless-node2-fast-deploy.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-node2-fast-deploy
+  group: apollo-hostless-release
   cancel-in-progress: false
 
 jobs:
