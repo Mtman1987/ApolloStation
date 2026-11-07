@@ -243,10 +243,10 @@ jobs:
           NODE
       - name: Verify both nodes target the same Turso database and inspect recovery staging
         env:
-          NODE1_TURSO_DATABASE_URL: \${{ secrets.NODE1_TURSO_DATABASE_URL }}
-          NODE1_TURSO_AUTH_TOKEN: \${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          NODE2_TURSO_DATABASE_URL: \${{ secrets.NODE2_TURSO_DATABASE_URL }}
-          NODE2_TURSO_AUTH_TOKEN: \${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
+          NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+          NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
         run: |
           node --input-type=module - <<'NODE'
           import { TursoHttpAdapter, normalizeTursoUrl } from "./packages/turso-http/index.mjs";
