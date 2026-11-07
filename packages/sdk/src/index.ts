@@ -110,5 +110,16 @@ export class SpmtClient {
 export class SpmtApiError extends Error{constructor(public readonly status:number,public readonly responseBody:string){super(spmtErrorMessage(status,responseBody));this.name="SpmtApiError";}}
 function spmtErrorMessage(status:number,body:string):string{const fallback=`SPMT API request failed with status ${status}`;try{const data:unknown=JSON.parse(body);if(data&&typeof data==="object"&&"message" in data&&typeof data.message==="string"&&data.message.trim())return `${fallback}: ${data.message.replace(/[\r\n\0]/g," ").trim().slice(0,350)}`;}catch{}return fallback;}
 
-function isExpiredAccessTokenResponse(body:string):boolean{try{const value:unknown=JSON.parse(body);return Boolean(value&&typeof value==="object"&&"message" in value&&value.message==="Access token is invalid or expired");}catch{return false;}}
+function isExpiredAccessTokenResponse(body:string):boolean{
+  let message = body.trim();
+  try {
+    const value: unknown = JSON.parse(body);
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const candidates = [record.message, record.error, record.detail];
+      message = candidates.filter((item): item is string => typeof item === "string").join(" ");
+    }
+  } catch {}
+  return /(?:access\s+token).*(?:invalid|expired)|(?:invalid|expired).*(?:access\s+token)/i.test(message);
+}
 function mediaJobHeaders(job?:MediaAssetJobContextV1):Record<string,string>{return job?{"x-spmt-job-id":job.jobId,"x-spmt-job-lease":job.leaseId,"x-spmt-job-epoch":String(job.fencingEpoch)}:{}}
