@@ -458,7 +458,7 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
 function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:tagActorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:message.provider==="twitch"?`provider:twitch:${mention.providerUserId}`:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
 function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??providerActorId(message);}
 function providerActorId(message:NormalizedChatMessageV1){return `provider:${message.provider}:${message.actor.providerUserId}`;}
-/** Legacy Chat Tag player IDs are Twitch provider IDs, not SPMT canonical IDs. */
+/** Imported Twitch player keys are provider IDs, not canonical SPMT IDs. */
 function tagActorId(message:NormalizedChatMessageV1){return message.provider==="twitch"?providerActorId(message):actorId(message); }
 function gameActorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}
 function messageKey(message:NormalizedChatMessageV1){return channelKey(message.tenantId,message.provider,message.connectionId,message.channelId);}
