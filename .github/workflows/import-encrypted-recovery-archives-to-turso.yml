@@ -41,13 +41,29 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Verify the published release contains both original archives
+        id: release-assets
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$RECOVERY_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          printf '%s\\n' "$assets" | grep -Fxq "recovered-user-data-verified-bundle.zip" || { echo "::error::The selected release does not contain recovered-user-data-verified-bundle.zip"; exit 1; }
+          printf '%s\\n' "$assets" | grep -Fxq "recovered-user-data-run-40072383161-supplement.zip" || { echo "::error::The selected release does not contain recovered-user-data-run-40072383161-supplement.zip"; exit 1; }
       - name: Download original private recovery bundles
         run: |
+          set -euo pipefail
           mkdir -p recovery-input
           gh release download "$RECOVERY_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "recovered-user-data-verified-bundle.zip" --dir recovery-input
           gh release download "$RECOVERY_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "recovered-user-data-run-40072383161-supplement.zip" --dir recovery-input
           test -s recovery-input/recovered-user-data-verified-bundle.zip
           test -s recovery-input/recovered-user-data-run-40072383161-supplement.zip
+      - name: Check encrypted import credentials are configured
+        if: ${{ inputs.apply }}
+        env:
+          HAS_TURSO_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN != '' }}
+          HAS_ENCRYPTION_KEY: ${{ secrets.SPMT_PROVIDER_CREDENTIAL_KEY != '' }}
+        run: |
+          test "$HAS_TURSO_TOKEN" = "true" || { echo "::error::Missing GitHub Actions secret NODE2_TURSO_AUTH_TOKEN"; exit 1; }
+          test "$HAS_ENCRYPTION_KEY" = "true" || { echo "::error::Missing GitHub Actions secret SPMT_PROVIDER_CREDENTIAL_KEY"; exit 1; }
       - name: Validate archive inventory without writing
         run: node scripts/import-recovery-archives-to-turso.mjs --file recovery-input/recovered-user-data-verified-bundle.zip --file recovery-input/recovered-user-data-run-40072383161-supplement.zip
       - name: Encrypt and import to Turso
