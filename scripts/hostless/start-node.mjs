@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 
+// Keep Hostless runtime configuration bootstrap deterministic across the two-node release.
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
