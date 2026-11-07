@@ -72,12 +72,39 @@ const nebulaConfigRequested = Boolean(
   process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1",
 );
 if (nebulaConfigRequested) {
+  const nebulaConnections = (() => {
+    try {
+      const value = JSON.parse(process.env.CHAT_GATEWAY_CONNECTIONS || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch { throw new Error("CHAT_GATEWAY_CONNECTIONS must be valid JSON before Nebula can attach its Twitch channel."); }
+  })();
+  const nebulaTenantId = process.env.NEBULA_ARCADE_TENANT_ID || "";
+  const nebulaOwnerId = process.env.NEBULA_ARCADE_PIN_USER_ID || process.env.SPMT_OWNER_USER_ID || nebulaTenantId;
+  const ownerTwitchConnections = nebulaConnections.filter(connection =>
+    connection && connection.schemaVersion === 1 && connection.provider === "twitch" &&
+    connection.desired === true && connection.tenantId === nebulaTenantId
+  );
+  const autoConfig = {
+    schemaVersion: 1,
+    revision: "hostless-owner-twitch-autowire-v1",
+    tenants: nebulaTenantId && ownerTwitchConnections.length && nebulaOwnerId ? [{
+      tenantId: nebulaTenantId,
+      pinUserId: nebulaOwnerId,
+      channels: ownerTwitchConnections.map(connection => ({
+        provider: "twitch",
+        connectionId: connection.connectionId,
+        channelId: connection.channelId,
+        stateChannelId: process.env.NEBULA_ARCADE_CHANNEL_ID || connection.channelId,
+        enabledGameIds: ["tag","quackverse","bingo","chaosmode","chatgarden","chatwars","chickenroyale","colorsymphony","colorwars","dancingparade","emojirain","emojitower","memorylane","petrace","phraseguess","pixelbattle","rhythmpulse","treasurehunt","wordchain","wordstorm"],
+      })),
+    }] : [],
+  };
   const nebulaConfig = writeVersionedRuntimeConfig({
-    json: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON,
+    json: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON || (process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH ? undefined : JSON.stringify(autoConfig)),
     path: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH,
     fallbackPath: "/tmp/apollo-nebula-runtime.json",
     label: "NEBULA_ARCADE",
-    emptyConfig: { schemaVersion: 1, revision: "owner-only-unconfigured", tenants: [] },
+    emptyConfig: autoConfig,
   });
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
   if (nebulaConfig.config.tenants.length === 0) {
