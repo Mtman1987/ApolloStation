@@ -58,7 +58,7 @@ const ACTION_ALIASES = new Map<string, { gameId: string; command: string }>([
 export function parseNebulaMessage(text: string) {
   const input = String(text || "").trim();
   const legacyTagMatch = /^@spmt(?:\s+([\s\S]*))?$/i.exec(input);
-  const match = legacyTagMatch ? null : /^!?spmt(?:\s+([\s\S]*))?$/i.exec(input);
+  const match = legacyTagMatch ? null : /^spmt(?:\s+([\s\S]*))?$/i.exec(input);
   if (!legacyTagMatch && !match) return null;
   const words = ((legacyTagMatch?.[1] ?? match?.[1]) ?? "").trim().split(/\s+/).filter(Boolean);
   if (legacyTagMatch) {
