@@ -102,6 +102,13 @@ test("Node 2 empty Nebula registry exports separate GitHub environment lines", (
   assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
 });
 
+test("Hostless release refuses deployment until every recovered JSON source document is staged", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Recovered-data staging table is missing/);
+  assert.match(workflow, /expectedBySource = \{ "nebula-legacy-global": 16, streamweaver: 5732 \}/);
+  assert.match(workflow, /stagedDocuments !== 5748/);
+  assert.match(workflow, /bySource\.streamweaver !== expectedBySource\.streamweaver/);
+});
 test("Hostless Node 1 and Node 2 receive the same canonical Turso database URL", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /SHARED_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL \}\}/);
