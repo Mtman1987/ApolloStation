@@ -82,22 +82,25 @@ test("Nebula provider config is strict, provider-neutral, and contains no creden
   assert.throws(() => validateNebulaArcadeProviderConfig({ ...config, tenants: [...config.tenants, config.tenants[0]] }), /duplicate tenant/);
 });
 
-test("Nebula provider runtime accepts a tenant channel map without a pinned player identity", async () => {
+test("Nebula Tag keeps recovered Twitch provider IDs even when chat identity is canonically linked", async () => {
   const ownerlessConfig = structuredClone(config);
   delete ownerlessConfig.tenants[0].pinUserId;
   const normalized = validateNebulaArcadeProviderConfig(ownerlessConfig);
   assert.equal(normalized.tenants[0].pinUserId, undefined);
   await withRuntime(async ({ runtime, databasePath, sent }) => {
-    const first = message("chatter-one", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "twitch-101", canonicalUserId: "spmt-101", username: "first", displayName: "First" } });
-    const second = message("chatter-two", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "twitch-202", canonicalUserId: "spmt-202", username: "second", displayName: "Second" } });
+    const first = message("chatter-one", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "123456", canonicalUserId: "spmt-101", username: "first", displayName: "First" } });
+    const second = message("chatter-two", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "789012", canonicalUserId: "spmt-202", username: "second", displayName: "Second" } });
     await runtime.consumers[0].deliver({ ...delivery("chatter-one", "spmt join"), message: first });
     await runtime.consumers[0].deliver({ ...delivery("chatter-two", "spmt join"), message: second });
+    await runtime.consumers[0].deliver({ ...delivery("chatter-one-activity", "ordinary chat"), message: { ...first, messageId: "chatter-one-activity", text: "ordinary chat" } });
     assert.equal(sent.length, 2);
     runtime.close();
     const tag = new SqliteNebulaTagStore(databasePath);
     const players = tag.getState("tenant-a").state.players;
-    assert.ok(players["spmt-101"]);
-    assert.ok(players["spmt-202"]);
+    assert.ok(players["provider:twitch:123456"]);
+    assert.ok(players["provider:twitch:789012"]);
+    assert.equal(players["provider:twitch:123456"].lastActiveAt, at(0));
+    assert.equal(players["spmt-101"], undefined);
     tag.close();
   }, { config: ownerlessConfig });
 });
