@@ -241,6 +241,48 @@ jobs:
           }
           console.log("Required runtime configuration is present; values were not printed.");
           NODE
+      - name: Verify both nodes target the same Turso database and inspect recovery staging
+        env:
+          NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
+          NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+          NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import { TursoHttpAdapter, normalizeTursoUrl } from "./packages/turso-http/index.mjs";
+          const pairs = [
+            ["node1", process.env.NODE1_TURSO_DATABASE_URL, process.env.NODE1_TURSO_AUTH_TOKEN],
+            ["node2", process.env.NODE2_TURSO_DATABASE_URL, process.env.NODE2_TURSO_AUTH_TOKEN],
+          ];
+          for (const [name, url, token] of pairs) {
+            if (!url?.trim() || !token?.trim()) {
+              throw new Error("Both Node 1 and Node 2 Turso URL/auth settings are required for shared-database verification.");
+            }
+          }
+          if (normalizeTursoUrl(pairs[0][1]) !== normalizeTursoUrl(pairs[1][1])) {
+            throw new Error("Node 1 and Node 2 are configured for different Turso database endpoints; refusing deployment.");
+          }
+          const results = [];
+          for (const [name, url, authToken] of pairs) {
+            const db = new TursoHttpAdapter({ url, authToken });
+            await db.execute("SELECT 1", [], true);
+            const table = await db.execute(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+              ["apollo_recovered_json_stage_v1"], true,
+            );
+            let stagedDocuments = 0;
+            if (table.rows.length) {
+              const count = await db.execute("SELECT COUNT(*) FROM apollo_recovered_json_stage_v1", [], true);
+              stagedDocuments = Number(count.rows[0]?.[0] ?? 0);
+            }
+            results.push({ node: name, reachable: true, recoveredJsonStageTable: table.rows.length > 0, stagedDocuments });
+          }
+          if (results[0].stagedDocuments !== results[1].stagedDocuments ||
+              results[0].recoveredJsonStageTable !== results[1].recoveredJsonStageTable) {
+            throw new Error("Node 1 and Node 2 did not read the same recovered-data staging state.");
+          }
+          console.log(JSON.stringify({ sharedDatabaseEndpoint: true, nodes: results }));
+          NODE
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
