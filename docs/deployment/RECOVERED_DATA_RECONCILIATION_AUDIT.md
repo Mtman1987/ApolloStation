@@ -95,3 +95,27 @@ These are useful source-to-source identity hints, not Apollo tenant ownership. T
 The manifest metadata pass detected a top-level `schemaVersion` or `version` marker in 0 of the 16 Chat Tag JSON documents and 17 of the 5,731 StreamWeaver candidate documents. Files without an explicit marker retain a null schema-version field; shallow top-level array/object-map counts are still recorded so the original collection sizes can be compared during staging and restore verification.
 
 The same offline preflight measured 92,827,375 bytes of candidate source JSON before redaction and 73,902,229 bytes of serialized redacted payloads (Chat Tag: 8,711,520 raw / 7,614,341 redacted; StreamWeaver: 84,115,855 raw / 66,287,888 redacted). This is the raw staging payload estimate, not the eventual normalized database size; indexes, metadata, and application tables will add overhead.
+
+
+## 2026-11-07 fresh archive extraction reconciliation
+
+The two original Library ZIPs were materialized read-only and their SHA-256 values were rechecked against the immutable-source receipts above; both matched. The Chat Tag and StreamWeaver nested tarballs also passed gzip integrity checks. Extraction used a separate working directory and rejected unsafe paths or links.
+
+A fresh walk of the extracted trees found **5,732** StreamWeaver candidate JSON documents, not 5,731. The extra document is the tar hard-link entry:
+
+- `data/runtime/tenants/539605850/data/follow-alert-player.json`
+- It is a 44-byte hard link to `data/runtime/tenants/1026453815/data/follow-alert-player.json`.
+- The two files have identical SHA-256 `4363bf52304f19e06cc02da6cc39d12e5abdff67c75056cf4d21e5cf4f90b725`.
+- The path is retained as a separate source record under its own tenant directory. It is not collapsed into the target tenant, because tenant ownership and path identity must remain intact.
+
+Corrected offline preflight totals are:
+
+| Source | Candidate JSON documents | Invalid JSON | Documents with redacted fields | Destination scopes |
+|---|---:|---:|---:|---:|
+| Chat Tag legacy-global | 16 | 0 | 4 | 1 |
+| StreamWeaver | 5,732 | 0 | 251 | 58 (57 tenant IDs plus `__global__`) |
+| **Total** | **5,748** | **0** | **255** | **59 source scopes** |
+
+Corrected byte totals are 92,827,419 bytes of candidate source JSON and 73,902,273 bytes of serialized redacted payloads (Chat Tag: 8,711,520 raw / 7,614,341 redacted; StreamWeaver: 84,115,899 raw / 66,287,932 redacted). The 44-byte increase is exactly the retained hard-link path. These remain offline source-manifest estimates; they do not establish that any record has been written to Turso or normalized into Apollo application tables.
+
+The archive contents, source ZIPs, and nested tarballs were not modified. No Turso writes were performed during this reconciliation.
