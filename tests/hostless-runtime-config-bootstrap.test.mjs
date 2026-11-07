@@ -38,7 +38,7 @@ test("Hostless bootstrap writes safe empty owner-only DSH and Nebula configs whe
     });
     assert.equal(statSync(dshPath).mode & 0o777, 0o600);
     assert.equal(statSync(nebulaPath).mode & 0o777, 0o600);
-    assert.match(result.stderr, /zero tenants|zero provisioned tenants/i);
+    assert.match(result.stderr, /zero configured Twitch channels|zero tenants|zero provisioned tenants/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
