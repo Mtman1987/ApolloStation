@@ -1,0 +1,62 @@
+name: Import recovered JSON manifest to shared Turso
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write the verified redacted recovery manifest into the raw staging table"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-recovered-json-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify redacted recovery manifest is present
+        run: |
+          test -s recovery-input/recovered-json-manifest.jsonl.gz || {
+            echo "::error::Upload the redacted recovered-json-manifest.jsonl.gz to recovery-input/ on main first."
+            exit 1
+          }
+          test -n "$TURSO_DATABASE_URL" || {
+            echo "::error::Set the single shared TURSO_DATABASE_URL GitHub Actions secret or variable."
+            exit 1
+          }
+          test -n "$TURSO_AUTH_TOKEN" || {
+            echo "::error::NODE2_TURSO_AUTH_TOKEN is missing."
+            exit 1
+          }
+
+      - name: Validate manifest without writing
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz
+
+      - name: Apply and read back all 5,748 records
+        if: inputs.apply
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz --apply
