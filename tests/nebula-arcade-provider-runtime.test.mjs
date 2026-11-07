@@ -163,6 +163,25 @@ test("reconcile reports Tag rotation as fail-closed until canonical presence is 
   assert.deepEqual(report.rotation, { status: "presence-required", reason: "Automatic Tag rotation is fenced until a fresh canonical presence snapshot is available." });
 }));
 
+test("disabled Nebula ignores the shared SPMT public origin and does not crash Chat Gateway", () => {
+  const directory = mkdtempSync(join(tmpdir(), "nebula-disabled-"));
+  try {
+    const environment = validateChatGatewayWorkerEnvironment({
+      SPMT_RUNTIME_MODE: "production",
+      SPMT_ORIGIN: "https://spmt.example.test",
+      SPMT_PUBLIC_ORIGIN: "https://apollo.example.test",
+      CHAT_GATEWAY_DATABASE_PATH: join(directory, "chat-gateway.sqlite"),
+      CHAT_GATEWAY_WORKER_CREDENTIAL: "chat-gateway-service-credential-123456",
+      CHAT_GATEWAY_CONNECTIONS: "[]",
+      STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
+      STREAMWEAVER_DATABASE_PATH: join(directory, "streamweaver.sqlite"),
+      STREAMWEAVER_WORKER_CREDENTIAL: "streamweaver-service-credential-123456"
+    });
+    assert.equal(environment.nebulaArcade, undefined);
+    assert.ok(environment.streamweaver);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("supervised Chat Gateway authenticates Nebula separately and starts zero-tenant sandbox composition", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-supervised-"));
   const configPath = join(directory, "nebula-runtime-sandbox.json");
