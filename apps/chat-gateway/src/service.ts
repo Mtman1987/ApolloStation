@@ -465,8 +465,38 @@ export class SupervisedChatGatewayService {
 
   private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
-  private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
-  private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
+  private async runSimulation(signal:AbortSignal){
+    let failures=0;
+    while(!signal.aborted){
+      try {
+        await this.simulationWorker.runOnce();
+        failures=0;
+        await pause(this.options.reconcileMs,signal);
+      } catch(error) {
+        failures+=1;
+        const delayMs=Math.min(30_000,this.options.reconcileMs*2**Math.min(failures,5));
+        const message=error instanceof Error?error.message:String(error);
+        console.error(`Simulation room worker temporarily unavailable; retrying in ${delayMs}ms: ${message}`);
+        await pause(delayMs,signal);
+      }
+    }
+  }
+  private async runGateway(signal:AbortSignal){
+    let failures=0;
+    while(!signal.aborted){
+      try {
+        await this.reconcile();
+        failures=0;
+        await pause(this.options.reconcileMs,signal);
+      } catch(error) {
+        failures+=1;
+        const delayMs=Math.min(30_000,this.options.reconcileMs*2**Math.min(failures,5));
+        const message=error instanceof Error?error.message:String(error);
+        console.error(`Chat Gateway reconciliation temporarily unavailable; retrying in ${delayMs}ms: ${message}`);
+        await pause(delayMs,signal);
+      }
+    }
+  }
   async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); await this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
