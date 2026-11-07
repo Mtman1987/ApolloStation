@@ -32,77 +32,27 @@ jobs:
           node --check scripts/hostless/start-node.mjs
           node --test tests/hostless-runtime-config-bootstrap.test.mjs
           node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
-      - name: Validate supplied Nebula Twitch channel mapping before touching Hostless
+      - name: Prepare Nebula runtime config for SPMT-discovered connections
         env:
           NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
-          NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
-          NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
-          CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
         run: |
           node --input-type=module - <<'NODE'
           import { appendFileSync } from "node:fs";
           const raw = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON?.trim();
-          const connectionsRaw = process.env.CHAT_GATEWAY_CONNECTIONS?.trim();
-          let connections;
-          try { connections = JSON.parse(connectionsRaw || "[]"); } catch {
-            console.error("CHAT_GATEWAY_CONNECTIONS must be valid JSON.");
-            process.exit(1);
-          }
-          if (!Array.isArray(connections)) {
-            console.error("CHAT_GATEWAY_CONNECTIONS must be a JSON array.");
-            process.exit(1);
-          }
-          let config;
+          let config = { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [] };
           if (raw) {
             try { config = JSON.parse(raw); } catch {
               console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be valid JSON when supplied.");
               process.exit(1);
             }
-          } else {
-            const supported = new Set(["twitch", "discord", "kick", "youtube"]);
-            const tenants = new Map();
-            for (const c of connections) {
-              if (!c || c.schemaVersion !== 1 || c.desired !== true || !supported.has(c.provider) ||
-                  typeof c.tenantId !== "string" || !c.tenantId.trim() ||
-                  typeof c.connectionId !== "string" || !c.connectionId.trim() ||
-                  typeof c.channelId !== "string" || !c.channelId.trim()) continue;
-              let tenant = tenants.get(c.tenantId);
-              if (!tenant) { tenant = { tenantId: c.tenantId, channels: [] }; tenants.set(c.tenantId, tenant); }
-              tenant.channels.push({
-                provider: c.provider, connectionId: c.connectionId, channelId: c.channelId,
-                stateChannelId: c.stateChannelId || c.channelId,
-                enabledGameIds: ["tag","quackverse","bingo","chaosmode","chatgarden","chatwars","chickenroyale","colorsymphony","colorwars","dancingparade","emojirain","emojitower","memorylane","petrace","phraseguess","pixelbattle","rhythmpulse","treasurehunt","wordchain","wordstorm"]
-              });
+            if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+              console.error("Nebula runtime config must be a version 1 tenant configuration.");
+              process.exit(1);
             }
-            config = { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [...tenants.values()] };
           }
-          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
-            console.error("Nebula runtime config must be a version 1 tenant configuration.");
-            process.exit(1);
-          }
-          const connectionKeys = new Set(connections.filter(c => c?.schemaVersion === 1 && c.desired === true)
-            .map(c => [c.tenantId,c.provider,c.connectionId,c.channelId].join("\\0")));
-          const complete = config.tenants.every(t => t?.tenantId && Array.isArray(t.channels) && t.channels.length > 0 &&
-            t.channels.every(c => c?.provider && c.connectionId && c.channelId && c.stateChannelId &&
-              Array.isArray(c.enabledGameIds) && c.enabledGameIds.length > 0 &&
-              connectionKeys.has([t.tenantId,c.provider,c.connectionId,c.channelId].join("\\0"))));
-          if (!complete) {
-            console.error("Every configured Nebula tenant/channel must match an enabled Chat Gateway connection.");
-            process.exit(1);
-          }
-          if (config.tenants.length === 0) {
-            // Match StreamWeaver: start the Nebula consumer with an empty registry.
-            // OAuth-created provider connections can be added later; no tenant or player
-            // identity is a deployment secret or a startup prerequisite.
-            const empty = { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [] };
-            appendFileSync(process.env.GITHUB_ENV,
-              `APOLLO_NODE2_NEBULA_ENABLED=1\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(empty)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
-            console.log("No provider connections yet; starting Nebula with an empty registry, ready for OAuth connections.");
-          } else {
-            appendFileSync(process.env.GITHUB_ENV,
-              `APOLLO_NODE2_NEBULA_ENABLED=1\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
-            console.log(`Validated Nebula runtime configuration for ${config.tenants.length} tenant(s); values were not printed.`);
-          }
+          appendFileSync(process.env.GITHUB_ENV,
+            `APOLLO_NODE2_NEBULA_ENABLED=1\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
+          console.log(`Nebula runtime prepared with ${config.tenants.length} statically configured tenant(s); SPMT OAuth discovery remains authoritative.`);
           NODE
       - name: Install Hostless CLI
         run: |
@@ -114,7 +64,6 @@ jobs:
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ secrets.SPMT_ORIGIN }}
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
-          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
