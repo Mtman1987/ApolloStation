@@ -98,6 +98,6 @@ test("Hostless bootstrap derives Nebula config for every enabled tenant and prov
 
 test("Node 2 empty Nebula registry exports separate GitHub environment lines", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
-  assert.match(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
-  assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
+  assert.match(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
+  assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
 });
