@@ -45,6 +45,7 @@ jobs:
             echo "::error::Upload the redacted recovered-json-manifest.jsonl.gz to recovery-input/ on main first."
             exit 1
           }
+          echo "7bcc2ae2688d77b6bdddcc2c5e84274fc02ecb7330a44970c18390e3bf95a8a2  recovery-input/recovered-json-manifest.jsonl.gz" | sha256sum -c -
           test -n "$TURSO_DATABASE_URL" || {
             echo "::error::Set the single shared TURSO_DATABASE_URL GitHub Actions secret or variable."
             exit 1
