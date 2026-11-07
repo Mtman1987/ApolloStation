@@ -41,6 +41,37 @@ test("one leased supervisor opens Twitch, Discord, and Kick and feeds normalized
   } finally { f.close(); }
 });
 
+test("provider envelope registration runs before consumer matching for dynamic Nebula channels", async () => {
+  const f = fixture();
+  try {
+    f.connections.put(config("twitch"), t0);
+    const registered = new Set();
+    const delivered = [];
+    const gateway = new ChatGatewayRuntime(f.messages, [{
+      id: "nebula-dynamic-channel",
+      accepts(message) {
+        return registered.has([message.tenantId, message.provider, message.connectionId, message.channelId].join(":"));
+      },
+      deliver(delivery) { delivered.push(delivery.message); },
+    }]);
+    const opened = [];
+    const grants = { async getGrant() { return { status: "ready", accessToken: "ephemeral", expiresAt: "2026-08-23T13:00:00Z" }; } };
+    const registerBeforeIngest = (envelope) => {
+      registered.add([envelope.tenantId, envelope.provider, envelope.connectionId, envelope.channelId].join(":"));
+    };
+    const supervisor = new ChatProviderConnectionSupervisor("worker-a", f.connections, gateway, grants, [fakeDriver("twitch", opened)], 30_000, registerBeforeIngest);
+    assert.equal((await supervisor.reconcile(t0)).connected, 1);
+    await opened[0].onEnvelope({
+      schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "twitch-main",
+      channelId: "twitch-channel", messageId: "spmt-first-message", text: "spmt join",
+      occurredAt: t0, providerUserId: "user-1", username: "viewer",
+    });
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0].text, "spmt join");
+    await supervisor.stop("2026-08-23T12:00:01Z");
+  } finally { f.close(); }
+});
+
 test("a provider resume cursor survives process restart without persisting the grant", async () => {
   const f = fixture();
   let reopened;
