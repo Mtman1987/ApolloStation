@@ -39,29 +39,53 @@ jobs:
           node --check scripts/hostless/ensure-node-app.mjs
           node --check scripts/hostless/start-node.mjs
           node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
-      - name: Validate owner-only Nebula runtime config before touching Hostless
+      - name: Validate owner-only Nebula Twitch mapping before touching Hostless
         env:
           NEBULA_RUNTIME_CONFIG: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
           NEBULA_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
+          NEBULA_PIN_USER_ID: ${{ secrets.NEBULA_ARCADE_PIN_USER_ID }}
+          SPMT_OWNER_USER_ID: ${{ secrets.SPMT_OWNER_USER_ID }}
+          CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
         run: |
           node --input-type=module - <<'NODE'
           const raw = process.env.NEBULA_RUNTIME_CONFIG?.trim();
-          if (!raw) {
-            console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON is empty; refusing to clear or deploy Node 2 without a replacement Nebula tenant map.");
-            process.exit(1);
-          }
           let config;
-          try { config = JSON.parse(raw); } catch {
-            console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be valid JSON.");
-            process.exit(1);
+          if (raw) {
+            try { config = JSON.parse(raw); } catch {
+              console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be valid JSON when supplied.");
+              process.exit(1);
+            }
+          } else {
+            let connections;
+            try { connections = JSON.parse(process.env.CHAT_GATEWAY_CONNECTIONS || "[]"); } catch {
+              console.error("CHAT_GATEWAY_CONNECTIONS must be valid JSON to build the owner-only Nebula mapping.");
+              process.exit(1);
+            }
+            const tenantId = process.env.NEBULA_TENANT_ID || "";
+            const pinUserId = process.env.NEBULA_PIN_USER_ID || process.env.SPMT_OWNER_USER_ID || "";
+            const channels = Array.isArray(connections) ? connections.filter(c =>
+              c && c.schemaVersion === 1 && c.provider === "twitch" && c.desired === true && c.tenantId === tenantId
+            ) : [];
+            config = {
+              schemaVersion: 1,
+              revision: "hostless-owner-twitch-autowire-v2",
+              tenants: tenantId && pinUserId && channels.length ? [{
+                tenantId, pinUserId,
+                channels: channels.map(c => ({
+                  provider: "twitch", connectionId: c.connectionId, channelId: c.channelId,
+                  stateChannelId: process.env.NEBULA_CHANNEL_ID || c.channelId,
+                  enabledGameIds: ["tag","quackverse","bingo","chaosmode","chatgarden","chatwars","chickenroyale","colorsymphony","colorwars","dancingparade","emojirain","emojitower","memorylane","petrace","phraseguess","pixelbattle","rhythmpulse","treasurehunt","wordchain","wordstorm"]
+                }))
+              }] : []
+            };
           }
           if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length !== 1) {
-            console.error("Nebula owner-only recovery requires exactly one configured tenant.");
+            console.error("Nebula owner-only recovery requires exactly one configured tenant; refusing to deploy an empty or multi-tenant map.");
             process.exit(1);
           }
           const tenant = config.tenants[0];
-          if (!tenant?.tenantId || !tenant?.pinUserId || !Array.isArray(tenant.channels) || !tenant.channels.some(c => c.provider === "twitch")) {
-            console.error("Nebula owner-only tenant requires tenantId, pinUserId, and at least one Twitch channel mapping.");
+          if (!tenant?.tenantId || !tenant?.pinUserId || !Array.isArray(tenant.channels) || !tenant.channels.some(c => c.provider === "twitch" && c.connectionId && c.channelId)) {
+            console.error("Nebula owner-only tenant requires tenantId, pinUserId, and a complete Twitch connection/channel mapping.");
             process.exit(1);
           }
           if (process.env.NEBULA_TENANT_ID && tenant.tenantId !== process.env.NEBULA_TENANT_ID) {
@@ -87,6 +111,9 @@ jobs:
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PIN_USER_ID: ${{ secrets.NEBULA_ARCADE_PIN_USER_ID }}
+          APOLLO_RUNTIME_NODE2_SPMT_OWNER_USER_ID: ${{ secrets.SPMT_OWNER_USER_ID }}
+          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: "/tmp/apollo-nebula-runtime.json"
