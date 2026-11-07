@@ -85,8 +85,8 @@ jobs:
             }
             config = { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [...tenants.values()] };
           }
-          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) {
-            console.error("Nebula runtime config must contain at least one configured tenant; refusing an inert successful deployment.");
+          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+            console.error("Nebula runtime config must be a version 1 tenant configuration.");
             process.exit(1);
           }
           const connectionKeys = new Set(connections.filter(c => c?.schemaVersion === 1 && c.desired === true)
@@ -96,11 +96,20 @@ jobs:
               Array.isArray(c.enabledGameIds) && c.enabledGameIds.length > 0 &&
               connectionKeys.has([t.tenantId,c.provider,c.connectionId,c.channelId].join("\\0"))));
           if (!complete) {
-            console.error("Every Nebula tenant/channel must match an enabled Chat Gateway connection.");
+            console.error("Every configured Nebula tenant/channel must match an enabled Chat Gateway connection.");
             process.exit(1);
           }
-          appendFileSync(process.env.GITHUB_ENV, `NEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\n`);
-          console.log(`Validated Nebula runtime configuration for ${config.tenants.length} tenant(s); values were not printed.`);
+          if (config.tenants.length === 0) {
+            // User provider connections are created after launch via OAuth. Deploy the
+            // gateway now and leave the tenant-bound Nebula worker dormant until then.
+            appendFileSync(process.env.GITHUB_ENV,
+              "APOLLO_NODE2_NEBULA_ENABLED=0\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=\\n");
+            console.log("No provider connections are provisioned yet; Nebula worker deferred while Node 2 deploys.");
+          } else {
+            appendFileSync(process.env.GITHUB_ENV,
+              `APOLLO_NODE2_NEBULA_ENABLED=1\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\\n`);
+            console.log(`Validated Nebula runtime configuration for ${config.tenants.length} tenant(s); values were not printed.`);
+          }
           NODE
       - name: Install Hostless CLI
         run: |
@@ -116,13 +125,13 @@ jobs:
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: ${{ env.APOLLO_NODE2_NEBULA_ENABLED }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: "/tmp/apollo-nebula-runtime.json"
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: ${{ env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_DATABASE_PATH: "/tmp/apollo-nebula-arcade.sqlite"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
