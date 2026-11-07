@@ -234,9 +234,9 @@ export class NebulaArcadeProviderRuntime {
     if (!channel || !experience || message.actor.isBot) return;
     const channelIds=[...new Set([message.sourceChannelId??message.channelId,message.channelId,channel.stateChannelId])];
     if (isNebulaChannelOptedOut(this.experienceStore,message.tenantId,...channelIds)) return;
-    if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId))return;
+    if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId)||this.network.blocked(message.tenantId,providerActorId(message),message.actor.username,channel.stateChannelId))return;
     if(message.supportEvent){
-      const event=message.supportEvent,state=(await this.tagRuntime.getState(message.tenantId)).state,user=actorId(message),presence=this.network.presence(message.tenantId,Date.parse(message.occurredAt));
+      const event=message.supportEvent,state=(await this.tagRuntime.getState(message.tenantId)).state,user=tagActorId(message),presence=this.network.presence(message.tenantId,Date.parse(message.occurredAt));
       if(state.players[user]?.eligible!==false&&state.players[user]&&(event.kind!=="cheer"||event.amount>=100)&&(event.kind!=="raid"||presence?.liveUserIds.includes(user))){
         const result=await this.tagRuntime.execute({schemaVersion:1,tenantId:message.tenantId,channelId:channel.stateChannelId,commandId:`support-event:${message.provider}:${message.messageId}`,actorUserId:"system:nebula-support",isModerator:true,kind:"grant-pass",targetUserId:user,occurredAt:message.occurredAt});if(result.result.status==="applied")await this.reply(message,delivery.deliveryId,"support-pass",result.result.message);
       }
@@ -265,11 +265,11 @@ export class NebulaArcadeProviderRuntime {
       });
       if (mosaic.handled) { if (mosaic.reply) await this.reply(message, delivery.deliveryId, "mosaic", mosaic.reply); if(message.provider==="discord")await this.publishDashboard(message.tenantId,channel,true).catch(()=>undefined); return; }
     }
-    if(!parsed || !parsed.body){if(!parsed){const tagState=await this.tagRuntime.getState(message.tenantId);if(tagState.state.players[actorId(message)]?.eligible!==false&&tagState.state.players[actorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));}return;}
+    if(!parsed || !parsed.body){if(!parsed){const tagState=await this.tagRuntime.getState(message.tenantId);if(tagState.state.players[tagActorId(message)]?.eligible!==false&&tagState.state.players[tagActorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));}return;}
     if(!parsed.gameId && ["join","leave"].includes(parsed.command)){
       const enrolled=parsed.command==="join";this.network.enroll(actor,enrolled,message.occurredAt);
       await this.gameStore.update(message.tenantId,state=>{for(const gameId of NEBULA_ARCADE_GAMES.map(game=>game.id))if(enrolled)joinNebulaGame(state,{userId:actor,username:message.actor.username,displayName:message.actor.displayName,gameId},new Date(message.occurredAt));else leaveNebulaGame(state,actor,gameId,new Date(message.occurredAt));});
-      if(activeIds.includes("tag")){const state=(await this.tagRuntime.getState(message.tenantId)).state;if(enrolled&&!state.players[actorId(message)]||!enrolled&&state.players[actorId(message)])await experience.ingest(toTagMessage(message,`spmt ${parsed.command}`));}
+      if(activeIds.includes("tag")){const state=(await this.tagRuntime.getState(message.tenantId)).state;if(enrolled&&!state.players[tagActorId(message)]||!enrolled&&state.players[tagActorId(message)])await experience.ingest(toTagMessage(message,`spmt ${parsed.command}`));}
       if(message.provider==="discord"&&activeIds.includes("tag"))await this.publishDashboard(message.tenantId,channel,true).catch(()=>undefined);
       for(const gameId of activeIds)await this.activity.membership(message.tenantId,channel.stateChannelId,actor,gameId,enrolled,now);
       await this.reply(message,delivery.deliveryId,"arcade-enrollment",enrolled?"You joined the Nebula Arcade player pool across chats. Play any active game with spmt. Use spmt <game> leave to skip a game, or spmt leave to leave the pool.":"You left the Nebula Arcade player pool.");return;
@@ -303,11 +303,11 @@ export class NebulaArcadeProviderRuntime {
       if(target.command==="leave")this.network.excludeGame(actor,target.gameId,true,message.occurredAt);
       else if(target.command==="join"||JOIN_COMMANDS.has(target.command)){if(!enrollment.enrolled)this.network.enroll(actor,true,message.occurredAt);this.network.excludeGame(actor,target.gameId,false,message.occurredAt);}
       if(target.gameId==="tag"){
-        if(enrollment.enrolled&&!enrollment.excludedGames.includes("tag")&&!(await this.tagRuntime.getState(message.tenantId)).state.players[actorId(message)]&&target.command!=="leave")await experience.ingest(toTagMessage({...message,messageId:`${message.messageId}:enroll`},"spmt join"));
+        if(enrollment.enrolled&&!enrollment.excludedGames.includes("tag")&&!(await this.tagRuntime.getState(message.tenantId)).state.players[tagActorId(message)]&&target.command!=="leave")await experience.ingest(toTagMessage({...message,messageId:`${message.messageId}:enroll`},"spmt join"));
         const tag=await experience.ingest(toTagMessage(message,`spmt ${target.command} ${target.args.join(" ")}`.trim()),this.network.presence(message.tenantId,now));
         if((tag.kind==="reply"||tag.kind==="executed")&&tag.route==="chat")replies.push(tag.message);
         if(tag.kind==="executed"&&tag.execution.result.status!=="rejected"){
-          if(tag.code==='tag-completed'&&actorId(message)===this.options.config.tenants.find(tenant=>tenant.tenantId===message.tenantId)?.pinUserId){const targetUserId=String(tag.execution.result.event?.payload.targetUserId||'');if(targetUserId)await this.tagRuntime.execute({schemaVersion:1,tenantId:message.tenantId,channelId:channel.stateChannelId,commandId:`pin:${message.messageId}`,actorUserId:'system:nebula-pin',kind:'pin-tag',isModerator:true,targetUserId,occurredAt:message.occurredAt});}
+          if(tag.code==='tag-completed'&&tagActorId(message)===this.options.config.tenants.find(tenant=>tenant.tenantId===message.tenantId)?.pinUserId){const targetUserId=String(tag.execution.result.event?.payload.targetUserId||'');if(targetUserId)await this.tagRuntime.execute({schemaVersion:1,tenantId:message.tenantId,channelId:channel.stateChannelId,commandId:`pin:${message.messageId}`,actorUserId:'system:nebula-pin',kind:'pin-tag',isModerator:true,targetUserId,occurredAt:message.occurredAt});}
           const tagState=await this.tagRuntime.getState(message.tenantId);await this.gameStore.update(message.tenantId,state=>{for(const p of Object.values(tagState.state.players)){const {membership}=joinNebulaGame(state,{userId:p.userId.startsWith("provider:")?p.userId:`spmt:${p.userId}`,username:p.username,gameId:"tag"});membership!.score=p.score;membership!.active=p.eligible!==false;}});
           if(["tag-completed","pass-completed"].includes(tag.code))await this.announce(message.tenantId,delivery.deliveryId,tag.message,message.channelId);
           await this.activity.membership(message.tenantId,channel.stateChannelId,actor,"tag",!["leave","sleep"].includes(target.command),now);
@@ -455,8 +455,11 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
   return{schemaVersion:1,revision,tenants};
 }
 
-function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:actorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
-function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??`provider:${message.provider}:${message.actor.providerUserId}`;}
+function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:tagActorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
+function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??providerActorId(message);}
+function providerActorId(message:NormalizedChatMessageV1){return `provider:${message.provider}:${message.actor.providerUserId}`;}
+/** Legacy Chat Tag player IDs are Twitch provider IDs, not SPMT canonical IDs. */
+function tagActorId(message:NormalizedChatMessageV1){return message.provider==="twitch"?providerActorId(message):actorId(message); }
 function gameActorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}
 function messageKey(message:NormalizedChatMessageV1){return channelKey(message.tenantId,message.provider,message.connectionId,message.channelId);}
 function channelKey(tenantId:string,provider:string,connectionId:string,channelId:string){return`${tenantId}\0${provider}\0${connectionId}\0${channelId}`;}
