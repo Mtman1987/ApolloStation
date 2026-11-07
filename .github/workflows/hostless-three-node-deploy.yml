@@ -269,15 +269,27 @@ jobs:
               "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
               ["apollo_recovered_json_stage_v1"], true,
             );
-            let stagedDocuments = 0;
-            if (table.rows.length) {
-              const count = await db.execute("SELECT COUNT(*) FROM apollo_recovered_json_stage_v1", [], true);
-              stagedDocuments = Number(count.rows[0]?.[0] ?? 0);
+            if (!table.rows.length) {
+              throw new Error("Recovered-data staging table is missing; refusing to deploy an empty recovery state.");
             }
-            results.push({ node: name, reachable: true, recoveredJsonStageTable: table.rows.length > 0, stagedDocuments });
+            const count = await db.execute("SELECT COUNT(*) FROM apollo_recovered_json_stage_v1", [], true);
+            const stagedDocuments = Number(count.rows[0]?.[0] ?? 0);
+            const bySourceResult = await db.execute(
+              "SELECT source, COUNT(*) FROM apollo_recovered_json_stage_v1 GROUP BY source",
+              [], true,
+            );
+            const bySource = Object.fromEntries(bySourceResult.rows.map((row) => [String(row[0]), Number(row[1])]));
+            const expectedBySource = { "nebula-legacy-global": 16, streamweaver: 5732 };
+            if (stagedDocuments !== 5748 ||
+                bySource["nebula-legacy-global"] !== expectedBySource["nebula-legacy-global"] ||
+                bySource.streamweaver !== expectedBySource.streamweaver ||
+                Object.keys(bySource).length !== 2) {
+              throw new Error("Recovered-data staging is incomplete or has unexpected source counts; expected 16 Chat Tag + 5,732 StreamWeaver documents (5,748 total).");
+            }
+            results.push({ node: name, reachable: true, recoveredJsonStageTable: true, stagedDocuments, bySource });
           }
           if (results[0].stagedDocuments !== results[1].stagedDocuments ||
-              results[0].recoveredJsonStageTable !== results[1].recoveredJsonStageTable) {
+              JSON.stringify(results[0].bySource) !== JSON.stringify(results[1].bySource)) {
             throw new Error("Node 1 and Node 2 did not read the same recovered-data staging state.");
           }
           console.log(JSON.stringify({ sharedDatabaseEndpoint: true, nodes: results }));
