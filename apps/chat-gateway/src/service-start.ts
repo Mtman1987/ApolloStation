@@ -26,7 +26,9 @@ while (!stopping) {
     const checked = validateChatGatewayWorkerEnvironment(process.env);
     service = new SupervisedChatGatewayService(checked);
     const ready = await service.ready();
-    process.stdout.write(`Chat Gateway worker ${checked.workerId} started with ${checked.connections.length} configured provider connection(s) and ${ready.consumers.length} consumer(s)\\n`);
+    const nebulaTenants = checked.nebulaArcade?.config.tenants ?? [];
+    const nebulaChannels = nebulaTenants.reduce((count, tenant) => count + tenant.channels.length, 0);
+    process.stdout.write(`Chat Gateway worker ${checked.workerId} started with ${checked.connections.length} configured provider connection(s) and ${ready.consumers.length} consumer(s); Nebula ingress has ${nebulaTenants.length} configured tenant(s) and ${nebulaChannels} configured channel(s), with live-channel registration enabled\\n`);
     await service.run(controller.signal);
     if (!stopping) throw new Error("Chat Gateway worker loop exited unexpectedly");
   } catch (error) {
