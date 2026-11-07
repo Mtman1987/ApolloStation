@@ -93,7 +93,10 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const nebulaCredential = environment.NEBULA_ARCADE_WORKER_CREDENTIAL;
   const nebulaDatabasePath = environment.NEBULA_ARCADE_DATABASE_PATH;
   const nebulaConfigPath = environment.NEBULA_ARCADE_RUNTIME_CONFIG_PATH;
-  const nebulaPublicOriginValue = environment.NEBULA_ARCADE_PUBLIC_ORIGIN ?? environment.SPMT_PUBLIC_ORIGIN;
+  // The shared SPMT public origin is not a Nebula setting. Only inherit it when
+  // Nebula is enabled; otherwise it must not make an intentionally absent
+  // Nebula runtime look partially configured and crash the shared gateway.
+  const nebulaPublicOriginValue = nebulaEnabled ? (environment.NEBULA_ARCADE_PUBLIC_ORIGIN ?? environment.SPMT_PUBLIC_ORIGIN) : undefined;
   const nebulaGameplayOriginValue = environment.NEBULA_GAMEPLAY_PUBLIC_ORIGIN;
   const legacyTagKey = ["CHAT", "TAG"].join("_");
   const nebulaAvatarValue = environment.NEBULA_ARCADE_AVATAR_URL ?? environment[`${legacyTagKey}_AVATAR_URL`] ?? environment[`DISCORD_${legacyTagKey}_AVATAR_URL`];
