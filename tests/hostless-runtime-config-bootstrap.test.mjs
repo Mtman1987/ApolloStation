@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const entry = new URL("../scripts/hostless/start-node.mjs", import.meta.url);
 
-test("Hostless bootstrap writes safe empty owner-only DSH and Nebula configs when JSON payloads are absent", () => {
+test("Hostless bootstrap rejects an enabled Nebula runtime without any tenant/channel mapping", () => {
   const directory = mkdtempSync(join(tmpdir(), "apollo-runtime-config-"));
   try {
     const dshPath = join(directory, "dsh", "runtime.json");
@@ -31,14 +31,8 @@ test("Hostless bootstrap writes safe empty owner-only DSH and Nebula configs whe
       pollIntervalSeconds: 60,
       tenants: [],
     });
-    assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), {
-      schemaVersion: 1,
-      revision: "hostless-chat-gateway-connection-registry-v1",
-      tenants: [],
-    });
     assert.equal(statSync(dshPath).mode & 0o777, 0o600);
-    assert.equal(statSync(nebulaPath).mode & 0o777, 0o600);
-    assert.match(result.stderr, /zero configured Twitch channels|zero tenants|zero provisioned tenants/i);
+    assert.match(result.stderr, /NEBULA_ARCADE runtime config must contain at least one tenant/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -59,6 +53,40 @@ test("Hostless bootstrap rejects malformed explicit runtime JSON instead of sile
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /DSH_RUNTIME_CONFIG_JSON must contain valid JSON/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Hostless bootstrap derives Nebula config for every enabled tenant and provider connection", () => {
+  const directory = mkdtempSync(join(tmpdir(), "apollo-runtime-config-multitenant-"));
+  try {
+    const nebulaPath = join(directory, "nebula", "runtime.json");
+    const connections = [
+      { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "twitch-a", channelId: "owner_a", desired: true },
+      { schemaVersion: 1, tenantId: "tenant-a", provider: "discord", connectionId: "discord-a", channelId: "guild-a", desired: true },
+      { schemaVersion: 1, tenantId: "tenant-b", provider: "twitch", connectionId: "twitch-b", channelId: "owner_b", desired: true },
+      { schemaVersion: 1, tenantId: "tenant-c", provider: "kick", connectionId: "kick-c", channelId: "owner_c", desired: false },
+    ];
+    const result = spawnSync(process.execPath, [entry.pathname], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        APOLLO_NODE_ROLE: "invalid-test-role",
+        NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1",
+        NEBULA_ARCADE_RUNTIME_CONFIG_PATH: nebulaPath,
+        CHAT_GATEWAY_CONNECTIONS: JSON.stringify(connections),
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /APOLLO_NODE_ROLE must be node1 or node2/);
+    const config = JSON.parse(readFileSync(nebulaPath, "utf8"));
+    assert.equal(config.tenants.length, 2);
+    assert.deepEqual(config.tenants.map(t => t.tenantId), ["tenant-a", "tenant-b"]);
+    assert.deepEqual(config.tenants[0].channels.map(c => c.provider), ["twitch", "discord"]);
+    assert.equal(config.tenants[0].channels[0].stateChannelId, "owner_a");
+    assert.equal(config.tenants[1].channels[0].stateChannelId, "owner_b");
+    assert.equal(statSync(nebulaPath).mode & 0o777, 0o600);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
