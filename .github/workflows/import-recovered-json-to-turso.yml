@@ -17,7 +17,7 @@ on:
         description: "Write the verified redacted recovery manifest into the raw staging table"
         required: true
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
