@@ -306,9 +306,8 @@ jobs:
         env:
           NEBULA_ARCADE_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
           NEBULA_ARCADE_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
-          NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
-          CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
+          SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
+          CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
         run: node scripts/import-staged-nebula-tag-to-turso.mjs
       - name: Install Hostless CLI
         run: |
@@ -339,7 +338,6 @@ jobs:
           APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
-          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS: ${{ secrets.CHAT_GATEWAY_CONNECTIONS }}
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
