@@ -29,7 +29,20 @@ function sha256(value) {
 async function main() {
   const url = required("NEBULA_ARCADE_TURSO_DATABASE_URL");
   const authToken = required("NEBULA_ARCADE_TURSO_AUTH_TOKEN");
-  const tenantId = required("NEBULA_ARCADE_TENANT_ID");
+  // Resolve the canonical workspace tenant from the same provider registry
+  // that Chat Gateway uses at runtime. Never invent a tenant or use a player ID.
+  let tenantId = process.env.NEBULA_ARCADE_TENANT_ID?.trim();
+  if (!tenantId) {
+    const rawConfig = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON?.trim();
+    if (!rawConfig) throw new Error("NEBULA_ARCADE_TENANT_ID is empty and no Nebula runtime registry was supplied");
+    let config;
+    try { config = JSON.parse(rawConfig); } catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON is not valid JSON"); }
+    const tenants = Array.isArray(config?.tenants) ? config.tenants : [];
+    if (tenants.length !== 1 || typeof tenants[0]?.tenantId !== "string" || !tenants[0].tenantId.trim()) {
+      throw new Error("The Nebula runtime registry must identify exactly one canonical workspace tenant for this global Tag import");
+    }
+    tenantId = tenants[0].tenantId.trim();
+  }
   const adapter = new TursoHttpAdapter({ url, authToken });
   const rows = await adapter.execute(
     `SELECT source_path, source_sha256, payload_json
