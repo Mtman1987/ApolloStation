@@ -39,6 +39,37 @@ jobs:
           node --check scripts/hostless/ensure-node-app.mjs
           node --check scripts/hostless/start-node.mjs
           node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
+      - name: Validate owner-only Nebula runtime config before touching Hostless
+        env:
+          NEBULA_RUNTIME_CONFIG: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
+          NEBULA_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
+        run: |
+          node --input-type=module - <<'NODE'
+          const raw = process.env.NEBULA_RUNTIME_CONFIG?.trim();
+          if (!raw) {
+            console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON is empty; refusing to clear or deploy Node 2 without a replacement Nebula tenant map.");
+            process.exit(1);
+          }
+          let config;
+          try { config = JSON.parse(raw); } catch {
+            console.error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must be valid JSON.");
+            process.exit(1);
+          }
+          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length !== 1) {
+            console.error("Nebula owner-only recovery requires exactly one configured tenant.");
+            process.exit(1);
+          }
+          const tenant = config.tenants[0];
+          if (!tenant?.tenantId || !tenant?.pinUserId || !Array.isArray(tenant.channels) || !tenant.channels.some(c => c.provider === "twitch")) {
+            console.error("Nebula owner-only tenant requires tenantId, pinUserId, and at least one Twitch channel mapping.");
+            process.exit(1);
+          }
+          if (process.env.NEBULA_TENANT_ID && tenant.tenantId !== process.env.NEBULA_TENANT_ID) {
+            console.error("Nebula runtime tenant does not match NEBULA_ARCADE_TENANT_ID.");
+            process.exit(1);
+          }
+          console.log("Nebula owner-only Twitch mapping validated; runtime values were not printed.");
+          NODE
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
