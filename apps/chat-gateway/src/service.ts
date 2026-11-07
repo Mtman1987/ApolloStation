@@ -349,7 +349,7 @@ export class SupervisedChatGatewayService {
       options.workerId,
       this.connectionStore,
       this.gateway,
-      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}),
+      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read", "chat:edit"], discord: ["gateway", "messages:write"], kick: ["chat:read"] } } : {}),
       adapters.drivers,
       30_000,
       (envelope) => {
