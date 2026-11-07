@@ -138,7 +138,7 @@ test("Nebula consumes only configured channels and restores Tag commands without
   assert.match(sent[0].idempotencyKey, /^nebula-arcade-reply:/);
   runtime.close();
   const tag = new SqliteNebulaTagStore(databasePath);
-  assert.ok(tag.getState("tenant-a").state.players["user-1"]);
+  assert.ok(tag.getState("tenant-a").state.players["provider:twitch:provider-1"]);
   tag.close();
 }));
 
