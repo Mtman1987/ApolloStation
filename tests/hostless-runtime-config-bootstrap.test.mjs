@@ -106,8 +106,11 @@ test("Hostless Node 2 discovers provider connections from SPMT instead of an Act
   const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(release, /SPMT_ORIGIN: "https:\/\/apollo-node-1\.hostless\.app"/);
   assert.match(release, /CHAT_GATEWAY_WORKER_CREDENTIAL: \$\{\{ secrets\.CHAT_GATEWAY_WORKER_CREDENTIAL \}\}/);
-  assert.doesNotMatch(release, /secrets\.CHAT_GATEWAY_CONNECTIONS/);
-  assert.doesNotMatch(release, /APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS:/);
+  for (const path of ["../.github/workflows/hostless-three-node-deploy.yml", "../.github/workflows/hostless-node2-fast-deploy.yml"]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.doesNotMatch(workflow, /secrets\.CHAT_GATEWAY_CONNECTIONS/);
+    assert.doesNotMatch(workflow, /APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS:/);
+  }
 });
 test("Hostless release refuses deployment until every recovered JSON source document is staged", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
