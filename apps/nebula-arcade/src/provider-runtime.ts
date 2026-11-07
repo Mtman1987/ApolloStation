@@ -33,7 +33,7 @@ export interface NebulaArcadeProviderChannelV1 {
   stateChannelId: string;
   enabledGameIds: string[];
 }
-export interface NebulaArcadeProviderTenantV1 { tenantId: string; pinUserId: string; channels: NebulaArcadeProviderChannelV1[]; supportChannelId?:string; packChannelId?:string; autoJoinLivePlayers?:boolean; }
+export interface NebulaArcadeProviderTenantV1 { tenantId: string; pinUserId?: string; channels: NebulaArcadeProviderChannelV1[]; supportChannelId?:string; packChannelId?:string; autoJoinLivePlayers?:boolean; }
 export interface NebulaArcadeProviderConfigV1 { schemaVersion: 1; revision: string; tenants: NebulaArcadeProviderTenantV1[]; }
 export interface NebulaArcadeProviderEnvironmentV1 { runtimeMode: "production" | "sandbox"; databasePath: string; configPath: string; credential: string; config: NebulaArcadeProviderConfigV1; }
 export interface NebulaArcadeProviderEgressV1 { send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>; }
@@ -143,7 +143,7 @@ export class NebulaArcadeProviderRuntime {
       ? new AsyncNebulaTagRuntime(asyncTagStore, options.client)
       : new NebulaTagRuntime(this.tagStore as SqliteNebulaTagStore, options.client);
     for (const tenant of options.config.tenants) {
-      this.experiences.set(tenant.tenantId, new NebulaTagExperienceService(this.tagRuntime, this.experienceStore, tenant.pinUserId, options.now));
+      this.experiences.set(tenant.tenantId, new NebulaTagExperienceService(this.tagRuntime, this.experienceStore, tenant.pinUserId ?? "", options.now));
       for (const channel of tenant.channels) {
         this.channels.set(channelKey(tenant.tenantId, channel.provider, channel.connectionId, channel.channelId), channel);
 
@@ -423,7 +423,7 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
     if(!Array.isArray(tenant.channels)||tenant.channels.length>100)throw new Error("Nebula Arcade provider channels must be an array of at most 100 entries");
     const channels=tenant.channels.map((rawChannel,channelIndex)=>{const item=object(rawChannel,`channels[${channelIndex}]`);exact(item,["provider","connectionId","channelId","stateChannelId","enabledGameIds"],`channels[${channelIndex}]`);const provider=String(item.provider) as NebulaArcadeProviderChannelV1["provider"];if(!["twitch","discord","kick"].includes(provider))throw new Error("Nebula Arcade provider is invalid");const connectionId=identifier(item.connectionId,"connectionId"),channelId=identifier(item.channelId,"channelId"),stateChannelId=identifier(item.stateChannelId,"stateChannelId");if(!Array.isArray(item.enabledGameIds)||!item.enabledGameIds.length)throw new Error("Nebula Arcade enabledGameIds must not be empty");const enabledGameIds=[...new Set(item.enabledGameIds.map((gameId)=>String(gameId).trim().toLowerCase()))];if(enabledGameIds.some((gameId)=>!GAME_IDS.has(gameId)))throw new Error("Nebula Arcade enabledGameIds contains an unknown game");if(provider==="twitch"&&!enabledGameIds.includes("quackverse"))enabledGameIds.push("quackverse");const key=channelKey(tenantId,provider,connectionId,channelId);if(channelKeys.has(key))throw new Error("Nebula Arcade provider config contains a duplicate channel");channelKeys.add(key);return{provider,connectionId,channelId,stateChannelId,enabledGameIds};});
     if(tenant.autoJoinLivePlayers!==undefined&&typeof tenant.autoJoinLivePlayers!=="boolean")throw new Error("autoJoinLivePlayers must be boolean");
-    return{tenantId,pinUserId,channels,...(tenant.autoJoinLivePlayers===undefined?{}:{autoJoinLivePlayers:tenant.autoJoinLivePlayers}),...(tenant.supportChannelId?{supportChannelId:identifier(tenant.supportChannelId,"supportChannelId")}:{}),...(tenant.packChannelId?{packChannelId:identifier(tenant.packChannelId,"packChannelId")}:{} )};
+    return{tenantId,...(pinUserId?{pinUserId}:{}),channels,...(tenant.autoJoinLivePlayers===undefined?{}:{autoJoinLivePlayers:tenant.autoJoinLivePlayers}),...(tenant.supportChannelId?{supportChannelId:identifier(tenant.supportChannelId,"supportChannelId")}:{}),...(tenant.packChannelId?{packChannelId:identifier(tenant.packChannelId,"packChannelId")}:{} )};
   });
   return{schemaVersion:1,revision,tenants};
 }
