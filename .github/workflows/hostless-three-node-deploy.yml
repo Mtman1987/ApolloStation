@@ -295,6 +295,19 @@ jobs:
           }
           console.log(JSON.stringify({ sharedDatabaseEndpoint: true, nodes: results }));
           NODE
+      - name: Build the verified Nebula recovery importer
+        if: ${{ matrix.node == 'node2' }}
+        run: |
+          npm ci
+          npm run build
+          node --check scripts/import-staged-nebula-tag-to-turso.mjs
+      - name: Import recovered shared Chat Tag players into Nebula Turso
+        if: ${{ matrix.node == 'node2' }}
+        env:
+          NEBULA_ARCADE_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+          NEBULA_ARCADE_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
+        run: node scripts/import-staged-nebula-tag-to-turso.mjs
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
@@ -340,6 +353,7 @@ jobs:
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: "/tmp/apollo-nebula-runtime.json"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
+          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TAG_STORE: "turso"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_DATABASE_PATH: "/tmp/apollo-nebula-arcade.sqlite"
