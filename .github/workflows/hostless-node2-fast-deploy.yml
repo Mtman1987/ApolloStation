@@ -8,6 +8,7 @@ on:
       - "apps/streamweaver/**"
       - "apps/nebula-arcade/**"
       - "scripts/hostless/start-node.mjs"
+      - "tests/hostless-runtime-config-bootstrap.test.mjs"
       - ".github/workflows/hostless-node2-fast-deploy.yml"
   workflow_dispatch:
 
