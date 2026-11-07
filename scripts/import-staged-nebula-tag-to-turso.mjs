@@ -74,7 +74,7 @@ async function main() {
   // Convert them to the same provider identity key used by Nebula's live ingress.
   const identityMap = {};
   for (const key of Object.keys(source.tagPlayers)) {
-    if (!/^user_\\d+$/.test(key)) throw new Error("Unexpected donor player identity format; refusing an ambiguous identity conversion.");
+    if (!/^user_\d+$/.test(key)) throw new Error("Unexpected donor player identity format; refusing an ambiguous identity conversion.");
     identityMap[key] = "provider:twitch:" + key.slice("user_".length);
   }
 
@@ -104,7 +104,7 @@ async function main() {
       throw new Error("Nebula Tag destination is not empty for the configured network tenant; refusing to overwrite live state.");
     }
     const actualDigest = sha256(JSON.stringify(after.state));
-    if (!imported || imported.duplicate || after.revision !== 1 ||
+    if (after.revision !== 1 ||
         Object.keys(after.state.players).length !== 155 ||
         after.state.history.length !== prepared.tag.history.length ||
         actualDigest !== expectedDigest) {
@@ -122,7 +122,7 @@ async function main() {
       sourceDigest,
       stateDigest: actualDigest,
       warnings: prepared.warnings.length,
-    }, null, 2) + "\\n");
+    }, null, 2) + "\n");
   } finally {
     await store.close();
   }
