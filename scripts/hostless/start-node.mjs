@@ -89,7 +89,7 @@ if (nebulaConfigRequested) {
   const autoConfig = {
     schemaVersion: 1,
     revision: "hostless-chat-gateway-connection-registry-v1",
-    tenants: nebulaTenantId && pinUserId && ownerTwitchConnections.length ? [{
+    tenants: nebulaTenantId && ownerTwitchConnections.length ? [{
       tenantId: nebulaTenantId,
       pinUserId,
       channels: ownerTwitchConnections.map(connection => ({
