@@ -34,11 +34,10 @@ async function main() {
   // Twitch connection-discovery endpoint. The worker credential is already
   // provisioned for Chat Gateway; no deployment-time connection-list secret
   // or manually copied tenant ID is required.
-  const tenantId = process.env.NEBULA_ARCADE_TENANT_ID?.trim() ||
-    (await discoverNebulaTenantFromSpmt({
-      spmtOrigin: required("SPMT_ORIGIN"),
-      workerCredential: required("CHAT_GATEWAY_WORKER_CREDENTIAL"),
-    }));
+  const tenantId = await discoverNebulaTenantFromSpmt({
+    spmtOrigin: required("SPMT_ORIGIN"),
+    workerCredential: required("CHAT_GATEWAY_WORKER_CREDENTIAL"),
+  });
 
   const adapter = new TursoHttpAdapter({ url, authToken });
   const rows = await adapter.execute(
