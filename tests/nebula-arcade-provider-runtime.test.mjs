@@ -72,6 +72,21 @@ test("Nebula provider runtime accepts a tenant channel map without a pinned play
   }, { config: ownerlessConfig });
 });
 
+test("Nebula registers OAuth-discovered provider connections after empty-registry startup", async () => {
+  const emptyConfig = { schemaVersion: 1, revision: "empty", tenants: [] };
+  await withRuntime(async ({ runtime, sent }) => {
+    const consumer = runtime.consumers[0];
+    assert.equal(consumer.accepts(message("before-oauth", "spmt join")), false);
+    runtime.registerProviderConnection({ tenantId: "tenant-a", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", desired: true });
+    assert.equal(consumer.accepts(message("after-oauth", "spmt join")), true);
+    await consumer.deliver(delivery("after-oauth", "spmt join"));
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /joined/i);
+    runtime.registerProviderConnection({ tenantId: "tenant-a", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", desired: false });
+    assert.equal(consumer.accepts(message("after-disconnect", "spmt join")), false);
+  }, { config: emptyConfig });
+});
+
 test("sandbox Nebula runtime rejects live tenants and requires sandbox-named storage", () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-sandbox-"));
   const configPath = join(directory, "nebula-runtime-sandbox.json");
