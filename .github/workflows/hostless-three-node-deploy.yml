@@ -243,20 +243,20 @@ jobs:
           NODE
       - name: Verify both nodes target the same Turso database and inspect recovery staging
         env:
-          NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
+          SHARED_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          
           NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
         run: |
           node --input-type=module - <<'NODE'
           import { TursoHttpAdapter, normalizeTursoUrl } from "./packages/turso-http/index.mjs";
           const pairs = [
-            ["node1", process.env.NODE1_TURSO_DATABASE_URL, process.env.NODE1_TURSO_AUTH_TOKEN],
-            ["node2", process.env.NODE2_TURSO_DATABASE_URL, process.env.NODE2_TURSO_AUTH_TOKEN],
+            ["node1", process.env.SHARED_TURSO_DATABASE_URL, process.env.NODE1_TURSO_AUTH_TOKEN],
+            ["node2", process.env.SHARED_TURSO_DATABASE_URL, process.env.NODE2_TURSO_AUTH_TOKEN],
           ];
           for (const [name, url, token] of pairs) {
             if (!url?.trim() || !token?.trim()) {
-              throw new Error("Both Node 1 and Node 2 Turso URL/auth settings are required for shared-database verification.");
+              throw new Error("The shared Turso URL and both node auth tokens are required for shared-database verification.");
             }
           }
           if (normalizeTursoUrl(pairs[0][1]) !== normalizeTursoUrl(pairs[1][1])) {
@@ -309,7 +309,7 @@ jobs:
           APOLLO_RUNTIME_NODE1_SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE1_SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.NODE1_TURSO_DATABASE_URL }}
+          APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
@@ -331,7 +331,7 @@ jobs:
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_DATABASE_PATH: "/tmp/apollo-nebula-arcade.sqlite"
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
+          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE1_DSH_WORKER_CREDENTIAL: ${{ secrets.DSH_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE1_DSH_RUNTIME_CONFIG_JSON: ${{ secrets.DSH_RUNTIME_CONFIG_JSON }}
           APOLLO_RUNTIME_NODE1_DSH_RUNTIME_CONFIG_PATH: "/tmp/apollo-dsh-runtime.json"
@@ -340,7 +340,7 @@ jobs:
           APOLLO_RUNTIME_NODE1_DSH_DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
           APOLLO_RUNTIME_NODE1_SPMT_DSH_LIVE_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE1_DSH_SERVICE_SECRET: ${{ secrets.DSH_SERVICE_SECRET }}
-          APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: ${{ secrets.DSH_TURSO_DATABASE_URL }}
+          APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: ${{ secrets.DSH_TURSO_AUTH_TOKEN }}
           APOLLO_RUNTIME_NODE1_DSH_RAID_PILE_STORE: ${{ secrets.DSH_RAID_PILE_STORE }}
           APOLLO_RUNTIME_NODE1_DSH_MTFIXIT_STORE: ${{ secrets.DSH_MTFIXIT_STORE }}
