@@ -1,8 +1,14 @@
 # Recovery import input
 
-Place the generated redacted manifest at:
+Do **not** commit the recovery data into Git history.
 
-`recovery-input/recovered-json-manifest.jsonl.gz`
+Create a private GitHub Release in this repository with tag:
+
+`apollo-recovery-2026-11-07`
+
+Upload the generated file as the release asset:
+
+`recovered-json-manifest.jsonl.gz`
 
 Expected SHA-256:
 
@@ -14,6 +20,6 @@ Expected source counts:
 - `streamweaver`: 5,732 documents
 - Total: 5,748 documents
 
-The manifest contains redacted JSON payloads and source/payload hash receipts. It excludes sensitive directory paths and redacts credential-shaped keys. It contains player/application data, so keep it inside this private repository and remove it from the working tree after the Turso stage is verified.
+The manifest contains redacted JSON payloads and source/payload hash receipts. It excludes sensitive directory paths and redacts credential-shaped keys. It still contains player/application data, so keep the release private.
 
-Import is manual only through **Actions → Import recovered JSON manifest to shared Turso**. Run with `apply=false` first; only use `apply=true` after the dry-run reports all expected counts. This writes only to `apollo_recovered_json_stage_v1`; it does not activate player accounts or write application domain tables.
+After the release asset is uploaded, run **Actions → Import recovered JSON manifest to shared Turso** on `main`. Use `apply=false` first; only use `apply=true` after the dry-run reports all expected counts. The workflow downloads the private release asset, verifies its SHA-256, and writes only to `apollo_recovered_json_stage_v1`; it does not activate player accounts or write application domain tables.
