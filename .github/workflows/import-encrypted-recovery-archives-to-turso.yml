@@ -1,0 +1,58 @@
+name: Import encrypted recovery archives to Turso
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Private GitHub release containing the original recovery ZIPs"
+        required: true
+        type: string
+        default: apollo-recovery-2026-11-07
+      apply:
+        description: "Encrypt and write archive chunks to Turso (otherwise dry-run only)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-encrypted-recovery-archive-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RECOVERY_RELEASE_TAG: ${{ inputs.release_tag }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+      SPMT_PROVIDER_CREDENTIAL_KEY: ${{ secrets.SPMT_PROVIDER_CREDENTIAL_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download original private recovery bundles
+        run: |
+          mkdir -p recovery-input
+          gh release download "$RECOVERY_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "recovered-user-data-verified-bundle.zip" --dir recovery-input
+          gh release download "$RECOVERY_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "recovered-user-data-run-40072383161-supplement.zip" --dir recovery-input
+          test -s recovery-input/recovered-user-data-verified-bundle.zip
+          test -s recovery-input/recovered-user-data-run-40072383161-supplement.zip
+      - name: Validate archive inventory without writing
+        run: node scripts/import-recovery-archives-to-turso.mjs --file recovery-input/recovered-user-data-verified-bundle.zip --file recovery-input/recovered-user-data-run-40072383161-supplement.zip
+      - name: Encrypt and import to Turso
+        if: ${{ inputs.apply }}
+        run: node scripts/import-recovery-archives-to-turso.mjs --file recovery-input/recovered-user-data-verified-bundle.zip --file recovery-input/recovered-user-data-run-40072383161-supplement.zip --apply
+      - name: Remove downloaded plaintext archives
+        if: always()
+        run: rm -rf recovery-input
