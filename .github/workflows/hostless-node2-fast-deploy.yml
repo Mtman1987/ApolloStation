@@ -103,11 +103,11 @@ jobs:
             // User provider connections are created after launch via OAuth. Deploy the
             // gateway now and leave the tenant-bound Nebula worker dormant until then.
             appendFileSync(process.env.GITHUB_ENV,
-              "APOLLO_NODE2_NEBULA_ENABLED=0\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=\\n");
+              "APOLLO_NODE2_NEBULA_ENABLED=0\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=\n");
             console.log("No provider connections are provisioned yet; Nebula worker deferred while Node 2 deploys.");
           } else {
             appendFileSync(process.env.GITHUB_ENV,
-              `APOLLO_NODE2_NEBULA_ENABLED=1\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\\n`);
+              `APOLLO_NODE2_NEBULA_ENABLED=1\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
             console.log(`Validated Nebula runtime configuration for ${config.tenants.length} tenant(s); values were not printed.`);
           }
           NODE
