@@ -417,7 +417,7 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
   if (!Array.isArray(root.tenants) || root.tenants.length > 100) throw new Error("Nebula Arcade provider tenants must be an array of at most 100 entries");
   const tenantKeys = new Set<string>(); const channelKeys = new Set<string>();
   const tenants = root.tenants.map((raw, tenantIndex) => {
-    const tenant = object(raw, `tenants[${tenantIndex}]`); exact(Object.fromEntries(Object.entries(tenant).filter(([key])=>!["supportChannelId","packChannelId","autoJoinLivePlayers"].includes(key))),["tenantId","pinUserId","channels"],`tenants[${tenantIndex}]`);
+    const tenant = object(raw, `tenants[${tenantIndex}]`); exact(Object.fromEntries(Object.entries(tenant).filter(([key])=>!["supportChannelId","packChannelId","autoJoinLivePlayers","pinUserId"].includes(key))),["tenantId","pinUserId","channels"],`tenants[${tenantIndex}]`);
     const tenantId=identifier(tenant.tenantId,"tenantId"),pinUserId=identifier(tenant.pinUserId,"pinUserId");
     if(tenantKeys.has(tenantId))throw new Error("Nebula Arcade provider config contains a duplicate tenant");tenantKeys.add(tenantId);
     if(!Array.isArray(tenant.channels)||tenant.channels.length>100)throw new Error("Nebula Arcade provider channels must be an array of at most 100 entries");
