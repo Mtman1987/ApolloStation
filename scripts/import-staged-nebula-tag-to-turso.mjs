@@ -92,12 +92,17 @@ async function main() {
   try {
     await store.initialize();
     const before = await store.getState(tenantId);
-    if (before.revision !== 0 || Object.keys(before.state.players).length !== 0 || before.state.history.length !== 0) {
+    const expectedDigest = sha256(JSON.stringify(prepared.tag));
+    let after;
+    if (before.revision === 0 && Object.keys(before.state.players).length === 0 && before.state.history.length === 0) {
+      await store.importState(prepared.tag, migrationId);
+      after = await store.getState(tenantId);
+    } else if (before.revision > 0 && sha256(JSON.stringify(before.state)) === expectedDigest) {
+      // A previous run completed the same import; accept only an exact read-back match.
+      after = before;
+    } else {
       throw new Error("Nebula Tag destination is not empty for the configured network tenant; refusing to overwrite live state.");
     }
-    const imported = await store.importState(prepared.tag, migrationId);
-    const after = await store.getState(tenantId);
-    const expectedDigest = sha256(JSON.stringify(prepared.tag));
     const actualDigest = sha256(JSON.stringify(after.state));
     if (!imported || imported.duplicate || after.revision !== 1 ||
         Object.keys(after.state.players).length !== 155 ||
