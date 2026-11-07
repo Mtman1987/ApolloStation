@@ -39,7 +39,7 @@ jobs:
           node --check scripts/hostless/ensure-node-app.mjs
           node --check scripts/hostless/start-node.mjs
           node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
-      - name: Validate Nebula Twitch channel mapping before touching Hostless
+      - name: Validate supplied Nebula Twitch channel mapping before touching Hostless
         env:
           NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
           NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
@@ -48,6 +48,12 @@ jobs:
         run: |
           node --input-type=module - <<'NODE'
           const raw = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON?.trim();
+          const tenantId = process.env.NEBULA_ARCADE_TENANT_ID?.trim();
+          const connectionsRaw = process.env.CHAT_GATEWAY_CONNECTIONS?.trim();
+          if (!raw && (!tenantId || !connectionsRaw)) {
+            console.log("No Actions-side Nebula mapping supplied; preserving existing Hostless runtime configuration and allowing safe owner-only startup.");
+            process.exit(0);
+          }
           let config;
           if (raw) {
             try { config = JSON.parse(raw); } catch {
@@ -56,18 +62,17 @@ jobs:
             }
           } else {
             let connections;
-            try { connections = JSON.parse(process.env.CHAT_GATEWAY_CONNECTIONS || "[]"); } catch {
-              console.error("CHAT_GATEWAY_CONNECTIONS must be valid JSON to build Nebula channel mapping.");
+            try { connections = JSON.parse(connectionsRaw); } catch {
+              console.error("CHAT_GATEWAY_CONNECTIONS must be valid JSON when supplied.");
               process.exit(1);
             }
-            const tenantId = process.env.NEBULA_ARCADE_TENANT_ID || "";
             const channels = Array.isArray(connections) ? connections.filter(c =>
               c && c.schemaVersion === 1 && c.provider === "twitch" && c.desired === true && c.tenantId === tenantId
             ) : [];
             config = {
               schemaVersion: 1,
               revision: "hostless-chat-gateway-connection-registry-v1",
-              tenants: tenantId && channels.length ? [{
+              tenants: channels.length ? [{
                 tenantId,
                 channels: channels.map(c => ({
                   provider: "twitch", connectionId: c.connectionId, channelId: c.channelId,
@@ -77,23 +82,18 @@ jobs:
               }] : []
             };
           }
-          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length !== 1) {
-            console.error("Nebula requires exactly one configured owner tenant; refusing an empty or multi-tenant map.");
+          if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+            console.error("Nebula runtime config must be a version 1 tenant configuration.");
             process.exit(1);
           }
-          const tenant = config.tenants[0];
-          if (!tenant?.tenantId || !Array.isArray(tenant.channels) || !tenant.channels.some(c =>
+          if (config.tenants.length && !config.tenants.some(t => t?.tenantId && Array.isArray(t.channels) && t.channels.some(c =>
             c.provider === "twitch" && c.connectionId && c.channelId && c.stateChannelId &&
             Array.isArray(c.enabledGameIds) && c.enabledGameIds.length
-          )) {
-            console.error("Nebula tenant requires a tenantId and at least one complete Twitch channel mapping.");
+          ))) {
+            console.error("Supplied Nebula runtime config contains no complete Twitch channel mapping.");
             process.exit(1);
           }
-          if (process.env.NEBULA_ARCADE_TENANT_ID && tenant.tenantId !== process.env.NEBULA_ARCADE_TENANT_ID) {
-            console.error("Nebula runtime tenant does not match NEBULA_ARCADE_TENANT_ID.");
-            process.exit(1);
-          }
-          console.log("Nebula owner-tenant Twitch channel mapping validated; runtime values were not printed.");
+          console.log("Supplied Nebula runtime configuration validated; values were not printed.");
           NODE
       - name: Install Hostless CLI
         run: |
