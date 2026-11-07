@@ -129,6 +129,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write("Nebula recovered Tag import failed: " + (error instanceof Error ? error.message : "unknown error") + "\\n");
+  process.stderr.write("Nebula recovered Tag import failed: " + (error instanceof Error ? error.message : "unknown error") + "\n");
   process.exitCode = 1;
 });
