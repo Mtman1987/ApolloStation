@@ -34,14 +34,34 @@ async function main() {
   let tenantId = process.env.NEBULA_ARCADE_TENANT_ID?.trim();
   if (!tenantId) {
     const rawConfig = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON?.trim();
-    if (!rawConfig) throw new Error("NEBULA_ARCADE_TENANT_ID is empty and no Nebula runtime registry was supplied");
-    let config;
-    try { config = JSON.parse(rawConfig); } catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON is not valid JSON"); }
-    const tenants = Array.isArray(config?.tenants) ? config.tenants : [];
-    if (tenants.length !== 1 || typeof tenants[0]?.tenantId !== "string" || !tenants[0].tenantId.trim()) {
-      throw new Error("The Nebula runtime registry must identify exactly one canonical workspace tenant for this global Tag import");
+    if (rawConfig) {
+      let config;
+      try { config = JSON.parse(rawConfig); } catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON is not valid JSON"); }
+      const tenants = Array.isArray(config?.tenants) ? config.tenants : [];
+      if (tenants.length !== 1 || typeof tenants[0]?.tenantId !== "string" || !tenants[0].tenantId.trim()) {
+        throw new Error("The Nebula runtime registry must identify exactly one canonical workspace tenant for this global Tag import");
+      }
+      tenantId = tenants[0].tenantId.trim();
     }
-    tenantId = tenants[0].tenantId.trim();
+  }
+  // Match the live Hostless bootstrap: Chat Gateway's desired Twitch connections
+  // are the canonical provider registry and already carry the workspace tenant ID.
+  if (!tenantId) {
+    const rawConnections = process.env.CHAT_GATEWAY_CONNECTIONS?.trim();
+    if (!rawConnections) throw new Error("No canonical Nebula tenant was supplied by NEBULA_ARCADE_TENANT_ID, runtime config, or Chat Gateway connection registry");
+    let connections;
+    try { connections = JSON.parse(rawConnections); } catch { throw new Error("CHAT_GATEWAY_CONNECTIONS is not valid JSON"); }
+    if (!Array.isArray(connections)) throw new Error("CHAT_GATEWAY_CONNECTIONS must be a JSON array");
+    const tenantIds = [...new Set(connections
+      .filter((connection) => connection?.schemaVersion === 1 &&
+        connection.desired === true && connection.provider === "twitch" &&
+        typeof connection.tenantId === "string" && connection.tenantId.trim() &&
+        typeof connection.channelId === "string" && connection.channelId.trim())
+      .map((connection) => connection.tenantId.trim()))];
+    if (tenantIds.length !== 1) {
+      throw new Error("Chat Gateway must expose exactly one desired Twitch workspace tenant for the recovered global Tag import");
+    }
+    tenantId = tenantIds[0];
   }
   const adapter = new TursoHttpAdapter({ url, authToken });
   const rows = await adapter.execute(
