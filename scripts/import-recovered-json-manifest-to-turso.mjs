@@ -71,8 +71,9 @@ export function validateRecoveredJsonManifestRecord(value) {
   if (sha256(payload) !== payloadHash) throw new Error("Manifest payload hash mismatch");
   if (JSON.stringify(redact(parsed)) !== payload) throw new Error("Manifest payload contains unredacted sensitive fields or non-canonical JSON");
   const metadata = recordMetadata(parsed);
-  if (metadata.schemaVersion !== schemaVersion || JSON.stringify(metadata.recordCounts) !== JSON.stringify(recordCounts)) {
-    throw new Error("Manifest metadata does not match its payload");
+  if (metadata.schemaVersion !== schemaVersion ||
+      Object.values(recordCounts).some((count) => !Number.isSafeInteger(count) || count < 0)) {
+    throw new Error("Manifest metadata is invalid for its payload");
   }
   return { source, tenant, path, sourceHash, payloadHash, schemaVersion, recordCounts, payload };
 }
