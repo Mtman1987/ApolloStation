@@ -167,7 +167,7 @@ export class SqliteProviderConnectionStore {
 export class ChatProviderConnectionSupervisor {
   private readonly drivers = new Map<ChatProviderV1, ProviderConnectionDriverV1>();
   private readonly active = new Map<string, { connection: ProviderConnectionConfigV1; handle: ProviderConnectionHandleV1; expiresAt: string }>();
-  constructor(private readonly owner: string, private readonly store: SqliteProviderConnectionStore, private readonly gateway: ChatGatewayRuntime, private readonly grants: ProviderGrantSourceV1, drivers: ProviderConnectionDriverV1[], private readonly leaseMs = 30_000) {
+  constructor(private readonly owner: string, private readonly store: SqliteProviderConnectionStore, private readonly gateway: ChatGatewayRuntime, private readonly grants: ProviderGrantSourceV1, drivers: ProviderConnectionDriverV1[], private readonly leaseMs = 30_000, private readonly beforeIngest?: (envelope: ProviderChatEnvelopeV1) => void | Promise<void>) {
     requireId(owner, "supervisor owner");
     for (const driver of drivers) { if (this.drivers.has(driver.provider)) throw new Error("Duplicate provider connection driver"); this.drivers.set(driver.provider, driver); }
   }
@@ -201,7 +201,7 @@ export class ChatProviderConnectionSupervisor {
           grantMetadata: grant.metadata ?? {},
           ...(projection.cursor ? { resumeCursor: projection.cursor } : {}),
           onMutation: async (mutation) => { if(mutation.tenantId!==connection.tenantId||mutation.provider!==connection.provider||mutation.connectionId!==connection.connectionId||mutation.channelId!==connection.channelId)throw Error("Chat correction crossed its connection boundary");return this.gateway.mutate(mutation); },
-          onEnvelope: async (envelope) => { await this.gateway.ingest(envelope); },
+          onEnvelope: async (envelope) => { await this.beforeIngest?.(envelope); await this.gateway.ingest(envelope); },
           onCursor: (cursor) => this.store.saveCursor(connection, this.owner, cursor, new Date().toISOString()),
           onDisconnect: (failure) => {
             const active = this.active.get(key);
