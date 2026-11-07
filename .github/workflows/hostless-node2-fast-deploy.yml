@@ -63,7 +63,5 @@ jobs:
           APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
           APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
-          APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.NODE2_TURSO_DATABASE_URL }}
           APOLLO_NODE_ROLE: node2
         run: node scripts/hostless/ensure-node-app.mjs node2 "${GITHUB_SHA}"
