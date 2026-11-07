@@ -155,6 +155,30 @@ export class NebulaArcadeProviderRuntime {
       deliver: (delivery: NormalizedChatDeliveryV1) => this.deliver(delivery),
     }];
   }
+  /** Register OAuth-discovered Chat Gateway connections without requiring deployment-time tenant IDs. */
+  registerProviderConnection(connection:{tenantId:string;provider:"twitch"|"discord"|"kick"|"youtube";connectionId:string;channelId:string;desired:boolean}){
+    const tenantId=connection.tenantId;
+    let tenant=this.options.config.tenants.find(item=>item.tenantId===tenantId);
+    if(!connection.desired){
+      if(tenant){
+        tenant.channels=tenant.channels.filter(channel=>!(channel.provider===connection.provider&&channel.connectionId===connection.connectionId&&channel.channelId===connection.channelId));
+        this.channels.delete(channelKey(tenantId,connection.provider,connection.connectionId,connection.channelId));
+      }
+      return;
+    }
+    if(!tenant){
+      tenant={tenantId,channels:[]};
+      this.options.config.tenants.push(tenant);
+      this.experiences.set(tenantId,new NebulaTagExperienceService(this.tagRuntime,this.experienceStore,"",this.options.now));
+    }
+    const existing=tenant.channels.find(channel=>channel.provider===connection.provider&&channel.connectionId===connection.connectionId&&channel.channelId===connection.channelId);
+    const channel:NebulaArcadeProviderChannelV1=existing??{
+      provider:connection.provider,connectionId:connection.connectionId,channelId:connection.channelId,
+      stateChannelId:connection.channelId,enabledGameIds:NEBULA_ARCADE_GAMES.map(game=>game.id)
+    };
+    if(!existing)tenant.channels.push(channel);
+    this.channels.set(channelKey(tenantId,channel.provider,channel.connectionId,channel.channelId),channel);
+  }
   async awardCheckinBonus(input:{tenantId:string;awardId:string;channel:string;userId:string;username?:string;displayName?:string;occurredAt?:string}){
     if(!this.options.config.tenants.some(tenant=>tenant.tenantId===input.tenantId))throw new Error("Nebula Arcade tenant is not configured for this check-in bonus");
     const at=input.occurredAt?new Date(input.occurredAt):new Date();
