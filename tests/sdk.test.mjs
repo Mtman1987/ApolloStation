@@ -9,6 +9,30 @@ test("SDK preserves the API reason for a request conflict without exposing an HT
   for (const response of ["<html>Proxy failed</html>", "null", "{}", '{"message":{}}']) assert.equal(new SpmtApiError(502, response).message, "SPMT API request failed with status 502");
 });
 
+test("SDK refreshes an expired service token when the API returns plain-text auth errors", async () => {
+  const seen = [];
+  let tokenCalls = 0;
+  const client = new SpmtClient({
+    baseUrl: "https://spmt.test",
+    appId: "chat-gateway",
+    getAccessToken: (forceRefresh = false) => {
+      tokenCalls += 1;
+      return forceRefresh ? "fresh-service-token" : "cached-service-token";
+    },
+    fetchImpl: async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization");
+      seen.push(authorization);
+      if (authorization === "Bearer cached-service-token") {
+        return new Response("Access token is invalid or expired", { status: 403 });
+      }
+      return Response.json({ ok: true });
+    },
+  });
+  assert.deepEqual(await client.request("/v1/execution/workers"), { ok: true });
+  assert.deepEqual(seen, ["Bearer cached-service-token", "Bearer fresh-service-token"]);
+  assert.equal(tokenCalls, 2);
+});
+
 test("SDK default transport keeps the browser fetch receiver for room and workspace requests", async (t) => {
   const seen = [];
   // Native browser fetch rejects a client instance as its receiver; Node fetch
