@@ -297,7 +297,7 @@ async function login(response: ServerResponse, origin: string, fetchImpl: typeof
 }
 
 async function register(response: ServerResponse, origin: string, fetchImpl: typeof fetch, body: Record<string, unknown>) {
-  const credentials = credentialsFrom(body);
+  const credentials = credentialsFrom(body, true);
   const displayName = requiredText(body.displayName, "displayName", 120);
   const created = await upstreamJson(fetchImpl, `${origin}/v1/auth/register`, { ...credentials, displayName });
   if (!created.response.ok) return json(response, created.response.status, created.body);
@@ -587,8 +587,8 @@ async function limitedBody(response: Response, maximum: number, errorMessage: st
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total);
 }
 
-function credentialsFrom(body: Record<string, unknown>) { return { username: requiredText(body.username, "username", 120), password: requiredText(body.password, "password", 256, false) }; }
-function requiredText(value: unknown, name: string, max: number, trim = true) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (name === "password" && result.length < 12) throw new WebHostError(400, "Use a sandbox-only password of at least 12 characters"); return result; }
+function credentialsFrom(body: Record<string, unknown>, enforceRegistrationPasswordPolicy = false) { return { username: requiredText(body.username, "username", 120), password: requiredText(body.password, "password", 256, false, enforceRegistrationPasswordPolicy ? 12 : 1) }; }
+function requiredText(value: unknown, name: string, max: number, trim = true, minimum = 1) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (result.length < minimum) throw new WebHostError(400, "Use a sandbox-only password of at least 12 characters"); return result; }
 function sessionHeaders(response: Response) { const cookies = getSetCookies(response.headers).filter((value) => value.startsWith("spmt_token=")); return cookies.length ? { "set-cookie": cookies } : {}; }
 function getSetCookies(headers: Headers) { const value = headers as Headers & { getSetCookie?: () => string[] }; const result = value.getSetCookie?.() ?? []; if (result.length) return result; const single = headers.get("set-cookie"); return single ? [single] : []; }
 function clearSessionCookie() { return "spmt_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"; }

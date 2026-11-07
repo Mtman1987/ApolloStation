@@ -36,6 +36,17 @@ test('browser login persists its HttpOnly cookie and logout revokes it through t
   try{
     await spmt.listen();web=createSpaceMountainWebHost({spmtOrigin:`http://127.0.0.1:${spmt.server.address().port}`,host:'127.0.0.1',port:0});await web.listen();
     const origin=`http://127.0.0.1:${web.server.address().port}`;
+    // Legacy SPMT accounts may have passwords shorter than the sandbox's new-account policy.
+    spmt.authority.ensureUser('usr_legacy-owner');
+    spmt.control.registerTenant({tenantId:'tenant_legacy-owner',ownerUserId:'usr_legacy-owner',displayName:'Legacy Owner'});
+    spmt.authority.getOrCreateWorkspace('tenant_legacy-owner');
+    spmt.data.registerUser({userId:'usr_legacy-owner',username:'legacy-owner',displayName:'Legacy Owner',password:'old-pass',tenantIds:['tenant_legacy-owner']});
+    const legacyLogin=await fetch(origin+'/sandbox/auth/login',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({username:'legacy-owner',password:'old-pass'})});
+    assert.equal(legacyLogin.status,200,'existing SPMT credentials must not be rejected by the new-account password-length rule');
+    const legacyCookie=legacyLogin.headers.get('set-cookie').split(';')[0];
+    const legacySession=await fetch(origin+'/v1/session',{headers:{cookie:legacyCookie}});
+    assert.equal(legacySession.status,200);
+    assert.equal((await legacySession.json()).actorId,'usr_legacy-owner');
     const registered=await fetch(origin+'/sandbox/auth/register',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({username:'session-captain',displayName:'Captain',password:'session-test-password'})});
     assert.equal(registered.status,201);assert.doesNotMatch(await registered.text(),/accessToken|refreshToken/);
     const header=registered.headers.get('set-cookie');assert.match(header,/HttpOnly/);assert.match(header,/Secure/);assert.match(header,/Max-Age=34560000/);
