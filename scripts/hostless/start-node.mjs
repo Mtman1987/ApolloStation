@@ -113,7 +113,7 @@ if (nebulaConfigRequested) {
     fallbackPath: "/tmp/apollo-nebula-runtime.json",
     label: "NEBULA_ARCADE",
     emptyConfig: autoConfig,
-    allowEmpty: false,
+    allowEmpty: true,
   });
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
 }
