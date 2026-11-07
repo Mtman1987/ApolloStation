@@ -284,7 +284,7 @@ jobs:
                 bySource["nebula-legacy-global"] !== expectedBySource["nebula-legacy-global"] ||
                 bySource.streamweaver !== expectedBySource.streamweaver ||
                 Object.keys(bySource).length !== 2) {
-              throw new Error("Recovered-data staging is incomplete or has unexpected source counts; expected 16 Chat Tag + 5,732 StreamWeaver documents (5,748 total).");
+              throw new Error("Recovered-data staging is incomplete or has unexpected source counts; expected 16 legacy-global + 5,732 StreamWeaver documents (5,748 total).");
             }
             results.push({ node: name, reachable: true, recoveredJsonStageTable: true, stagedDocuments, bySource });
           }
