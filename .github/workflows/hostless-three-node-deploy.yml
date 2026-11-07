@@ -1,4 +1,5 @@
 name: ApolloStation Hostless two-node release
+# Recovery gate: deployment verifies the shared Turso staging table contains all 5,748 verified records.
 
 on:
   pull_request:
