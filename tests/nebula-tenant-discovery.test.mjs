@@ -12,7 +12,7 @@ test("Nebula importer discovers the canonical tenant through SPMT's Chat Gateway
     return Response.json({ connections: [
       { schemaVersion: 1, tenantId: "workspace-real", provider: "twitch", connectionId: "bot-1", channelId: "mtman1987", desired: false },
       { schemaVersion: 1, tenantId: "workspace-real", provider: "twitch", connectionId: "bot-2", channelId: "backup", desired: true },
-      { schemaVersion: 1, tenantId: "ignored", provider: "twitch", connectionId: "old", channelId: "old", desired: false },
+      { schemaVersion: 1, tenantId: "ignored", provider: "discord", connectionId: "old", channelId: "old", desired: false },
     ] });
   };
   const tenantId = await discoverNebulaTenantFromSpmt({
@@ -32,8 +32,8 @@ test("Nebula tenant discovery fails closed for zero or multiple Twitch tenants",
   for (const connections of [
     [],
     [
-      { schemaVersion: 1, tenantId: "a", provider: "twitch", connectionId: "one", channelId: "one", desired: true },
-      { schemaVersion: 1, tenantId: "b", provider: "twitch", connectionId: "two", channelId: "two", desired: true },
+      { schemaVersion: 1, tenantId: "a", provider: "twitch", connectionId: "one", channelId: "one", desired: false },
+      { schemaVersion: 1, tenantId: "b", provider: "twitch", connectionId: "two", channelId: "two", desired: false },
     ],
   ]) {
     let call = 0;
