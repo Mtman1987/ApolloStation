@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const entry = new URL("../scripts/hostless/start-node.mjs", import.meta.url);
 
-test("Hostless bootstrap rejects an enabled Nebula runtime without any tenant/channel mapping", () => {
+test("Hostless bootstrap starts Nebula with an empty connection registry before OAuth provisioning", () => {
   const directory = mkdtempSync(join(tmpdir(), "apollo-runtime-config-"));
   try {
     const dshPath = join(directory, "dsh", "runtime.json");
@@ -25,7 +25,8 @@ test("Hostless bootstrap rejects an enabled Nebula runtime without any tenant/ch
     });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /NEBULA_ARCADE runtime config must contain at least one tenant/i);
+    assert.match(result.stderr, /APOLLO_NODE_ROLE must be node1 or node2/i);
+    assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [] });
     assert.deepEqual(JSON.parse(readFileSync(dshPath, "utf8")), {
       schemaVersion: 1,
       pollIntervalSeconds: 60,
