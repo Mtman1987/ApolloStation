@@ -1,6 +1,11 @@
 name: Import recovered JSON manifest to shared Turso
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/import-recovered-json-to-turso.yml"
+      - "scripts/import-recovered-json-manifest-to-turso.mjs"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -30,7 +35,7 @@ jobs:
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
-      RECOVERY_RELEASE_TAG: ${{ inputs.release_tag }}
+      RECOVERY_RELEASE_TAG: ${{ inputs.release_tag || 'apollo-recovery-2026-11-07' }}
     steps:
       - name: Check out main
         uses: actions/checkout@v4
@@ -74,5 +79,5 @@ jobs:
         run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.1.jsonl
 
       - name: Apply and read back all 5,748 records
-        if: inputs.apply
-        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz --apply
+        if: ${{ github.event_name == 'push' || inputs.apply }}
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.1.jsonl --apply
