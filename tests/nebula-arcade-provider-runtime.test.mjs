@@ -92,14 +92,14 @@ test("Nebula Tag keeps recovered Twitch provider IDs even when chat identity is 
     const second = message("chatter-two", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "789012", canonicalUserId: "spmt-202", username: "second", displayName: "Second" } });
     await runtime.consumers[0].deliver({ ...delivery("chatter-one", "spmt join"), message: first });
     await runtime.consumers[0].deliver({ ...delivery("chatter-two", "spmt join"), message: second });
-    await runtime.consumers[0].deliver({ ...delivery("chatter-one-activity", "ordinary chat"), message: { ...first, messageId: "chatter-one-activity", text: "ordinary chat" } });
+    await runtime.consumers[0].deliver({ ...delivery("chatter-one-activity", "ordinary chat"), message: { ...first, messageId: "chatter-one-activity", text: "ordinary chat", occurredAt: at(1) } });
     assert.equal(sent.length, 2);
     runtime.close();
     const tag = new SqliteNebulaTagStore(databasePath);
     const players = tag.getState("tenant-a").state.players;
     assert.ok(players["provider:twitch:123456"]);
     assert.ok(players["provider:twitch:789012"]);
-    assert.equal(players["provider:twitch:123456"].lastActiveAt, at(0));
+    assert.equal(players["provider:twitch:123456"].lastActiveAt, at(1));
     assert.equal(players["spmt-101"], undefined);
     tag.close();
   }, { config: ownerlessConfig });
