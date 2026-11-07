@@ -320,7 +320,26 @@ export class SupervisedChatGatewayService {
     }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, senders, observers,async mutation=>{await client.mutateCommlinkLiveChat(mutation.tenantId,mutation);await client.publishEvent(mutation.tenantId,"spmt.chat.message.mutated.v1",{schemaVersion:1,provider:mutation.provider,connectionId:mutation.connectionId,channelId:mutation.channelId,messageId:mutation.messageId,operation:mutation.operation,occurredAt:mutation.occurredAt},`chat-mutation:${mutation.provider}:${mutation.connectionId}:${mutation.channelId}:${mutation.messageId}:${mutation.operation}:${mutation.occurredAt}`);});
     connectedGateway = this.gateway;
-    this.supervisor = new ChatProviderConnectionSupervisor(options.workerId, this.connectionStore, this.gateway, new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}), adapters.drivers);
+    this.supervisor = new ChatProviderConnectionSupervisor(
+      options.workerId,
+      this.connectionStore,
+      this.gateway,
+      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}),
+      adapters.drivers,
+      30_000,
+      (envelope) => {
+        // OAuth/provider connections are dynamic. Register the exact channel
+        // observed by the live driver before consumer matching, so Nebula does
+        // not depend on a deployment-time single-tenant/channel secret.
+        this.nebulaArcade?.registerProviderConnection({
+          tenantId: envelope.tenantId,
+          provider: envelope.provider,
+          connectionId: envelope.connectionId,
+          channelId: envelope.channelId,
+          desired: true,
+        });
+      },
+    );
     options.connections.forEach((connection) => this.connectionStore.put(connection));
     for(const tenantId of new Set(options.connections.map(connection=>connection.tenantId))){if(!options.nebulaArcade?.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.autoJoinLivePlayers)for(const connection of this.connectionStore.list(tenantId))if(connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')&&connection.desired)this.connectionStore.put({...connection,desired:false});}
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
