@@ -41,12 +41,12 @@ export async function discoverNebulaTenantFromSpmt({ spmtOrigin, workerCredentia
   }
   const tenantIds = [...new Set(payload.connections
     .filter((connection) => connection?.schemaVersion === 1 &&
-      connection.desired === true && connection.provider === "twitch" &&
+      connection.provider === "twitch" &&
       typeof connection.tenantId === "string" && connection.tenantId.trim() &&
       typeof connection.channelId === "string" && connection.channelId.trim())
     .map((connection) => connection.tenantId.trim()))];
   if (tenantIds.length !== 1) {
-    throw new Error(`SPMT must expose exactly one desired Twitch workspace tenant for the recovered global Tag import; found ${tenantIds.length}`);
+    throw new Error(`SPMT must expose exactly one Twitch workspace tenant for the recovered global Tag import; found ${tenantIds.length}`);
   }
   return tenantIds[0];
 }
