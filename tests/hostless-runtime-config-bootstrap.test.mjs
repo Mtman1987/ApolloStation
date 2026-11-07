@@ -24,15 +24,19 @@ test("Hostless bootstrap starts Nebula with an empty connection registry before 
       },
     });
 
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /APOLLO_NODE_ROLE must be node1 or node2/i);
-    assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), { schemaVersion: 1, revision: "hostless-chat-gateway-connection-registry-v2", tenants: [] });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), {
+      schemaVersion: 1,
+      revision: "hostless-chat-gateway-connection-registry-v2",
+      tenants: [],
+    });
     assert.deepEqual(JSON.parse(readFileSync(dshPath, "utf8")), {
       schemaVersion: 1,
       pollIntervalSeconds: 60,
       tenants: [],
     });
     assert.equal(statSync(dshPath).mode & 0o777, 0o600);
+    assert.equal(statSync(nebulaPath).mode & 0o777, 0o600);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
