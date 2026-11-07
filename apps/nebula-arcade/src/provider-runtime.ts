@@ -176,7 +176,10 @@ export class NebulaArcadeProviderRuntime {
       provider:connection.provider,connectionId:connection.connectionId,channelId:connection.channelId,
       stateChannelId:connection.channelId,enabledGameIds:NEBULA_ARCADE_GAMES.map(game=>game.id)
     };
-    if(!existing)tenant.channels.push(channel);
+    if(!existing){
+      tenant.channels.push(channel);
+      this.activity.configure(tenantId, channel.stateChannelId, channel.enabledGameIds);
+    }
     this.channels.set(channelKey(tenantId,channel.provider,channel.connectionId,channel.channelId),channel);
   }
   async awardCheckinBonus(input:{tenantId:string;awardId:string;channel:string;userId:string;username?:string;displayName?:string;occurredAt?:string}){
