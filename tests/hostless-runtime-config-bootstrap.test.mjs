@@ -33,7 +33,7 @@ test("Hostless bootstrap writes safe empty owner-only DSH and Nebula configs whe
     });
     assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), {
       schemaVersion: 1,
-      revision: "owner-only-unconfigured",
+      revision: "hostless-chat-gateway-connection-registry-v1",
       tenants: [],
     });
     assert.equal(statSync(dshPath).mode & 0o777, 0o600);
