@@ -358,11 +358,11 @@ export class SupervisedChatGatewayService {
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
     await this.tiktok?.reconcile();
-    if(this.options.operationMode==="active"&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
+    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
       const result=await this.connectionClient.listYouTubeChatConnections();if(!Array.isArray(result.connections))throw new Error("YouTube connection discovery returned an invalid response");
       for(const c of result.connections)this.applyDiscoveredConnection(c);
-    }catch{/* Existing short-lived provider grants still expire; retry discovery next cycle. */}}
-    if(this.options.operationMode==="active"&&Date.now()-this.lastTwitchBotSync>5000){this.lastTwitchBotSync=Date.now();try{
+    }catch(error){console.warn("[chat-gateway] YouTube provider discovery failed; will retry:",error instanceof Error?error.message:"unknown error");}}
+    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastTwitchBotSync>5000){this.lastTwitchBotSync=Date.now();try{
       const result=await this.connectionClient.listTwitchBotConnections();if(!Array.isArray(result.connections))throw Error("Invalid Twitch bot discovery");
       const wanted=new Set(result.connections.map(c=>c.tenantId+":"+c.connectionId));
       for(const tenant of this.tenants)for(const old of this.connectionStore.list(tenant))if(old.provider==="twitch"&&old.connectionId.startsWith("twitch-bot-")&&!wanted.has(tenant+":"+old.connectionId))this.applyDiscoveredConnection({...old,desired:false});
@@ -370,7 +370,7 @@ export class SupervisedChatGatewayService {
         for(const old of this.connectionStore.list(c.tenantId))if(old.provider==="twitch"&&old.channelId===c.channelId&&old.connectionId!==c.connectionId&&old.desired)this.applyDiscoveredConnection({...old,desired:false});
         this.applyDiscoveredConnection(c);
       }
-    }catch{/* Retry discovery; existing grants keep their bounded lifetimes. */}}
+    }catch(error){console.warn("[chat-gateway] Twitch bot provider discovery failed; will retry:",error instanceof Error?error.message:"unknown error");}}
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenantId of new Set([...this.tenants, ...this.chatStore.listPendingTenants()])) {
