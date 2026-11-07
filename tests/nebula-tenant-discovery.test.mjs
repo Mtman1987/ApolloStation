@@ -10,7 +10,7 @@ test("Nebula importer discovers the canonical tenant through SPMT's Chat Gateway
       return Response.json({ accessToken: "short-lived-service-token", accessExpiresAt: new Date(Date.now() + 60_000).toISOString() });
     }
     return Response.json({ connections: [
-      { schemaVersion: 1, tenantId: "workspace-real", provider: "twitch", connectionId: "bot-1", channelId: "mtman1987", desired: true },
+      { schemaVersion: 1, tenantId: "workspace-real", provider: "twitch", connectionId: "bot-1", channelId: "mtman1987", desired: false },
       { schemaVersion: 1, tenantId: "workspace-real", provider: "twitch", connectionId: "bot-2", channelId: "backup", desired: true },
       { schemaVersion: 1, tenantId: "ignored", provider: "twitch", connectionId: "old", channelId: "old", desired: false },
     ] });
@@ -28,7 +28,7 @@ test("Nebula importer discovers the canonical tenant through SPMT's Chat Gateway
   assert.equal(calls[1].init.headers.authorization, "Bearer short-lived-service-token");
 });
 
-test("Nebula tenant discovery fails closed for zero or multiple desired Twitch tenants", async () => {
+test("Nebula tenant discovery fails closed for zero or multiple Twitch tenants", async () => {
   for (const connections of [
     [],
     [
@@ -43,7 +43,7 @@ test("Nebula tenant discovery fails closed for zero or multiple desired Twitch t
       fetchImpl: async () => ++call === 1
         ? Response.json({ accessToken: "token" })
         : Response.json({ connections }),
-    }), /exactly one desired Twitch workspace tenant/);
+    }), /exactly one Twitch workspace tenant/);
   }
 });
 
