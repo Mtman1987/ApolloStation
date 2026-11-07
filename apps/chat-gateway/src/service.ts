@@ -7,7 +7,7 @@ import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
 import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, AsyncStreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
-import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
+import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1, type ChatProviderSenderV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
@@ -157,6 +157,22 @@ export function createInternalServiceTokenProvider(options: { spmtOrigin: string
 
 export function createChatGatewayWorkerTokenProvider(options: { spmtOrigin: string; credential: string; fetchImpl?: typeof fetch }) { return createInternalServiceTokenProvider({ ...options, serviceId: "chat-gateway" }); }
 
+export function createNebulaArcadeChatReplyEgress(options: { operationMode: SpmtOperationModeV1; liveIngressEnabled: boolean; senders: ChatProviderSenderV1[]; shadowSend: (message: Parameters<ChatProviderSenderV1["send"]>[0]) => Promise<{ providerMessageId: string }> }) {
+  const senders = new Map(options.senders.map((sender) => [sender.provider, sender]));
+  return {
+    send: async (message: Parameters<ChatProviderSenderV1["send"]>[0]) => {
+      // Read-only live ingress may emit Nebula's explicit command replies only.
+      // All other Chat Gateway egress remains shadowed; outbound actions stay disabled.
+      if (options.operationMode === "read-only" && options.liveIngressEnabled) {
+        const sender = senders.get(message.provider);
+        if (!sender) throw new Error(`Nebula reply provider ${message.provider} is unavailable`);
+        return sender.send(message);
+      }
+      return options.shadowSend(message);
+    },
+  };
+}
+
 export class SupervisedChatGatewayService {
   private readonly tiktok?:TikTokLiveIngestor;
   private readonly connectionClient:SpmtClient;
@@ -303,6 +319,15 @@ export class SupervisedChatGatewayService {
     if (options.nebulaArcade) {
       this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
+      const nebulaReplyEgress = createNebulaArcadeChatReplyEgress({
+        operationMode: options.operationMode,
+        liveIngressEnabled: options.liveIngressEnabled,
+        senders: adapters.senders,
+        shadowSend: (message) => {
+          if (!connectedGateway) throw new Error("Chat Gateway egress is not ready");
+          return connectedGateway.send(message);
+        },
+      });
       this.nebulaArcade = new NebulaArcadeProviderRuntime({ onLiveChannels:async(tenantId,names)=>{
         const template=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==='twitch'&&connection.desired);if(!template)return[];
         const configured=new Set(options.connections.filter(connection=>connection.tenantId===tenantId&&connection.provider==='twitch').map(connection=>connection.channelId.replace(/^#/,'').toLowerCase()));
@@ -315,7 +340,7 @@ export class SupervisedChatGatewayService {
         const liveUserIds:string[]=[],channelByUserId:Record<string,string>={};
         for(let offset=0;offset<players.length;offset+=100){const batch=players.slice(offset,offset+100),url=new URL("https://api.twitch.tv/helix/streams");for(const player of batch)url.searchParams.append("user_login",player.username);const response=await(fetchImpl??fetch)(url,{headers:{"client-id":grant.metadata!.clientId!,authorization:`Bearer ${grant.accessToken}`},signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error(`Twitch presence unavailable (${response.status})`);const payload=await response.json() as {data?:Array<{user_login:string}>};if(!Array.isArray(payload.data))throw new Error("Invalid Twitch presence snapshot");for(const stream of payload.data){const player=batch.find(player=>player.username.toLowerCase()===stream.user_login.toLowerCase());if(player){liveUserIds.push(player.userId);channelByUserId[player.userId]=stream.user_login;}}}
         return{liveUserIds,channelByUserId,observedAt:new Date().toISOString()};
-      }, databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, executionTarget: options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), simulation: options.operationMode === "read-only", egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
+      }, databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, executionTarget: options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), simulation: options.operationMode === "read-only", egress: nebulaReplyEgress, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);
     }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, senders, observers,async mutation=>{await client.mutateCommlinkLiveChat(mutation.tenantId,mutation);await client.publishEvent(mutation.tenantId,"spmt.chat.message.mutated.v1",{schemaVersion:1,provider:mutation.provider,connectionId:mutation.connectionId,channelId:mutation.channelId,messageId:mutation.messageId,operation:mutation.operation,occurredAt:mutation.occurredAt},`chat-mutation:${mutation.provider}:${mutation.connectionId}:${mutation.channelId}:${mutation.messageId}:${mutation.operation}:${mutation.occurredAt}`);});
@@ -324,7 +349,7 @@ export class SupervisedChatGatewayService {
       options.workerId,
       this.connectionStore,
       this.gateway,
-      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}),
+      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read", "chat:edit"], discord: ["gateway", "messages:write"], kick: ["chat:read"] } } : {}),
       adapters.drivers,
       30_000,
       (envelope) => {
