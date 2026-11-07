@@ -7,7 +7,7 @@ import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
 import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, AsyncStreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
-import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
+import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1, type ChatProviderSenderV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
