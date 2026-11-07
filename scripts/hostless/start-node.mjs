@@ -81,7 +81,6 @@ if (nebulaConfigRequested) {
     }
   })();
   const nebulaTenantId = process.env.NEBULA_ARCADE_TENANT_ID || "";
-  const pinUserId = process.env.NEBULA_ARCADE_PIN_USER_ID || process.env.SPMT_OWNER_USER_ID || "";
   const ownerTwitchConnections = nebulaConnections.filter(connection =>
     connection && connection.schemaVersion === 1 && connection.provider === "twitch" &&
     connection.desired === true && connection.tenantId === nebulaTenantId
@@ -91,7 +90,6 @@ if (nebulaConfigRequested) {
     revision: "hostless-chat-gateway-connection-registry-v1",
     tenants: nebulaTenantId && ownerTwitchConnections.length ? [{
       tenantId: nebulaTenantId,
-      pinUserId,
       channels: ownerTwitchConnections.map(connection => ({
         provider: "twitch",
         connectionId: connection.connectionId,
