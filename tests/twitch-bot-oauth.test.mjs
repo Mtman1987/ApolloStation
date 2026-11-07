@@ -68,3 +68,12 @@ test('broadcaster consent provides command grants without replacing its chat bot
  const fleet=await fetch(f.browser+ROOT+'?tenantId=a',{headers:{cookie:f.sessions.owner}}).then(r=>r.json());assert.equal(fleet.connections[0].botId,'200');assert.equal(fleet.broadcasters[0].providerUserId,'100');
  const response=await fetch(f.browser+ROOT+'?tenantId=a',{method:'POST',headers:{cookie:f.sessions.owner,origin:f.browser,'content-type':'application/json'},body:JSON.stringify({action:'disconnect',role:'broadcaster',broadcasterId:'100'})});assert.equal(response.status,200);assert.equal(f.service.providerCredentials.get('a','twitch','100').state,'revoked');assert.equal(f.service.providerCredentials.get('a','twitch','200').state,'ready');
 }));
+
+test('gateway discovers authorized provider connections during read-only live ingress',async()=>fixture(async f=>{
+ assert.equal(result(await f.callback(await f.begin())).get('botConnected'),'1');
+ const options={runtimeMode:'production',operationMode:'read-only',liveIngressEnabled:true,spmtOrigin:f.base,databasePath:join(f.dir,'gateway-readonly.sqlite'),credential:f.gatewayCredential,workerId:'bot-readonly-test',connections:[],reconcileMs:1000};
+ const gateway=new SupervisedChatGatewayService(options),opened=[];
+ gateway.supervisor.drivers.set('twitch',{provider:'twitch',async open(input){opened.push(input.connection.providerAccountId);return {close(){}}}});
+ try{const report=await gateway.reconcile();assert.deepEqual(opened,['200']);assert.equal(report.connections.connected,1);assert.equal(options.connections.find(c=>c.desired).providerAccountId,'200');}
+ finally{await gateway.close()}
+}));
