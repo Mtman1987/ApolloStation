@@ -102,6 +102,13 @@ test("Node 2 empty Nebula registry exports separate GitHub environment lines", (
   assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
 });
 
+test("Both Node 2 deployment workflows forward the provider registry to Chat Gateway", () => {
+  for (const path of ["../.github/workflows/hostless-three-node-deploy.yml", "../.github/workflows/hostless-node2-fast-deploy.yml"]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(workflow, /APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_CONNECTIONS: \$\{\{ secrets\.CHAT_GATEWAY_CONNECTIONS \}\}/);
+  }
+});
+
 test("Hostless release refuses deployment until every recovered JSON source document is staged", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /Recovered-data staging table is missing/);
