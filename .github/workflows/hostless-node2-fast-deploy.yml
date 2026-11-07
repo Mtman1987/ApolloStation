@@ -38,6 +38,7 @@ jobs:
         run: |
           node --check scripts/hostless/ensure-node-app.mjs
           node --check scripts/hostless/start-node.mjs
+          node --test tests/hostless-runtime-config-bootstrap.test.mjs
           node -e 'const s=require("./package.json").scripts||{}; if(!s["hostless:node2"]) process.exit(1)'
       - name: Validate supplied Nebula Twitch channel mapping before touching Hostless
         env:
