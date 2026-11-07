@@ -52,6 +52,26 @@ test("Nebula provider config is strict, provider-neutral, and contains no creden
   assert.throws(() => validateNebulaArcadeProviderConfig({ ...config, tenants: [...config.tenants, config.tenants[0]] }), /duplicate tenant/);
 });
 
+test("Nebula provider runtime accepts a tenant channel map without a pinned player identity", async () => {
+  const ownerlessConfig = structuredClone(config);
+  delete ownerlessConfig.tenants[0].pinUserId;
+  const normalized = validateNebulaArcadeProviderConfig(ownerlessConfig);
+  assert.equal(normalized.tenants[0].pinUserId, undefined);
+  await withRuntime(async ({ runtime, databasePath, sent }) => {
+    const first = message("chatter-one", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "twitch-101", canonicalUserId: "spmt-101", username: "first", displayName: "First" } });
+    const second = message("chatter-two", "spmt join", { actor: { ...message("seed", "x").actor, providerUserId: "twitch-202", canonicalUserId: "spmt-202", username: "second", displayName: "Second" } });
+    await runtime.consumers[0].deliver({ ...delivery("chatter-one", "spmt join"), message: first });
+    await runtime.consumers[0].deliver({ ...delivery("chatter-two", "spmt join"), message: second });
+    assert.equal(sent.length, 2);
+    runtime.close();
+    const tag = new SqliteNebulaTagStore(databasePath);
+    const players = tag.getState("tenant-a").state.players;
+    assert.ok(players["spmt-101"]);
+    assert.ok(players["spmt-202"]);
+    tag.close();
+  }, { config: ownerlessConfig });
+});
+
 test("sandbox Nebula runtime rejects live tenants and requires sandbox-named storage", () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-sandbox-"));
   const configPath = join(directory, "nebula-runtime-sandbox.json");
