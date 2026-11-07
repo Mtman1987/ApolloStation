@@ -108,9 +108,9 @@ test("Hostless Node 1 and Node 2 receive the same canonical Turso database URL",
   assert.match(workflow, /APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
   assert.match(workflow, /APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
   assert.doesNotMatch(workflow, /secrets\.NODE[12]_TURSO_DATABASE_URL/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TURSO_DATABASE_URL: \\$\\{\\{ secrets\\.TURSO_DATABASE_URL \\}\\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL: \\$\\{\\{ secrets\\.TURSO_DATABASE_URL \\}\\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_STREAMWEAVER_TURSO_DATABASE_URL: \\$\\{\\{ secrets\\.TURSO_DATABASE_URL \\}\\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: \\$\\{\\{ secrets\\.TURSO_DATABASE_URL \\}\\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: \\$\\{\\{ secrets\\.NODE1_TURSO_AUTH_TOKEN \\}\\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE2_STREAMWEAVER_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: \$\{\{ secrets\.NODE1_TURSO_AUTH_TOKEN \}\}/);
 });
