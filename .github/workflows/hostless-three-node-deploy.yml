@@ -245,7 +245,6 @@ jobs:
         env:
           SHARED_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          
           NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
         run: |
           node --input-type=module - <<'NODE'
