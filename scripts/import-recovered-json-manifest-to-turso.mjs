@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Imports a pre-redacted, hash-verified JSONL.gz recovery manifest into the
+ * Imports a pre-redacted, hash-verified JSONL or JSONL.gz recovery manifest into the
  * dedicated raw-source staging table. This never writes Apollo domain tables.
  * Dry-run is the default; --apply is idempotent and rejects conflicting rows.
  */
@@ -83,7 +83,8 @@ export async function readRecoveredJsonManifest(manifestPath, options = {}) {
   const records = [];
   const keys = new Set();
   const bySource = {};
-  const stream = createReadStream(resolve(manifestPath)).pipe(createGunzip());
+  const input = createReadStream(resolve(manifestPath));
+  const stream = manifestPath.toLowerCase().endsWith(".gz") ? input.pipe(createGunzip()) : input;
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of lines) {
     if (!line.trim()) continue;
@@ -119,7 +120,7 @@ function parseArgs(argv) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help || !options.manifest) {
-    process.stdout.write("Usage: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest FILE.jsonl.gz [--apply]\nDry-run is the default. --apply stages exactly 5,748 pre-redacted source documents into the raw recovery table; no Apollo domain tables are changed.\n");
+    process.stdout.write("Usage: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest FILE.jsonl[.gz] [--apply]\nDry-run is the default. --apply stages exactly 5,748 pre-redacted source documents into the raw recovery table; no Apollo domain tables are changed.\n");
     return;
   }
   const manifest = await readRecoveredJsonManifest(options.manifest);
