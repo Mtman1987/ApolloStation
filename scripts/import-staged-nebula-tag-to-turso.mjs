@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Restore the donor's shared Chat Tag player/tag snapshot into Nebula's
+ * Restore the donor's shared legacy Tag player/tag snapshot into Nebula's
  * canonical network tenant. Reads only the already-redacted legacy-global
  * documents staged in Turso; never reads or imports provider credentials.
  *
@@ -40,7 +40,7 @@ async function main() {
     true,
   );
   if (rows.rows.length !== 16) {
-    throw new Error(`Expected all 16 staged Chat Tag source documents; found ${rows.rows.length}. No domain data was changed.`);
+    throw new Error(`Expected all 16 staged legacy Tag source documents; found ${rows.rows.length}. No domain data was changed.`);
   }
 
   const source = {};
@@ -70,7 +70,7 @@ async function main() {
     throw new Error("The staged donor snapshot is incomplete or does not contain the expected 155 Tag players. No domain data was changed.");
   }
 
-  // Chat Tag's donor IDs are Twitch provider user IDs with a legacy user_ prefix.
+  // legacy Tag's donor IDs are Twitch provider user IDs with a legacy user_ prefix.
   // Convert them to the same provider identity key used by Nebula's live ingress.
   const identityMap = {};
   for (const key of Object.keys(source.tagPlayers)) {
@@ -79,7 +79,7 @@ async function main() {
   }
 
   const sourceDigest = sha256(JSON.stringify(sourceHashes));
-  const migrationId = "chat-tag-global-v1-" + sourceDigest.slice(0, 24);
+  const migrationId = "nebula-global-tag-v1-" + sourceDigest.slice(0, 24);
   const prepared = prepareNebulaLiveImport(source, { tenantId, identityMap });
   if (Object.keys(prepared.tag.players).length !== 155) {
     throw new Error(`Expected 155 converted Tag players; prepared ${Object.keys(prepared.tag.players).length}. No domain data was changed.`);
