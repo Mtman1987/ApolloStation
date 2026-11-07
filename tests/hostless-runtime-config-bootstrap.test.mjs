@@ -101,3 +101,11 @@ test("Node 2 empty Nebula registry exports separate GitHub environment lines", (
   assert.match(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
   assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
 });
+
+test("Hostless Node 1 and Node 2 receive the same canonical Turso database URL", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  assert.match(workflow, /SHARED_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.match(workflow, /APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \}\}/);
+  assert.doesNotMatch(workflow, /secrets\.NODE[12]_TURSO_DATABASE_URL/);
+});
