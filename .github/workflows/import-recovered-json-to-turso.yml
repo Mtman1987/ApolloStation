@@ -1,0 +1,78 @@
+name: Import recovered JSON manifest to shared Turso
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Private GitHub release tag containing recovered-json-manifest.jsonl.gz"
+        required: true
+        type: string
+        default: apollo-recovery-2026-11-07
+      apply:
+        description: "Write the verified redacted recovery manifest into the raw staging table"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-recovered-json-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      RECOVERY_RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Download the private recovery release asset
+        run: |
+          mkdir -p recovery-input
+          gh release download "$RECOVERY_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "recovered-json-manifest.jsonl.gz" \
+            --dir recovery-input
+
+      - name: Verify manifest checksum and Turso configuration
+        run: |
+          test -s recovery-input/recovered-json-manifest.jsonl.gz || {
+            echo "::error::The private release must contain recovered-json-manifest.jsonl.gz."
+            exit 1
+          }
+          echo "7bcc2ae2688d77b6bdddcc2c5e84274fc02ecb7330a44970c18390e3bf95a8a2  recovery-input/recovered-json-manifest.jsonl.gz" | sha256sum -c -
+          test -n "$TURSO_DATABASE_URL" || {
+            echo "::error::Set the single shared TURSO_DATABASE_URL GitHub Actions secret or variable."
+            exit 1
+          }
+          test -n "$TURSO_AUTH_TOKEN" || {
+            echo "::error::NODE2_TURSO_AUTH_TOKEN is missing."
+            exit 1
+          }
+
+      - name: Validate manifest without writing
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz
+
+      - name: Apply and read back all 5,748 records
+        if: inputs.apply
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.jsonl.gz --apply
