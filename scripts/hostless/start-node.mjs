@@ -81,24 +81,31 @@ if (nebulaConfigRequested) {
       throw new Error("CHAT_GATEWAY_CONNECTIONS must be valid JSON before Nebula can attach its Twitch channel.");
     }
   })();
-  const nebulaTenantId = process.env.NEBULA_ARCADE_TENANT_ID || "";
-  const ownerTwitchConnections = nebulaConnections.filter(connection =>
-    connection && connection.schemaVersion === 1 && connection.provider === "twitch" &&
-    connection.desired === true && connection.tenantId === nebulaTenantId
-  );
+  const supportedProviders = new Set(["twitch", "discord", "kick", "youtube"]);
+  const tenantsById = new Map();
+  for (const connection of nebulaConnections) {
+    if (!connection || connection.schemaVersion !== 1 || connection.desired !== true ||
+        !supportedProviders.has(connection.provider) ||
+        typeof connection.tenantId !== "string" || !connection.tenantId.trim() ||
+        typeof connection.connectionId !== "string" || !connection.connectionId.trim() ||
+        typeof connection.channelId !== "string" || !connection.channelId.trim()) continue;
+    let tenant = tenantsById.get(connection.tenantId);
+    if (!tenant) {
+      tenant = { tenantId: connection.tenantId, channels: [] };
+      tenantsById.set(connection.tenantId, tenant);
+    }
+    tenant.channels.push({
+      provider: connection.provider,
+      connectionId: connection.connectionId,
+      channelId: connection.channelId,
+      stateChannelId: connection.stateChannelId || connection.channelId,
+      enabledGameIds: ["tag","quackverse","bingo","chaosmode","chatgarden","chatwars","chickenroyale","colorsymphony","colorwars","dancingparade","emojirain","emojitower","memorylane","petrace","phraseguess","pixelbattle","rhythmpulse","treasurehunt","wordchain","wordstorm"],
+    });
+  }
   const autoConfig = {
     schemaVersion: 1,
-    revision: "hostless-chat-gateway-connection-registry-v1",
-    tenants: nebulaTenantId && ownerTwitchConnections.length ? [{
-      tenantId: nebulaTenantId,
-      channels: ownerTwitchConnections.map(connection => ({
-        provider: "twitch",
-        connectionId: connection.connectionId,
-        channelId: connection.channelId,
-        stateChannelId: process.env.NEBULA_ARCADE_CHANNEL_ID || connection.channelId,
-        enabledGameIds: ["tag","quackverse","bingo","chaosmode","chatgarden","chatwars","chickenroyale","colorsymphony","colorwars","dancingparade","emojirain","emojitower","memorylane","petrace","phraseguess","pixelbattle","rhythmpulse","treasurehunt","wordchain","wordstorm"],
-      })),
-    }] : [],
+    revision: "hostless-chat-gateway-connection-registry-v2",
+    tenants: [...tenantsById.values()],
   };
   const nebulaConfig = writeVersionedRuntimeConfig({
     json: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON || JSON.stringify(autoConfig),
@@ -106,11 +113,9 @@ if (nebulaConfigRequested) {
     fallbackPath: "/tmp/apollo-nebula-runtime.json",
     label: "NEBULA_ARCADE",
     emptyConfig: autoConfig,
+    allowEmpty: false,
   });
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
-  if (nebulaConfig.config.tenants.length === 0) {
-    console.warn("Nebula Arcade provider runtime has zero configured Twitch channels; no external accounts will be connected.");
-  }
 }
 node2.push(
   ["apps/chat-gateway/dist/service-start.js", {}],
