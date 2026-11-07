@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {scryptSync} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -40,7 +41,9 @@ test('browser login persists its HttpOnly cookie and logout revokes it through t
     spmt.authority.ensureUser('usr_legacy-owner');
     spmt.control.registerTenant({tenantId:'tenant_legacy-owner',ownerUserId:'usr_legacy-owner',displayName:'Legacy Owner'});
     spmt.authority.getOrCreateWorkspace('tenant_legacy-owner');
-    spmt.data.registerUser({userId:'usr_legacy-owner',username:'legacy-owner',displayName:'Legacy Owner',password:'old-pass',tenantIds:['tenant_legacy-owner']});
+    spmt.data.registerUser({userId:'usr_legacy-owner',username:'legacy-owner',displayName:'Legacy Owner',password:'initial-valid-password',tenantIds:['tenant_legacy-owner']});
+    const legacyCredential=spmt.data.store.getUserCredential('usr_legacy-owner');
+    spmt.data.store.putUserCredential('usr_legacy-owner',legacyCredential.salt,scryptSync('old-pass',legacyCredential.salt,32).toString('hex'));
     const legacyLogin=await fetch(origin+'/sandbox/auth/login',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({username:'legacy-owner',password:'old-pass'})});
     assert.equal(legacyLogin.status,200,'existing SPMT credentials must not be rejected by the new-account password-length rule');
     const legacyCookie=legacyLogin.headers.get('set-cookie').split(';')[0];
