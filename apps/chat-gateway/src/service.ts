@@ -39,15 +39,14 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const credential = environment.CHAT_GATEWAY_WORKER_CREDENTIAL ?? "";
   if (credential.length < 32) throw new Error("A 32+ character CHAT_GATEWAY_WORKER_CREDENTIAL is required");
   const connections = parseChatGatewayConnections(environment.CHAT_GATEWAY_CONNECTIONS);
-  // Reuse the original Chat Tag donor Twitch bot credential when SPMT has not
-  // provisioned an OAuth connection. This feeds the same live provider stream
-  // into Nebula instead of running a second, competing bot.
-  const donorTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
-  const donorChannel = (environment.CHAT_TAG_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
-  const hasDonorChannel = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === donorChannel);
-  if (donorTwitchToken && !hasDonorChannel && /^[a-z0-9_]{1,25}$/.test(donorChannel)) {
-    connections.push({ schemaVersion: 1, tenantId: environment.CHAT_TAG_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-donor-twitch-mtman1987", channelId: donorChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || environment.TWITCH_USERNAME || "mtman1987", desired: true });
-    console.info("[chat-gateway] Bootstrapping donor Chat Tag Twitch transport for #" + donorChannel + ".");
+  // Bootstrap the one shared SpaceMountain Twitch bot identity when
+  // SPMT has not provisioned its connection record.
+  const sharedTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
+  const sharedBotChannel = (environment.SPACEMOUNTAIN_TWITCH_CHANNEL || "spacemountainlive").trim().toLowerCase().replace(/^#/, "");
+  const hasSharedBot = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === sharedBotChannel);
+  if (sharedTwitchToken && !hasSharedBot && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
+    connections.push({ schemaVersion: 1, tenantId: environment.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || "spacemountainlive", desired: true });
+    console.info("[chat-gateway] Bootstrapping shared SpaceMountain Twitch bot transport.");
   }
   if (runtimeMode === "sandbox") {
     if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox Chat Gateway requires SPMT_OUTBOUND_MODE=disabled");
@@ -341,15 +340,25 @@ export class SupervisedChatGatewayService {
       });
       this.nebulaArcade = new NebulaArcadeProviderRuntime({ onLiveChannels:async(tenantId,names)=>{
         const template=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==='twitch'&&connection.desired);if(!template)return[];
-        const configured=new Set(options.connections.filter(connection=>connection.tenantId===tenantId&&connection.provider==='twitch').map(connection=>connection.channelId.replace(/^#/,'').toLowerCase()));
-        const wanted=[...new Set(names.map(name=>name.replace(/^#/,'').toLowerCase()))].filter(name=>/^[a-z0-9_]{1,25}$/.test(name)&&!configured.has(name)).sort().slice(0,100),desired=new Set(wanted);let added=0;const active:Array<{connectionId:string;channelId:string}>=[];
-        for(const prior of this.connectionStore.list(tenantId).filter(connection=>connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')))if(prior.desired&&!desired.has(prior.channelId))this.connectionStore.put({...prior,desired:false});
-        for(const channelId of wanted){const connectionId=`nebula-live-${channelId}`,prior=this.connectionStore.get(tenantId,'twitch',connectionId);if(!prior?.desired){if(added>=5)continue;this.connectionStore.put({...template,connectionId,channelId,desired:true});added++;}active.push({connectionId,channelId});}return active;
+        const wanted=[...new Set(names.map(name=>name.replace(/^#/,'').toLowerCase()))].filter(name=>/^[a-z0-9_]{1,25}$/.test(name)&&name!==template.channelId.replace(/^#/,'').toLowerCase()).sort();
+        for(const prior of this.connectionStore.list(tenantId).filter(connection=>connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')))if(prior.desired)this.connectionStore.put({...prior,desired:false});
+        const bindings=wanted.map(channelId=>({connectionId:`nebula-live-${channelId}`,channelId}));
+        const joined=adapters.twitch.setChannels(tenantId,template.connectionId,bindings);
+        return joined.filter(item=>item.channelId!==template.channelId.replace(/^#/,'').toLowerCase());
       }, presence:async(tenantId,players)=>{
         const connection=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==="twitch");if(!connection)throw new Error("No Twitch connection for presence");
-        const grant=await new SpmtChatProviderGrantSource(client).getGrant(connection);if(grant.status!=="ready"||!grant.metadata?.clientId)throw new Error("Twitch presence grant unavailable");
+        let presenceToken:string|undefined, presenceClientId:string|undefined;
+        if(connection.connectionId==="apollo-donor-twitch-mtman1987"&&process.env.TWITCH_BOT_TOKEN){
+          const token=process.env.TWITCH_BOT_TOKEN.trim().replace(/^oauth:/i,"");
+          const validation=await(fetchImpl??fetch)("https://id.twitch.tv/oauth2/validate",{headers:{Authorization:"OAuth "+token},signal:AbortSignal.timeout(10000)});
+          if(validation.ok){const identity=await validation.json() as {client_id?:unknown};if(typeof identity.client_id==="string"){presenceToken=token;presenceClientId=identity.client_id;}}
+        }else{
+          const grant=await new SpmtChatProviderGrantSource(client).getGrant(connection);
+          if(grant.status==="ready"&&grant.metadata?.clientId){presenceToken=grant.accessToken;presenceClientId=grant.metadata.clientId;}
+        }
+        if(!presenceToken||!presenceClientId)throw new Error("Shared Twitch bot grant unavailable for live-player presence");
         const liveUserIds:string[]=[],channelByUserId:Record<string,string>={};
-        for(let offset=0;offset<players.length;offset+=100){const batch=players.slice(offset,offset+100),url=new URL("https://api.twitch.tv/helix/streams");for(const player of batch)url.searchParams.append("user_login",player.username);const response=await(fetchImpl??fetch)(url,{headers:{"client-id":grant.metadata!.clientId!,authorization:`Bearer ${grant.accessToken}`},signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error(`Twitch presence unavailable (${response.status})`);const payload=await response.json() as {data?:Array<{user_login:string}>};if(!Array.isArray(payload.data))throw new Error("Invalid Twitch presence snapshot");for(const stream of payload.data){const player=batch.find(player=>player.username.toLowerCase()===stream.user_login.toLowerCase());if(player){liveUserIds.push(player.userId);channelByUserId[player.userId]=stream.user_login;}}}
+        for(let offset=0;offset<players.length;offset+=100){const batch=players.slice(offset,offset+100),url=new URL("https://api.twitch.tv/helix/streams");for(const player of batch)url.searchParams.append("user_login",player.username);const response=await(fetchImpl??fetch)(url,{headers:{"client-id":presenceClientId,authorization:`Bearer ${presenceToken}`},signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error(`Twitch presence unavailable (${response.status})`);const payload=await response.json() as {data?:Array<{user_login:string}>};if(!Array.isArray(payload.data))throw new Error("Invalid Twitch presence snapshot");for(const stream of payload.data){const player=batch.find(player=>player.username.toLowerCase()===stream.user_login.toLowerCase());if(player){liveUserIds.push(player.userId);channelByUserId[player.userId]=stream.user_login;}}}
         return{liveUserIds,channelByUserId,observedAt:new Date().toISOString()};
       }, databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, executionTarget: options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), simulation: options.operationMode === "read-only", egress: nebulaReplyEgress, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);

@@ -18,16 +18,45 @@ export type ChatWebSocketFactory = (url: string) => ChatWebSocketLike;
 export interface ProviderHttpResponseLike { readonly ok: boolean; readonly status: number; json(): Promise<unknown>; text(): Promise<string>; }
 export type ProviderFetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<ProviderHttpResponseLike>;
 export interface ProviderDriverDependencies { websocketFactory?: ChatWebSocketFactory; fetch?: ProviderFetchLike; handshakeTimeoutMs?: number; now?: () => Date; }
-interface ActiveConnection { connection: ProviderConnectionConfigV1; socket: ChatWebSocketLike; accessToken: string; grantMetadata: Record<string, string>; }
+interface ActiveConnection { connection: ProviderConnectionConfigV1; socket: ChatWebSocketLike; accessToken: string; grantMetadata: Record<string, string>; channelBindings?: Map<string, string>; }
 type DriverOpenInput = Parameters<ProviderConnectionDriverV1["open"]>[0];
 
 export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
   readonly provider = "twitch" as const;
   private readonly active = new Map<string, ActiveConnection>();
+  private readonly desiredChannels = new Map<string, Map<string, string>>();
   private readonly websocketFactory: ChatWebSocketFactory;
   private readonly timeoutMs: number;
   private readonly now: () => Date;
   constructor(deps: ProviderDriverDependencies = {}) { this.websocketFactory = deps.websocketFactory ?? defaultWebSocketFactory; this.timeoutMs = timeout(deps.handshakeTimeoutMs); this.now = deps.now ?? (() => new Date()); }
+
+  /** Update the channels watched by one authenticated bot session. Each channel keeps
+   * its own logical connection id for Nebula routing, while all IRC traffic shares
+   * the single authenticated socket owned by the anchor connection. */
+  setChannels(tenantId: string, anchorConnectionId: string, channels: Array<{ connectionId: string; channelId: string }>): Array<{ connectionId: string; channelId: string }> {
+    const key = `${tenantId}:twitch:${anchorConnectionId}`;
+    const active = this.active.get(key);
+    const currentBindings = active?.channelBindings ?? new Map<string, string>();
+    const wanted = new Map<string, string>();
+    for (const item of channels) {
+      const channelId = twitchChannel(item.channelId);
+      if (!item.connectionId || item.connectionId.length > 300) continue;
+      wanted.set(channelId, item.connectionId);
+    }
+    const anchorChannel = active ? twitchChannel(active.connection.channelId) : undefined;
+    if (anchorChannel) wanted.set(anchorChannel, active!.connection.connectionId);
+    this.desiredChannels.set(key, wanted);
+    if (!active || active.socket.readyState !== 1) return [...wanted.entries()].map(([channelId, connectionId]) => ({ connectionId, channelId }));
+    for (const channelId of currentBindings.keys()) {
+      if (!wanted.has(channelId)) active.socket.send(`PART #${channelId}\r\n`);
+    }
+    for (const channelId of wanted.keys()) {
+      if (!currentBindings.has(channelId)) active.socket.send(`JOIN #${channelId}\r\n`);
+    }
+    active.channelBindings = wanted;
+    return [...wanted.entries()].map(([channelId, connectionId]) => ({ connectionId, channelId }));
+  }
+
   async open(input: DriverOpenInput): Promise<ProviderConnectionHandleV1> {
     const socket = this.websocketFactory(TWITCH_IRC_WEBSOCKET_URL), key = connectionKey(input.connection), channel = twitchChannel(input.connection.channelId), username = metadata(input.grantMetadata.username ?? input.connection.providerAccountId, "Twitch username").toLowerCase();
     let intentional = false, settled = false;
@@ -35,16 +64,25 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
       const timer = setTimeout(() => finish(new Error("Twitch IRC handshake timed out")), this.timeoutMs);
       const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
       socket.addEventListener("open", () => { socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n"); socket.send(`PASS oauth:${oauth(input.accessToken)}\r\n`); socket.send(`NICK ${username}\r\n`); socket.send(`JOIN #${channel}\r\n`); });
-      socket.addEventListener("message", (event) => { for (const line of socketText(event.data).split(/\r?\n/).filter(Boolean)) { if (line.startsWith("PING")) { socket.send(line.replace(/^PING/, "PONG") + "\r\n"); continue; } if (/ NOTICE [^ ]+ :.*(?:authentication failed|improperly formatted auth|login unsuccessful)/i.test(line)) { finish(new Error("Twitch authorization rejected")); return; } if (/ (?:001|GLOBALUSERSTATE) /.test(` ${line} `) || line.includes(" GLOBALUSERSTATE ")) finish(); const envelope = parseTwitch(line, input.connection, this.now()); if (envelope) { input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } });
+      socket.addEventListener("message", (event) => { for (const line of socketText(event.data).split(/\r?\n/).filter(Boolean)) { if (line.startsWith("PING")) { socket.send(line.replace(/^PING/, "PONG") + "\r\n"); continue; } if (/ NOTICE [^ ]+ :.*(?:authentication failed|improperly formatted auth|login unsuccessful)/i.test(line)) { finish(new Error("Twitch authorization rejected")); return; } if (/ (?:001|GLOBALUSERSTATE) /.test(` ${line} `) || line.includes(" GLOBALUSERSTATE ")) finish(); const envelope = parseTwitch(line, input.connection, this.now()); if (envelope) { const channelKey = twitchChannel(envelope.channelId); const binding = this.active.get(key)?.channelBindings?.get(channelKey); if (binding) envelope.connectionId = binding; input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } });
       socket.addEventListener("error", () => finish(new Error("Twitch IRC transport failed during handshake")));
       socket.addEventListener("close", (event) => { this.active.delete(key); if (!settled) finish(new Error("Twitch IRC closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: event.code === 1008 || event.code === 4001 ? "authentication" : "transport", reason: closeReason("Twitch IRC", event) }); });
     });
-    this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata });
+    this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata, channelBindings: new Map([[channel, input.connection.connectionId]]) });
+    const pending = this.desiredChannels.get(key);
+    if (pending) this.setChannels(input.connection.tenantId, input.connection.connectionId, [...pending.entries()].map(([channelId, connectionId]) => ({ channelId, connectionId })));
     return { close: () => { intentional = true; this.active.delete(key); safeClose(socket); } };
   }
-  async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> { const active = this.active.get(connectionKey(message)); if (!active || active.socket.readyState !== 1) throw new Error("Twitch chat connection is unavailable"); const reply = message.replyToMessageId ? `@reply-parent-msg-id=${message.replyToMessageId} ` : ""; active.socket.send(`${reply}PRIVMSG #${twitchChannel(message.channelId)} :${chatText(message.text)}\r\n`); return { providerMessageId: `twitch:${message.idempotencyKey}` }; }
-}
 
+  async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> {
+    const targetChannel = twitchChannel(message.channelId);
+    const active = [...this.active.values()].find(item => item.connection.tenantId === message.tenantId && item.channelBindings?.has(targetChannel) && item.socket.readyState === 1);
+    if (!active) throw new Error(`Twitch shared bot session is not watching #${targetChannel}`);
+    const reply = message.replyToMessageId ? `@reply-parent-msg-id=${message.replyToMessageId} ` : "";
+    active.socket.send(`${reply}PRIVMSG #${targetChannel} :${chatText(message.text)}\r\n`);
+    return { providerMessageId: `twitch:${message.idempotencyKey}` };
+  }
+}
 export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
   readonly provider = "discord" as const;
   private readonly active = new Map<string, ActiveConnection>();
