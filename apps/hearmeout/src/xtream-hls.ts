@@ -105,8 +105,11 @@ export async function ensureXtreamHls(streamId: string) {
     await runFfmpegHls(clean, dir, indexPath);
   })
     .catch((error) => {
-      // Child-process errors include the credential-bearing input URL.
-      console.error(`[HearMeOutXtreamHLS] HLS conversion failed for ${clean}`);
+      // Bounded diagnostic with credential-bearing upstream URLs redacted.
+      const detail = error instanceof Error
+        ? error.message.replace(/https?:\/\/[^\s]+/g, '[upstream-url]').slice(0, 240)
+        : 'unknown error';
+      console.error(`[HearMeOutXtreamHLS] HLS conversion failed for ${clean}: ${detail}`);
       throw error;
     })
     .finally(() => {
