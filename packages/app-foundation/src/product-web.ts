@@ -400,6 +400,7 @@ export function validateSpmtServiceOrigin(value: string) {
   const safeLoopbackHttp = url.protocol === "http:" && loopbackHost;
   // In the two-node Hostless topology, app services reach the SPMT authority
   // on Node 1 over its public TLS origin. Plain HTTP remains loopback-only.
+  // Keep this validation aligned with NODE2_SPMT_ORIGIN in the release workflow.
   const safeRemoteHttps = url.protocol === "https:" && Boolean(url.hostname);
   if ((!safeLoopbackHttp && !safeRemoteHttps) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
     throw new Error("SPMT origin must be credential-free HTTPS or credential-free loopback HTTP");
