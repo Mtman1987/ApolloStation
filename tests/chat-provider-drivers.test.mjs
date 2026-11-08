@@ -265,9 +265,10 @@ test("Twitch shared bot session joins many player channels on one authenticated 
   assert.equal(joined.length, 156, "the bot's anchor channel plus all 155 player channels stay mapped");
   assert.equal(socket.sent.filter((line) => line.startsWith("JOIN #player")).length, 155);
 
-  socket.message("@badges=;display-name=Player 155;id=message-155;user-id=155000;tmi-sent-ts=1787803200000 :player155!player155@player155.tmi.twitch.tv PRIVMSG #player155 :spmt score\\r\\n");
+  socket.message("@badges=;display-name=Player\\s155;id=message-155;user-id=155000;tmi-sent-ts=1787803200000 :player155!player155@player155.tmi.twitch.tv PRIVMSG #player155 :spmt score\\r\\n");
   assert.equal(opened.envelopes.length, 1);
   assert.equal(opened.envelopes[0].channelId, "player155");
+  assert.equal(opened.envelopes[0].displayName, "Player 155", "IRCv3 escaped spaces in display-name tags must be decoded");
   assert.equal(opened.envelopes[0].connectionId, "nebula-live-player155");
 
   const sent = await driver.send({
