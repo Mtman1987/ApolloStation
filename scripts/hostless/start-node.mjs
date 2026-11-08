@@ -98,6 +98,7 @@ if (nebulaConfigRequested) {
       nebulaConnections.push(sharedConnection);
       sharedBotTenantIdForServer = sharedConnection.tenantId;
     } else {
+      existing.desired = true;
       sharedBotTenantIdForServer = existing.tenantId;
     }
     process.env.CHAT_GATEWAY_CONNECTIONS = JSON.stringify(nebulaConnections);
