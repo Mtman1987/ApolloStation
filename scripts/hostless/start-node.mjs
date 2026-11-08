@@ -87,7 +87,7 @@ if (nebulaConfigRequested) {
   const sharedBotUsername = (process.env.TWITCH_BOT_USERNAME || "spacemountainlive").trim().toLowerCase();
   if (sharedBotToken && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
     const existing = nebulaConnections.find(connection => connection?.provider === "twitch" && String(connection.channelId || "").replace(/^#/, "").toLowerCase() === sharedBotChannel && String(connection.providerAccountId || "").toLowerCase() === sharedBotUsername);
-    if (!existing) nebulaConnections.push({ schemaVersion: 1, tenantId: process.env.NEBULA_ARCADE_TENANT_ID || sharedBotChannel, provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: sharedBotUsername, desired: true });
+    if (!existing) nebulaConnections.push({ schemaVersion: 1, tenantId: process.env.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: sharedBotUsername, desired: true });
     process.env.CHAT_GATEWAY_CONNECTIONS = JSON.stringify(nebulaConnections);
     console.info("[chat-gateway] Production Twitch watcher configured for #" + sharedBotChannel + " as " + sharedBotUsername + ".");
   }
