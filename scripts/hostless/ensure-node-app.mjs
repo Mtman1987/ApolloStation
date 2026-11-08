@@ -236,7 +236,7 @@ if (matching.length === 0) {
     `Create ${node.app}`,
   );
 }
-if (nodeKey === "node2") await clearDeferredNebulaRuntime(node.app);
+// Preserve existing Nebula tenant/channel/runtime settings when Actions has no replacement values.\n// Runtime sync below only updates explicitly supplied non-empty values.
 if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
   process.env.SPMT_ORIGIN = await resolveNode1Origin();
   process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN = process.env.SPMT_ORIGIN;
