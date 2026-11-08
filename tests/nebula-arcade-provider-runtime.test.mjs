@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   NebulaArcadeProviderRuntime,
+  SqliteNebulaNetwork,
   SqliteNebulaGameActionStore,
   SqliteNebulaGameRuntimeStore,
   SqliteNebulaTagStore,
@@ -282,4 +283,34 @@ test("Nebula provider routes PixelBattle Mosaic chat commands into durable chann
     assert.equal(recovered.get("tenant-a", "apollo").current?.painted[0], "G");
     recovered.close();
   }, { config: activeConfig });
+});
+
+
+test("explicit Twitch leave blacklists the player and a later spmt join clears that blacklist", async () => {
+  await withRuntime(async ({ runtime, databasePath, sent }) => {
+    const actor = { ...message("seed", "x").actor, providerUserId: "123456", username: "first", displayName: "First" };
+    const join = message("join-1", "spmt join", { actor });
+    await runtime.consumers[0].deliver({ ...delivery("join-1", "spmt join"), message: join });
+    const leave = { ...join, messageId: "leave-1", text: "spmt leave", occurredAt: at(1) };
+    await runtime.consumers[0].deliver({ ...delivery("leave-1", "spmt leave"), message: leave });
+
+    runtime.close();
+    const network = new SqliteNebulaNetwork(databasePath);
+    assert.equal(network.blocked("tenant-a", "provider:twitch:123456", "first"), true);
+    network.close();
+
+    const reopened = new NebulaArcadeProviderRuntime({
+      databasePath,
+      config: validateNebulaArcadeProviderConfig(config),
+      client: { publishEvent: async () => ({}), awardXp: async () => ({}), publishSimulationRoomEvent: async () => ({}) },
+      simulation: false,
+      egress: { send: async (item) => { sent.push(item); return { providerMessageId: "rejoin-reply" }; } },
+    });
+    const rejoin = { ...join, messageId: "join-2", text: "spmt join", occurredAt: at(2) };
+    await reopened.consumers[0].deliver({ ...delivery("join-2", "spmt join"), message: rejoin });
+    await reopened.close();
+    const after = new SqliteNebulaNetwork(databasePath);
+    assert.equal(after.blocked("tenant-a", "provider:twitch:123456", "first"), false);
+    after.close();
+  });
 });
