@@ -168,12 +168,24 @@ export class AuthService {
         return publicClone(created);
       }
       if (current.revokedAt) throw new AuthDeniedError(`Service identity ${input.serviceId} is revoked`);
-      const salt = randomBytes(16).toString("base64url");
+      const scopes = normalizeScopes(input.scopes);
+      const tenantIds = normalizeTenants(input.tenantMode, input.tenantIds ?? []);
+      // Startup reconciliation must be idempotent. Multiple SPMT processes share
+      // this authority database; re-hashing an unchanged credential on every boot
+      // increments authzVersion and invalidates tokens another process just issued.
+      const unchanged = verifyCredential(input.credential, current.credentialSalt, current.credentialHash)
+        && current.scopes.length === scopes.length
+        && current.scopes.every((scope, index) => scope === scopes[index])
+        && current.tenantMode === input.tenantMode
+        && current.tenantIds.length === tenantIds.length
+        && current.tenantIds.every((tenant, index) => tenant === tenantIds[index]);
+      if (unchanged) return publicClone(current);
+      const salt = randomBytes(32).toString("base64url");
       const next: ServiceIdentityV1 = {
         ...current,
-        scopes: normalizeScopes(input.scopes),
+        scopes,
         tenantMode: input.tenantMode,
-        tenantIds: normalizeTenants(input.tenantMode, input.tenantIds ?? []),
+        tenantIds,
         credentialSalt: salt,
         credentialHash: deriveCredential(input.credential, salt),
         authzVersion: current.authzVersion + 1,
