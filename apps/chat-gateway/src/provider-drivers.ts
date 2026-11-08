@@ -60,8 +60,8 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => finish(new Error("Twitch IRC handshake timed out")), this.timeoutMs);
       const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
-      socket.addEventListener("open", () => { socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\\r\\n"); socket.send(`PASS oauth:${oauth(input.accessToken)}\\r\\n`); socket.send(`NICK ${username}\\r\\n`); socket.send(`JOIN #${channel}\\r\\n`); });
-      socket.addEventListener("message", (event) => { for (const line of socketText(event.data).split(/\\r?\\n/).filter(Boolean)) { if (line.startsWith("PING")) { socket.send(line.replace(/^PING/, "PONG") + "\\r\\n"); continue; } if (/ NOTICE [^ ]+ :.*(?:authentication failed|improperly formatted auth|login unsuccessful)/i.test(line)) { finish(new Error("Twitch authorization rejected")); return; } if (/ (?:001|GLOBALUSERSTATE) /.test(` ${line} `) || line.includes(" GLOBALUSERSTATE ")) finish(); const envelope = parseTwitch(line, input.connection, this.now()); if (envelope) { const channelKey = twitchChannel(envelope.channelId); const binding = this.active.get(key)?.channelBindings.get(channelKey); if (binding) envelope.connectionId = binding; input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } });
+      socket.addEventListener("open", () => { socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n"); socket.send(`PASS oauth:${oauth(input.accessToken)}\r\n`); socket.send(`NICK ${username}\r\n`); socket.send(`JOIN #${channel}\r\n`); });
+      socket.addEventListener("message", (event) => { for (const line of socketText(event.data).split(/\r?\n/).filter(Boolean)) { if (line.startsWith("PING")) { socket.send(line.replace(/^PING/, "PONG") + "\r\n"); continue; } if (/ NOTICE [^ ]+ :.*(?:authentication failed|improperly formatted auth|login unsuccessful)/i.test(line)) { finish(new Error("Twitch authorization rejected")); return; } if (/ (?:001|GLOBALUSERSTATE) /.test(` ${line} `) || line.includes(" GLOBALUSERSTATE ")) finish(); const envelope = parseTwitch(line, input.connection, this.now()); if (envelope) { const channelKey = twitchChannel(envelope.channelId); const binding = this.active.get(key)?.channelBindings.get(channelKey); if (binding) envelope.connectionId = binding; input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } });
       socket.addEventListener("error", () => finish(new Error("Twitch IRC transport failed during handshake")));
       socket.addEventListener("close", (event) => { this.active.delete(key); if (!settled) finish(new Error("Twitch IRC closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: event.code === 1008 || event.code === 4001 ? "authentication" : "transport", reason: closeReason("Twitch IRC", event) }); });
     });
@@ -74,7 +74,7 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
     const active = [...this.active.values()].find(item => item.connection.tenantId === message.tenantId && item.channelBindings.has(targetChannel) && item.socket.readyState === 1);
     if (!active) throw new Error(`Twitch shared bot session is not watching #${targetChannel}`);
     const reply = message.replyToMessageId ? `@reply-parent-msg-id=${message.replyToMessageId} ` : "";
-    active.socket.send(`${reply}PRIVMSG #${targetChannel} :${chatText(message.text)}\\r\\n`);
+    active.socket.send(`${reply}PRIVMSG #${targetChannel} :${chatText(message.text)}\r\n`);
     return { providerMessageId: `twitch:${message.idempotencyKey}` };
   }
 }
