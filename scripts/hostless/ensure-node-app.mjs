@@ -166,7 +166,7 @@ async function clearDeferredNebulaRuntime(appName) {
   console.log("Cleared stale Nebula runtime settings before applying the current Node 2 configuration.");
 }
 
-function syncRuntimeSecrets(projectId, appName) {
+async function syncRuntimeSecrets(projectId, appName) {
   let bundle = {};
   if (secretBundle) { try { bundle = JSON.parse(secretBundle); } catch { fail("APOLLO_GH_SECRETS_JSON is not valid JSON."); } }
   for (const [envKey, value] of Object.entries(process.env)) {
@@ -241,7 +241,7 @@ if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
   process.env.SPMT_ORIGIN = await resolveNode1Origin();
   process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN = process.env.SPMT_ORIGIN;
 }
-syncRuntimeSecrets(projectId, node.app);
+await syncRuntimeSecrets(projectId, node.app);
 console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
 runCli(
   ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
