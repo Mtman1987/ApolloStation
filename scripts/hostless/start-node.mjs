@@ -68,6 +68,9 @@ node1.push(
 );
 
 const node2 = [];
+let nebulaConfigForServer;
+let sharedBotChannelForServer;
+let sharedBotTenantIdForServer;
 const nebulaConfigRequested = Boolean(
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON ||
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH ||
@@ -85,9 +88,18 @@ if (nebulaConfigRequested) {
   const sharedBotToken = process.env.TWITCH_BOT_TOKEN?.trim();
   const sharedBotChannel = (process.env.SPACEMOUNTAIN_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
   const sharedBotUsername = (process.env.TWITCH_BOT_USERNAME || "spacemountainlive").trim().toLowerCase();
+  sharedBotChannelForServer = sharedBotChannel;
+  const existingChannel = nebulaConnections.find(connection => connection?.provider === "twitch" && String(connection.channelId || "").replace(/^#/, "").toLowerCase() === sharedBotChannel);
+  sharedBotTenantIdForServer = existingChannel?.tenantId || "spacemountainlive";
   if (sharedBotToken && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
     const existing = nebulaConnections.find(connection => connection?.provider === "twitch" && String(connection.channelId || "").replace(/^#/, "").toLowerCase() === sharedBotChannel && String(connection.providerAccountId || "").toLowerCase() === sharedBotUsername);
-    if (!existing) nebulaConnections.push({ schemaVersion: 1, tenantId: process.env.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: sharedBotUsername, desired: true });
+    if (!existing) {
+      const sharedConnection = { schemaVersion: 1, tenantId: "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: sharedBotUsername, desired: true };
+      nebulaConnections.push(sharedConnection);
+      sharedBotTenantIdForServer = sharedConnection.tenantId;
+    } else {
+      sharedBotTenantIdForServer = existing.tenantId;
+    }
     process.env.CHAT_GATEWAY_CONNECTIONS = JSON.stringify(nebulaConnections);
     console.info("[chat-gateway] Production Twitch watcher configured for #" + sharedBotChannel + " as " + sharedBotUsername + ".");
   }
@@ -136,16 +148,34 @@ if (nebulaConfigRequested) {
     allowEmpty: true,
   });
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
+  nebulaConfigForServer = nebulaConfig;
 }
 node2.push(
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
 );
 
-// Nebula's separate public game server is enabled only after its workspace
-// tenant, channel, and public origin are explicitly provisioned.
-if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID && process.env.NEBULA_ARCADE_PUBLIC_ORIGIN) {
-  node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }]);
+// Derive the public Nebula game server from the same live Twitch connection
+// used by Chat Gateway. The donor's existing system tenant is spacemountainlive;
+// the Twitch channel itself is also the state channel, so no extra workspace,
+// state-channel, or tenant provisioning is required.
+if (nebulaConfigForServer && process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1" &&
+    process.env.NEBULA_ARCADE_WORKER_CREDENTIAL && process.env.NEBULA_ARCADE_DATABASE_PATH &&
+    process.env.SPMT_ORIGIN) {
+  const tenant = nebulaConfigForServer.config.tenants.find(item => item.tenantId === sharedBotTenantIdForServer) ??
+    nebulaConfigForServer.config.tenants.find(item => item.channels.some(channel => channel.provider === "twitch" && channel.channelId === sharedBotChannelForServer));
+  const twitchChannel = tenant?.channels.find(channel => channel.provider === "twitch" && channel.channelId === sharedBotChannelForServer) ??
+    tenant?.channels.find(channel => channel.provider === "twitch");
+  if (tenant && twitchChannel) {
+    node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", {
+      PORT: process.env.NEBULA_ARCADE_PORT ?? "3100",
+      NEBULA_ARCADE_TENANT_ID: tenant.tenantId,
+      NEBULA_ARCADE_CHANNEL_ID: twitchChannel.channelId,
+      NEBULA_ARCADE_PUBLIC_ORIGIN: process.env.NEBULA_ARCADE_PUBLIC_ORIGIN ?? "https://apollo-node-2.hostless.app",
+      NEBULA_ARCADE_RUNTIME_CONFIG_PATH: nebulaConfigForServer.configPath,
+    }]);
+    console.info("[nebula-arcade] Public game server configured for " + tenant.tenantId + " / #" + twitchChannel.channelId + ".");
+  }
 }
 
 const services = ({ node1, node2 })[role];
