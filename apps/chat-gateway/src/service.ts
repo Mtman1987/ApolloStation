@@ -371,7 +371,7 @@ export class SupervisedChatGatewayService {
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
   private async sendNebulaDeploymentProofOnce(){
-    if(this.nebulaDeploymentProofSent||this.options.operationMode!=="active"||!this.nebulaArcade)return;
+    if(this.nebulaDeploymentProofSent||!(this.options.operationMode==="active"||this.options.liveIngressEnabled)||!this.nebulaArcade)return;
     const target=this.tenants.flatMap(tenantId=>this.connectionStore.list(tenantId))
       .find(connection=>connection.provider==="twitch"&&connection.desired&&
         connection.channelId.toLowerCase()==="mtman1987"&&connection.state==="connected");
