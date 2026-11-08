@@ -22,7 +22,7 @@ export class SqliteNebulaNetwork {
   }
   excludeGame(actor:string,game:string,exclude:boolean,now=new Date().toISOString()){const enrollment=this.enrollment(actor),games=new Set(enrollment.excludedGames);exclude?games.add(game):games.delete(game);this.db.prepare('INSERT INTO nebula_arcade_enrollment VALUES(?,?,?,?) ON CONFLICT(actor_id) DO UPDATE SET excluded_games=excluded.excluded_games,updated_at=excluded.updated_at').run(actor,Number(enrollment.enrolled),JSON.stringify([...games]),now);}
   listBlacklist(tenant:string){return this.db.prepare('SELECT kind,subject,reason,updated_at AS updatedAt FROM nebula_arcade_blacklist WHERE tenant_id=? ORDER BY kind,subject').all(tenant);}
-  blocked(tenant:string,userId:string,username:string,channel?:string){const keys=[userId,username.replace(/^[@#]/,'').toLowerCase(),channel?.replace(/^#/,'').toLowerCase()].filter(Boolean);return keys.some(key=>Boolean(this.db.prepare('SELECT 1 FROM nebula_arcade_blacklist WHERE tenant_id=? AND subject=?').get(tenant,key!)));}
+  blocked(tenant:string,userId:string,username:string,channel?:string){const keys=[userId.toLowerCase(),username.replace(/^[@#]/,'').toLowerCase(),channel?.replace(/^#/,'').toLowerCase()].filter(Boolean);return keys.some(key=>Boolean(this.db.prepare('SELECT 1 FROM nebula_arcade_blacklist WHERE tenant_id=? AND subject=?').get(tenant,key!)));}
   blacklist(tenant:string,kind:'channel'|'player',subjectValue:string,blocked:boolean,reason='',now=new Date().toISOString()){
     const subject=subjectValue.trim().replace(/^[@#]/,'').toLowerCase();if(!subject||subject.length>200||/[\r\n\0]/.test(subject))throw new Error('A valid channel or player is required.');
     this.db.exec('BEGIN IMMEDIATE');
