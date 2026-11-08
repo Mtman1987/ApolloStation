@@ -1,6 +1,5 @@
 import {TikTokLiveIngestor,createTikTokConnection} from "./tiktok-live.js";
 import {StreamWeaverTikTokStore} from "@spmt/streamweaver";
-import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtime.js";
 import { basename, isAbsolute, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
@@ -42,7 +41,7 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   // Bootstrap the one shared SpaceMountain Twitch bot identity when
   // SPMT has not provisioned its connection record.
   const sharedTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
-  const sharedBotChannel = (environment.SPACEMOUNTAIN_TWITCH_CHANNEL || "spacemountainlive").trim().toLowerCase().replace(/^#/, "");
+  const sharedBotChannel = (environment.SPACEMOUNTAIN_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
   const hasSharedBot = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === sharedBotChannel);
   if (sharedTwitchToken && !hasSharedBot && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
     connections.push({ schemaVersion: 1, tenantId: environment.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || "spacemountainlive", desired: true });
@@ -172,7 +171,7 @@ export function createNebulaArcadeChatReplyEgress(options: { operationMode: Spmt
     send: async (message: Parameters<ChatProviderSenderV1["send"]>[0]) => {
       // Read-only live ingress may emit Nebula's explicit command replies only.
       // All other Chat Gateway egress remains shadowed; outbound actions stay disabled.
-      if (options.operationMode === "read-only" && options.liveIngressEnabled) {
+      if (options.operationMode === "active" || (options.operationMode === "read-only" && options.liveIngressEnabled)) {
         const sender = senders.get(message.provider);
         if (!sender) throw new Error(`Nebula reply provider ${message.provider} is unavailable`);
         return sender.send(message);
@@ -189,7 +188,6 @@ export class SupervisedChatGatewayService {
   private lastTwitchBotSync=0;
   private nebulaDeploymentProofSent=false;
   private readonly startedAt = new Date().toISOString();
-  private readonly simulationWorker: SimulationRoomWorker;
   private readonly chatStore: SqliteChatGatewayStore;
   private readonly connectionStore: SqliteProviderConnectionStore;
   private readonly supervisor: ChatProviderConnectionSupervisor;
@@ -212,7 +210,6 @@ export class SupervisedChatGatewayService {
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
     this.connectionClient=client;
     if(options.streamweaver)this.tiktok=new TikTokLiveIngestor(new StreamWeaverTikTokStore(options.streamweaver.databasePath),event=>client.ingestTikTokLiveEvent(event.tenantId,event),options.operationMode==="active",createTikTokConnection,Date.now,tenant=>client.getTikTokLiveAccess(tenant).then(value=>value.enabled));
-    this.simulationWorker = new SimulationRoomWorker(client, new SimulationRoomRuntime({ directory: join(dirname(options.databasePath), "simulation-rooms"), ...(options.nebulaArcade?.publicOrigin ? { publicOrigin: options.nebulaArcade.publicOrigin } : {}), ...(options.streamweaver ? { streamweaverDatabasePath: options.streamweaver.databasePath } : {}), publish: (event, key) => client.publishSimulationRoomEvent(String((event.data as Record<string, unknown>)?.tenantId ?? ""), event, key) }), `${options.workerId}-simulation`, options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET));
     const adapters = createFirstPartyChatProviderAdapters(fetchImpl ? { fetch: async (url, init) => fetchImpl(url, init) } : {});
     this.discordDriver = adapters.discord;
     this.chatStore = new SqliteChatGatewayStore(options.databasePath);
@@ -245,26 +242,6 @@ export class SupervisedChatGatewayService {
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
     let connectedGateway: ChatGatewayRuntime | undefined;
-    if (options.operationMode === "read-only") observers.push({ id: "simulation-rooms.provider-ingress", observe: async (message) => {
-      const roomId = `${message.provider}:${message.connectionId}:${message.channelId}`;
-      await client.publishSimulationRoomEvent(message.tenantId, {
-        roomId,
-        lane: "chat",
-        direction: "ingress",
-        title: `${message.provider} live input`,
-        body: message.text,
-        provider: message.provider,
-        connectionId: message.connectionId,
-        channelId: message.channelId,
-        data: {
-          messageId: message.messageId,
-          ...(message.sourceChannelId ? { sourceChannelId: message.sourceChannelId } : {}),
-          actor: { providerUserId: message.actor.providerUserId, username: message.actor.username, displayName: message.actor.displayName ?? message.actor.username, roles: message.actor.roles },
-          consumers: connectedGateway?.consumerIds() ?? [],
-        },
-        occurredAt: message.occurredAt,
-      }, `simulation-ingress:${message.provider}:${message.connectionId}:${message.messageId}`).catch(() => undefined);
-    } });
     if (options.streamweaver) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -348,7 +325,7 @@ export class SupervisedChatGatewayService {
       }, presence:async(tenantId,players)=>{
         const connection=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==="twitch");if(!connection)throw new Error("No Twitch connection for presence");
         let presenceToken:string|undefined, presenceClientId:string|undefined;
-        if(connection.connectionId==="apollo-donor-twitch-mtman1987"&&process.env.TWITCH_BOT_TOKEN){
+        if(isSharedSpaceMountainTwitchConnection(connection)&&process.env.TWITCH_BOT_TOKEN){
           const token=process.env.TWITCH_BOT_TOKEN.trim().replace(/^oauth:/i,"");
           const validation=await(fetchImpl??fetch)("https://id.twitch.tv/oauth2/validate",{headers:{Authorization:"OAuth "+token},signal:AbortSignal.timeout(10000)});
           if(validation.ok){const identity=await validation.json() as {client_id?:unknown};if(typeof identity.client_id==="string"){presenceToken=token;presenceClientId=identity.client_id;}}
@@ -368,7 +345,7 @@ export class SupervisedChatGatewayService {
     const spmtGrantSource = new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read", "chat:edit"], discord: ["gateway", "messages:write"], kick: ["chat:read"] } } : {});
     const grantSource = {
       getGrant: async (connection: ProviderConnectionConfigV1) => {
-        if (connection.connectionId !== "apollo-donor-twitch-mtman1987") return spmtGrantSource.getGrant(connection);
+        if (!isSharedSpaceMountainTwitchConnection(connection)) return spmtGrantSource.getGrant(connection);
         const token = process.env.TWITCH_BOT_TOKEN?.trim().replace(/^oauth:/i, "");
         if (!token) return { status: "reauthorization-required" as const, reason: "The donor Twitch bot token is not configured." };
         const response = await (fetchImpl ?? fetch)("https://id.twitch.tv/oauth2/validate", { headers: { Authorization: "OAuth " + token }, signal: AbortSignal.timeout(10_000) });
@@ -545,23 +522,7 @@ export class SupervisedChatGatewayService {
   }
 
   private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
-  async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
-  private async runSimulation(signal:AbortSignal){
-    let failures=0;
-    while(!signal.aborted){
-      try {
-        await this.simulationWorker.runOnce();
-        failures=0;
-        await pause(this.options.reconcileMs,signal);
-      } catch(error) {
-        failures+=1;
-        const delayMs=Math.min(30_000,this.options.reconcileMs*2**Math.min(failures,5));
-        const message=error instanceof Error?error.message:String(error);
-        console.error(`Simulation room worker temporarily unavailable; retrying in ${delayMs}ms: ${message}`);
-        await pause(delayMs,signal);
-      }
-    }
-  }
+  async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
   private async runGateway(signal:AbortSignal){
     let failures=0;
     while(!signal.aborted){
@@ -581,6 +542,11 @@ export class SupervisedChatGatewayService {
   async close() { await this.tiktok?.close();await this.supervisor.stop(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); await this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
+function isSharedSpaceMountainTwitchConnection(connection: ProviderConnectionConfigV1) {
+  const channel = (process.env.SPACEMOUNTAIN_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
+  const username = (process.env.TWITCH_BOT_USERNAME || "spacemountainlive").trim().toLowerCase();
+  return connection.provider === "twitch" && connection.channelId.replace(/^#/, "").toLowerCase() === channel && connection.providerAccountId.trim().toLowerCase() === username;
+}
 function loopbackOrigin(value: string) { const url = new URL(value); const clean = !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash; const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname); if (!clean || !(url.protocol === "https:" || (url.protocol === "http:" && loopback))) throw new Error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin"); return url.origin; }
 function httpsOrigin(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free HTTPS origin`); return url.origin; }
 function httpsAssetUrl(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error(`${name} must be a credential-free HTTPS URL`); return url.toString(); }

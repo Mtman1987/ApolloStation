@@ -32,6 +32,21 @@ test("read-only live ingress sends only Nebula chat replies through the active p
   assert.equal(shadowed.length, 0);
 });
 
+test("active production Nebula replies use the connected Twitch provider", async () => {
+  const sent = [], shadowed = [];
+  const egress = createNebulaArcadeChatReplyEgress({
+    operationMode: "active",
+    liveIngressEnabled: false,
+    senders: [{ provider: "twitch", send: async (message) => { sent.push(message); return { providerMessageId: "twitch-production-reply" }; } }],
+    shadowSend: async (message) => { shadowed.push(message); return { providerMessageId: "shadow-reply" }; },
+  });
+  const message = { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: "mtman1987", text: "Nebula reply", idempotencyKey: "nebula-production-reply-test" };
+  const result = await egress.send(message);
+  assert.equal(result.providerMessageId, "twitch-production-reply");
+  assert.deepEqual(sent, [message]);
+  assert.equal(shadowed.length, 0);
+});
+
 test("Nebula reply egress stays shadowed outside read-only live ingress", async () => {
   const sent = [], shadowed = [];
   const egress = createNebulaArcadeChatReplyEgress({
