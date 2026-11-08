@@ -231,8 +231,8 @@ jobs:
           if (process.env[runtimeConfigName]?.trim()) {
             let config;
             try { config = JSON.parse(process.env[runtimeConfigName]); } catch { console.error(runtimeConfigName + " must be valid JSON when supplied."); process.exit(1); }
-            if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants) || config.tenants.length === 0) {
-              console.error(runtimeConfigName + " must contain at least one configured tenant when supplied.");
+            if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+              console.error(runtimeConfigName + " must be a version 1 config with a tenants array when supplied.");
               process.exit(1);
             }
           }
