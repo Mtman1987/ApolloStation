@@ -30,6 +30,9 @@ on:
       - "package-lock.json"
       - "tsconfig*.json"
       - "scripts/hostless/**"
+      - "scripts/nebula-tenant-discovery.mjs"
+      - "scripts/import-staged-nebula-tag-to-turso.mjs"
+      - "tests/nebula-tenant-discovery.test.mjs"
       - ".github/workflows/hostless-three-node-deploy.yml"
   workflow_dispatch:
     inputs:
