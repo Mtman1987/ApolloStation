@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { mergeNebulaRuntimeConfig } from "./nebula-runtime-config.mjs";
 
 // Keep Hostless runtime configuration bootstrap deterministic across the two-node release.
 const role = process.env.APOLLO_NODE_ROLE;
@@ -104,11 +105,20 @@ if (nebulaConfigRequested) {
   }
   const autoConfig = {
     schemaVersion: 1,
-    revision: "hostless-chat-gateway-connection-registry-v2",
+    revision: "hostless-chat-gateway-connection-registry-v3",
     tenants: [...tenantsById.values()],
   };
+  let suppliedConfig = autoConfig;
+  if (process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON) {
+    try { suppliedConfig = JSON.parse(process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON); }
+    catch { throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_JSON must contain valid JSON."); }
+  }
+  // A saved runtime config may carry tenant-level settings but be stale or
+  // channel-empty. Always merge the live Chat Gateway registry into it so the
+  // Nebula ingress consumer is attached to the exact active provider channels.
+  const mergedConfig = mergeNebulaRuntimeConfig(suppliedConfig, autoConfig);
   const nebulaConfig = writeVersionedRuntimeConfig({
-    json: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON || JSON.stringify(autoConfig),
+    json: JSON.stringify(mergedConfig),
     path: process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH,
     fallbackPath: "/tmp/apollo-nebula-runtime.json",
     label: "NEBULA_ARCADE",
