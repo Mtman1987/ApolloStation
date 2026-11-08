@@ -28,23 +28,31 @@ test("Nebula importer discovers the canonical tenant through SPMT's Chat Gateway
   assert.equal(calls[1].init.headers.authorization, "Bearer short-lived-service-token");
 });
 
-test("Nebula tenant discovery fails closed for zero or multiple Twitch tenants", async () => {
-  for (const connections of [
-    [],
-    [
-      { schemaVersion: 1, tenantId: "a", provider: "twitch", connectionId: "one", channelId: "one", desired: false },
-      { schemaVersion: 1, tenantId: "b", provider: "twitch", connectionId: "two", channelId: "two", desired: false },
-    ],
-  ]) {
-    let call = 0;
-    await assert.rejects(() => discoverNebulaTenantFromSpmt({
-      spmtOrigin: "https://apollo-node-1.hostless.app",
-      workerCredential: "x".repeat(40),
-      fetchImpl: async () => ++call === 1
-        ? Response.json({ accessToken: "token" })
-        : Response.json({ connections }),
-    }), /exactly one Twitch workspace tenant/);
-  }
+test("Nebula tenant discovery falls back to the live donor's fixed SpaceMountain tenant when no bot connection exists", async () => {
+  let call = 0;
+  const tenantId = await discoverNebulaTenantFromSpmt({
+    spmtOrigin: "https://apollo-node-1.hostless.app",
+    workerCredential: "x".repeat(40),
+    fetchImpl: async () => ++call === 1
+      ? Response.json({ accessToken: "token" })
+      : Response.json({ connections: [] }),
+  });
+  assert.equal(tenantId, "spacemountainlive");
+  assert.equal(call, 2);
+});
+
+test("Nebula tenant discovery fails closed for multiple Twitch tenants", async () => {
+  let call = 0;
+  await assert.rejects(() => discoverNebulaTenantFromSpmt({
+    spmtOrigin: "https://apollo-node-1.hostless.app",
+    workerCredential: "x".repeat(40),
+    fetchImpl: async () => ++call === 1
+      ? Response.json({ accessToken: "token" })
+      : Response.json({ connections: [
+        { schemaVersion: 1, tenantId: "a", provider: "twitch", connectionId: "one", channelId: "one", desired: false },
+        { schemaVersion: 1, tenantId: "b", provider: "twitch", connectionId: "two", channelId: "two", desired: false },
+      ] }),
+  }), /exactly one Twitch workspace tenant/);
 });
 
 test("Nebula tenant discovery rejects insecure origins and short credentials before making requests", async () => {
