@@ -116,6 +116,7 @@ if (nebulaConfigRequested) {
   // A saved runtime config may carry tenant-level settings but be stale or
   // channel-empty. Always merge the live Chat Gateway registry into it so the
   // Nebula ingress consumer is attached to the exact active provider channels.
+  // Preserve saved tenant settings while always adding the active Chat Gateway channel registry.
   const mergedConfig = mergeNebulaRuntimeConfig(suppliedConfig, autoConfig);
   const nebulaConfig = writeVersionedRuntimeConfig({
     json: JSON.stringify(mergedConfig),
