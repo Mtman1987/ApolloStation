@@ -267,7 +267,7 @@ export class NebulaArcadeProviderRuntime {
     }
     if(!parsed || !parsed.body){if(!parsed){const tagState=await this.tagRuntime.getState(message.tenantId);if(tagState.state.players[tagActorId(message)]?.eligible!==false&&tagState.state.players[tagActorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));}return;}
     if(!parsed.gameId && ["join","leave"].includes(parsed.command)){
-      const enrolled=parsed.command==="join",tagActor=tagActorId(message);
+      const enrolled=parsed.command==="join",tagActor=message.provider==="twitch"&&/^\d+$/.test(message.actor.providerUserId)?tagActorId(message):actor;
       this.network.blacklist(message.tenantId,"player",tagActor,!enrolled,enrolled?"explicit Twitch rejoin":"explicit Twitch leave",message.occurredAt);
       this.network.enroll(tagActor,enrolled,message.occurredAt);
       await this.gameStore.update(message.tenantId,state=>{for(const gameId of NEBULA_ARCADE_GAMES.map(game=>game.id))if(enrolled)joinNebulaGame(state,{userId:actor,username:message.actor.username,displayName:message.actor.displayName,gameId},new Date(message.occurredAt));else leaveNebulaGame(state,actor,gameId,new Date(message.occurredAt));});
