@@ -244,3 +244,40 @@ test("Discord forum thread create reconciles the same durable marker after an un
     assert.equal(requests.filter(request => request.url.endsWith("/channels/123456/threads") && request.init.method === "POST").length, 2);
   } finally { await handle.close(); }
 });
+
+
+test("Twitch shared bot session joins many player channels on one authenticated IRC socket and routes replies by channel", async () => {
+  const f = socketFactoryCapture();
+  const driver = new TwitchIrcProviderDriver({ websocketFactory: f.factory, handshakeTimeoutMs: 2_000 });
+  const opened = openInput("twitch", "spacemountainlive", { username: "spacemountainlive" });
+  const pending = driver.open(opened.input);
+  const socket = f.sockets[0];
+  socket.open();
+  socket.message(":tmi.twitch.tv 001 spacemountainlive :Welcome\\r\\n");
+  const handle = await pending;
+
+  const channels = Array.from({ length: 155 }, (_, index) => ({
+    connectionId: `nebula-live-player${index + 1}`,
+    channelId: `player${index + 1}`,
+  }));
+  const joined = driver.setChannels("tenant-a", "twitch-main", channels);
+  assert.equal(f.sockets.length, 1, "all player channels must share the authenticated socket");
+  assert.equal(joined.length, 156, "the bot's anchor channel plus all 155 player channels stay mapped");
+  assert.equal(socket.sent.filter((line) => line.startsWith("JOIN #player")).length, 155);
+
+  socket.message("@badges=;display-name=Player 155;id=message-155;user-id=155000;tmi-sent-ts=1787803200000 :player155!player155@player155.tmi.twitch.tv PRIVMSG #player155 :spmt score\\r\\n");
+  assert.equal(opened.envelopes.length, 1);
+  assert.equal(opened.envelopes[0].channelId, "player155");
+  assert.equal(opened.envelopes[0].connectionId, "nebula-live-player155");
+
+  const sent = await driver.send({
+    schemaVersion: 1, tenantId: "tenant-a", provider: "twitch",
+    connectionId: "nebula-live-player155", channelId: "player155",
+    text: "Player 155 score reply", idempotencyKey: "shared-session-reply",
+  });
+  assert.equal(sent.providerMessageId, "twitch:shared-session-reply");
+  assert.ok(socket.sent.some((line) => line.includes("PRIVMSG #player155 :Player 155 score reply")));
+  driver.setChannels("tenant-a", "twitch-main", channels.slice(0, 154));
+  assert.ok(socket.sent.some((line) => line === "PART #player155\\r\\n"));
+  await handle.close();
+});
