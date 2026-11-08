@@ -144,7 +144,7 @@ jobs:
     name: Deploy ${{ matrix.label }}
     needs: [full-test-suite]
     if: >-
-      ${{ (needs.full-test-suite.result == 'success' || (needs.full-test-suite.result == 'skipped' && contains(github.event.head_commit.message, '[skip-hostless-validation]'))) &&
+      ${{ !cancelled() && (needs.full-test-suite.result == 'success' || (needs.full-test-suite.result == 'skipped' && contains(github.event.head_commit.message, '[skip-hostless-validation]'))) &&
           github.ref == 'refs/heads/main' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
