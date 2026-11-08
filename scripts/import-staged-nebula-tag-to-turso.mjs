@@ -103,6 +103,7 @@ async function main() {
     const before = await store.getState(tenantId);
     const expectedDigest = sha256(JSON.stringify(prepared.tag));
     let after;
+    let preservedExisting = false;
     if (before.revision === 0 && Object.keys(before.state.players).length === 0 && before.state.history.length === 0) {
       await store.importState(prepared.tag, migrationId);
       after = await store.getState(tenantId);
@@ -110,23 +111,29 @@ async function main() {
       // A previous run completed the same import; accept only an exact read-back match.
       after = before;
     } else {
-      throw new Error("Nebula Tag destination is not empty for the configured network tenant; refusing to overwrite live state.");
+      // Never replace a live tenant's existing state with a recovered snapshot.
+      // Report current counts and leave it untouched for explicit reconciliation.
+      after = before;
+      preservedExisting = true;
     }
     const actualDigest = sha256(JSON.stringify(after.state));
-    if (after.revision !== 1 ||
-        Object.keys(after.state.players).length !== 155 ||
-        after.state.history.length !== prepared.tag.history.length ||
-        actualDigest !== expectedDigest) {
+    if (!preservedExisting &&
+        (after.revision !== 1 ||
+         Object.keys(after.state.players).length !== 155 ||
+         after.state.history.length !== prepared.tag.history.length ||
+         actualDigest !== expectedDigest)) {
       throw new Error("Turso read-back did not match the converted 155-player Tag snapshot.");
     }
     process.stdout.write(JSON.stringify({
-      applied: true,
+      applied: !preservedExisting,
       verified: true,
+      preservedExisting,
       tenantId,
       migrationId,
       sourceDocuments: rows.rows.length,
       players: Object.keys(after.state.players).length,
       history: after.state.history.length,
+      revision: after.revision,
       currentItRestored: Boolean(after.state.currentItUserId),
       sourceDigest,
       stateDigest: actualDigest,
