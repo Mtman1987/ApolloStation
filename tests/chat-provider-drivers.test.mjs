@@ -279,6 +279,6 @@ test("Twitch shared bot session joins many player channels on one authenticated 
   assert.equal(sent.providerMessageId, "twitch:shared-session-reply");
   assert.ok(socket.sent.some((line) => line.includes("PRIVMSG #player155 :Player 155 score reply")));
   driver.setChannels("tenant-a", "twitch-main", channels.slice(0, 154));
-  assert.ok(socket.sent.some((line) => line === "PART #player155\\r\\n"));
+  assert.ok(socket.sent.some((line) => line === "PART #player155\r\n"));
   await handle.close();
 });
