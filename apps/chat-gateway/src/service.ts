@@ -342,7 +342,6 @@ export class SupervisedChatGatewayService {
       this.nebulaArcade = new NebulaArcadeProviderRuntime({ onLiveChannels:async(tenantId,names)=>{
         const template=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==='twitch'&&connection.desired);if(!template)return[];
         const wanted=[...new Set(names.map(name=>name.replace(/^#/,'').toLowerCase()))].filter(name=>/^[a-z0-9_]{1,25}$/.test(name)&&name!==template.channelId.replace(/^#/,'').toLowerCase()).sort();
-        const desired=new Set(wanted);
         for(const prior of this.connectionStore.list(tenantId).filter(connection=>connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')))if(prior.desired)this.connectionStore.put({...prior,desired:false});
         const bindings=wanted.map(channelId=>({connectionId:`nebula-live-${channelId}`,channelId}));
         const joined=adapters.twitch.setChannels(tenantId,template.connectionId,bindings);
