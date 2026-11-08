@@ -24,6 +24,7 @@ type DriverOpenInput = Parameters<ProviderConnectionDriverV1["open"]>[0];
 export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
   readonly provider = "twitch" as const;
   private readonly active = new Map<string, ActiveConnection>();
+  private readonly desiredChannels = new Map<string, Map<string, string>>();
   private readonly websocketFactory: ChatWebSocketFactory;
   private readonly timeoutMs: number;
   private readonly now: () => Date;
@@ -35,15 +36,16 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
   setChannels(tenantId: string, anchorConnectionId: string, channels: Array<{ connectionId: string; channelId: string }>): Array<{ connectionId: string; channelId: string }> {
     const key = `${tenantId}:twitch:${anchorConnectionId}`;
     const active = this.active.get(key);
-    if (!active || active.socket.readyState !== 1) return [];
     const wanted = new Map<string, string>();
     for (const item of channels) {
       const channelId = twitchChannel(item.channelId);
       if (!item.connectionId || item.connectionId.length > 300) continue;
       wanted.set(channelId, item.connectionId);
     }
-    const anchorChannel = twitchChannel(active.connection.channelId);
-    wanted.set(anchorChannel, active.connection.connectionId);
+    const anchorChannel = active ? twitchChannel(active.connection.channelId) : undefined;
+    if (anchorChannel) wanted.set(anchorChannel, active!.connection.connectionId);
+    this.desiredChannels.set(key, wanted);
+    if (!active || active.socket.readyState !== 1) return [...wanted.entries()].map(([channelId, connectionId]) => ({ connectionId, channelId }));
     for (const channelId of active.channelBindings.keys()) {
       if (!wanted.has(channelId)) active.socket.send(`PART #${channelId}\r\n`);
     }
@@ -66,6 +68,8 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
       socket.addEventListener("close", (event) => { this.active.delete(key); if (!settled) finish(new Error("Twitch IRC closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: event.code === 1008 || event.code === 4001 ? "authentication" : "transport", reason: closeReason("Twitch IRC", event) }); });
     });
     this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata, channelBindings: new Map([[channel, input.connection.connectionId]]) });
+    const pending = this.desiredChannels.get(key);
+    if (pending) this.setChannels(input.connection.tenantId, input.connection.connectionId, [...pending.entries()].map(([channelId, connectionId]) => ({ channelId, connectionId })));
     return { close: () => { intentional = true; this.active.delete(key); safeClose(socket); } };
   }
 
