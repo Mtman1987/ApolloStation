@@ -27,7 +27,7 @@ test("Hostless bootstrap starts Nebula with an empty connection registry before 
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.deepEqual(JSON.parse(readFileSync(nebulaPath, "utf8")), {
       schemaVersion: 1,
-      revision: "hostless-chat-gateway-connection-registry-v2",
+      revision: "hostless-chat-gateway-connection-registry-v3",
       tenants: [],
     });
     assert.deepEqual(JSON.parse(readFileSync(dshPath, "utf8")), {
