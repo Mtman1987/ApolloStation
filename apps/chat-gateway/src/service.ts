@@ -178,6 +178,7 @@ export class SupervisedChatGatewayService {
   private readonly connectionClient:SpmtClient;
   private lastYouTubeSync=0;
   private lastTwitchBotSync=0;
+  private nebulaDeploymentProofSent=false;
   private readonly startedAt = new Date().toISOString();
   private readonly simulationWorker: SimulationRoomWorker;
   private readonly chatStore: SqliteChatGatewayStore;
@@ -369,6 +370,23 @@ export class SupervisedChatGatewayService {
     for(const tenantId of new Set(options.connections.map(connection=>connection.tenantId))){if(!options.nebulaArcade?.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.autoJoinLivePlayers)for(const connection of this.connectionStore.list(tenantId))if(connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')&&connection.desired)this.connectionStore.put({...connection,desired:false});}
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
+  private async sendNebulaDeploymentProofOnce(){
+    if(this.nebulaDeploymentProofSent||this.options.operationMode!=="active"||!this.nebulaArcade)return;
+    const target=this.tenants.flatMap(tenantId=>this.connectionStore.list(tenantId))
+      .find(connection=>connection.provider==="twitch"&&connection.desired&&
+        connection.channelId.toLowerCase()==="mtman1987"&&connection.state==="connected");
+    if(!target)return;
+    try{
+      const result=await this.gateway.send({schemaVersion:1,tenantId:target.tenantId,provider:"twitch",
+        connectionId:target.connectionId,channelId:target.channelId,
+        text:"Nebula Arcade deployment check: Twitch bot is connected and outbound chat is working.",
+        idempotencyKey:`nebula-deployment-proof:${this.startedAt}:${target.connectionId}`});
+      this.nebulaDeploymentProofSent=true;
+      console.info(`[nebula-arcade] deployment proof sent to #mtman1987 (${result.providerMessageId})`);
+    }catch(error){
+      console.warn("[nebula-arcade] deployment proof send failed; will retry:",error instanceof Error?error.message:"unknown error");
+    }
+  }
   private applyDiscoveredConnection(c:ProviderConnectionConfigV1){
     const prior=this.connectionStore.get(c.tenantId,c.provider,c.connectionId);
     if(!prior||prior.desired!==c.desired||prior.channelId!==c.channelId||prior.providerAccountId!==c.providerAccountId)this.connectionStore.put(c);
@@ -397,6 +415,7 @@ export class SupervisedChatGatewayService {
       }
     }catch(error){console.warn("[chat-gateway] Twitch bot provider discovery failed; will retry:",error instanceof Error?error.message:"unknown error");}}
     const connections = await this.supervisor.reconcile();
+    await this.sendNebulaDeploymentProofOnce();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenantId of new Set([...this.tenants, ...this.chatStore.listPendingTenants()])) {
       const report = await this.gateway.flush(tenantId);
