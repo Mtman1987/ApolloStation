@@ -191,8 +191,12 @@ function syncRuntimeSecrets(projectId, appName) {
     production.set("SPMT_SANDBOX_FIXTURES", "0");
     for (const key of ["APOLLO_PRIVATE_PREVIEW", "APOLLO_PREVIEW_PASSWORD", "SPMT_SANDBOX_OWNER_USERNAME", "SPMT_SANDBOX_APPS_JSON"]) production.delete(key);
     entries.splice(0, entries.length, ...production.entries());
+    const currentVariables = await request(`/apps/${encodeURIComponent(appName)}/environment-variables`);
+    const variableRows = rows(currentVariables, ["variables", "environmentVariables", "items"]);
+    if (!variableRows) fail("Hostless environment-variable listing returned an unexpected response shape; refusing to guess which sandbox settings exist.");
+    const existingKeys = new Set(variableRows.map(item => item?.name ?? item?.key).filter(value => typeof value === "string"));
     for (const key of ["APOLLO_PRIVATE_PREVIEW", "APOLLO_PREVIEW_PASSWORD", "SPMT_SANDBOX_OWNER_USERNAME", "SPMT_SANDBOX_APPS_JSON"]) {
-      runCli(["env", "unset", key, "--app", appName, "--project", String(projectId)], `Remove obsolete sandbox setting ${key}`);
+      if (existingKeys.has(key)) runCli(["env", "unset", key, "--app", appName, "--project", String(projectId)], `Remove obsolete sandbox setting ${key}`);
     }
     console.log("Node 1 deployment is pinned to production mode; obsolete private-preview and sandbox-auth settings are removed.");
   }
