@@ -462,7 +462,7 @@ function actorId(message:NormalizedChatMessageV1){return message.actor.canonical
 function providerActorId(message:NormalizedChatMessageV1){return `provider:${message.provider}:${message.actor.providerUserId}`;}
 /** Imported Twitch player keys are provider IDs, not canonical SPMT IDs. */
 function tagActorId(message:NormalizedChatMessageV1){return message.provider==="twitch"?providerActorId(message):actorId(message); }
-function gameActorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}
+function gameActorId(message:NormalizedChatMessageV1){return message.provider==="twitch"?providerActorId(message):message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}
 function messageKey(message:NormalizedChatMessageV1){return channelKey(message.tenantId,message.provider,message.connectionId,message.channelId);}
 function channelKey(tenantId:string,provider:string,connectionId:string,channelId:string){return`${tenantId}\0${provider}\0${connectionId}\0${channelId}`;}
 function gameName(gameId:string){return NEBULA_ARCADE_GAMES.find((game)=>game.id===gameId)?.name??gameId;}
