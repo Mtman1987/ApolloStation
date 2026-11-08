@@ -267,7 +267,9 @@ export class NebulaArcadeProviderRuntime {
     }
     if(!parsed || !parsed.body){if(!parsed){const tagState=await this.tagRuntime.getState(message.tenantId);if(tagState.state.players[tagActorId(message)]?.eligible!==false&&tagState.state.players[tagActorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));}return;}
     if(!parsed.gameId && ["join","leave"].includes(parsed.command)){
-      const enrolled=parsed.command==="join";this.network.enroll(actor,enrolled,message.occurredAt);
+      const enrolled=parsed.command==="join";
+      this.network.blacklist(message.tenantId,"player",actor,!enrolled,enrolled?"explicit Twitch rejoin":"explicit Twitch leave",message.occurredAt);
+      this.network.enroll(actor,enrolled,message.occurredAt);
       await this.gameStore.update(message.tenantId,state=>{for(const gameId of NEBULA_ARCADE_GAMES.map(game=>game.id))if(enrolled)joinNebulaGame(state,{userId:actor,username:message.actor.username,displayName:message.actor.displayName,gameId},new Date(message.occurredAt));else leaveNebulaGame(state,actor,gameId,new Date(message.occurredAt));});
       if(activeIds.includes("tag")){const state=(await this.tagRuntime.getState(message.tenantId)).state;if(enrolled&&!state.players[tagActorId(message)]||!enrolled&&state.players[tagActorId(message)])await experience.ingest(toTagMessage(message,`spmt ${parsed.command}`));}
       if(message.provider==="discord"&&activeIds.includes("tag"))await this.publishDashboard(message.tenantId,channel,true).catch(()=>undefined);
