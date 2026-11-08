@@ -44,7 +44,7 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const sharedBotChannel = (environment.SPACEMOUNTAIN_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
   const hasSharedBot = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === sharedBotChannel);
   if (sharedTwitchToken && !hasSharedBot && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
-    connections.push({ schemaVersion: 1, tenantId: environment.NEBULA_ARCADE_TENANT_ID || sharedBotChannel, provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || "spacemountainlive", desired: true });
+    connections.push({ schemaVersion: 1, tenantId: environment.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || "spacemountainlive", desired: true });
     console.info("[chat-gateway] Bootstrapping shared SpaceMountain Twitch bot transport.");
   }
   if (runtimeMode === "sandbox") {
