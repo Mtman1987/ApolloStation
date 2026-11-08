@@ -45,6 +45,12 @@ export async function discoverNebulaTenantFromSpmt({ spmtOrigin, workerCredentia
       typeof connection.tenantId === "string" && connection.tenantId.trim() &&
       typeof connection.channelId === "string" && connection.channelId.trim())
     .map((connection) => connection.tenantId.trim()))];
+  if (tenantIds.length === 0) {
+    // The live Chat Tag / StreamWeaver donor used this fixed SpaceMountain
+    // system tenant. StreamWeaver defines it as SPACEMOUNTAIN_SYSTEM_TENANT_ID
+    // and SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL; it is not a guessed user ID.
+    return "spacemountainlive";
+  }
   if (tenantIds.length !== 1) {
     throw new Error(`SPMT must expose exactly one Twitch workspace tenant for the recovered global Tag import; found ${tenantIds.length}`);
   }
