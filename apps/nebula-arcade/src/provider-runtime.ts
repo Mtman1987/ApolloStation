@@ -234,7 +234,7 @@ export class NebulaArcadeProviderRuntime {
     if (!channel || !experience || message.actor.isBot) return;
     const channelIds=[...new Set([message.sourceChannelId??message.channelId,message.channelId,channel.stateChannelId])];
     if (isNebulaChannelOptedOut(this.experienceStore,message.tenantId,...channelIds)) return;
-    const providerIdentity=providerActorId(message);if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId)||(providerIdentity!==actorId(message)&&this.network.blocked(message.tenantId,providerIdentity,message.actor.username,channel.stateChannelId)))return;
+    const providerIdentity=providerActorId(message),explicitPlayerRejoin=parseNebulaMessage(message.text)?.command==="join"&&!parseNebulaMessage(message.text)?.gameId;if(this.network.blocked(message.tenantId,actorId(message),message.actor.username,channel.stateChannelId,explicitPlayerRejoin)||(providerIdentity!==actorId(message)&&this.network.blocked(message.tenantId,providerIdentity,message.actor.username,channel.stateChannelId,explicitPlayerRejoin)))return;
     if(message.supportEvent){
       const event=message.supportEvent,state=(await this.tagRuntime.getState(message.tenantId)).state,user=tagActorId(message),presence=this.network.presence(message.tenantId,Date.parse(message.occurredAt));
       if(state.players[user]?.eligible!==false&&state.players[user]&&(event.kind!=="cheer"||event.amount>=100)&&(event.kind!=="raid"||presence?.liveUserIds.includes(user))){
