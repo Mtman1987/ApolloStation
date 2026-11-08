@@ -182,6 +182,20 @@ function syncRuntimeSecrets(projectId, appName) {
     !/^HOSTLESS_.*TOKEN$/.test(key) && key.startsWith(nodePrefix) &&
     typeof value === "string" && value.length > 0
   ).map(([key, value]) => [key.slice(nodePrefix.length), value]);
+  if (nodeKey === "node1") {
+    // Production Apollo must never inherit the obsolete sandbox preview gate or
+    // sandbox account mode from a copied Actions secret. These values are
+    // explicitly owned by the deployment target, not by the secret bundle.
+    const production = new Map(entries);
+    production.set("SPMT_RUNTIME_MODE", "production");
+    production.set("SPMT_SANDBOX_FIXTURES", "0");
+    for (const key of ["APOLLO_PRIVATE_PREVIEW", "APOLLO_PREVIEW_PASSWORD", "SPMT_SANDBOX_OWNER_USERNAME", "SPMT_SANDBOX_APPS_JSON"]) production.delete(key);
+    entries.splice(0, entries.length, ...production.entries());
+    for (const key of ["APOLLO_PRIVATE_PREVIEW", "APOLLO_PREVIEW_PASSWORD", "SPMT_SANDBOX_OWNER_USERNAME", "SPMT_SANDBOX_APPS_JSON"]) {
+      runCli(["env", "unset", key, "--app", appName, "--project", String(projectId)], `Remove obsolete sandbox setting ${key}`);
+    }
+    console.log("Node 1 deployment is pinned to production mode; obsolete private-preview and sandbox-auth settings are removed.");
+  }
   if (entries.length === 0) fail("No runtime secrets were present in the GitHub Actions secret bundle.");
   console.log(`Synchronizing ${entries.length} GitHub Actions secrets to ${appName} (values are write-only and never logged).`);
   // Hostless accepts multiple KEY=value arguments in one env-set operation.
