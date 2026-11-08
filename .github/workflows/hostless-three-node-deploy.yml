@@ -205,12 +205,13 @@ jobs:
           MOSAIC_STREAMWEAVER_SERVICE_TOKEN: ${{ secrets.MOSAIC_STREAMWEAVER_SERVICE_TOKEN }}
           DSH_RUNTIME_CONFIG_JSON: ${{ secrets.DSH_RUNTIME_CONFIG_JSON }}
           NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
+          TWITCH_BOT_TOKEN: ${{ secrets.TWITCH_BOT_TOKEN }}
         run: |
           node --input-type=module - <<'NODE'
           const role = process.env.NODE_ROLE;
           const required = role === "node1"
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
-            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
+            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "TWITCH_BOT_TOKEN"];
           // Existing Hostless app environment is authoritative for optional integrations.
           // Only require the shared node-to-node credentials here. Optional OAuth, DSH,
           // Mosaic, and Nebula settings are synchronized when supplied by Actions; empty
@@ -343,6 +344,9 @@ jobs:
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_TWITCH_BOT_TOKEN: ${{ secrets.TWITCH_BOT_TOKEN }}
+          APOLLO_RUNTIME_NODE2_TWITCH_BOT_USERNAME: "spacemountainlive"
+          APOLLO_RUNTIME_NODE2_SPACEMOUNTAIN_TWITCH_CHANNEL: "mtman1987"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_URL: "https://apollo-node-2.hostless.app"

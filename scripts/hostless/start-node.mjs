@@ -82,6 +82,15 @@ if (nebulaConfigRequested) {
       throw new Error("CHAT_GATEWAY_CONNECTIONS must be valid JSON before Nebula can attach its Twitch channel.");
     }
   })();
+  const sharedBotToken = process.env.TWITCH_BOT_TOKEN?.trim();
+  const sharedBotChannel = (process.env.SPACEMOUNTAIN_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
+  const sharedBotUsername = (process.env.TWITCH_BOT_USERNAME || "spacemountainlive").trim().toLowerCase();
+  if (sharedBotToken && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
+    const existing = nebulaConnections.find(connection => connection?.provider === "twitch" && String(connection.channelId || "").replace(/^#/, "").toLowerCase() === sharedBotChannel && String(connection.providerAccountId || "").toLowerCase() === sharedBotUsername);
+    if (!existing) nebulaConnections.push({ schemaVersion: 1, tenantId: process.env.NEBULA_ARCADE_TENANT_ID || sharedBotChannel, provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: sharedBotUsername, desired: true });
+    process.env.CHAT_GATEWAY_CONNECTIONS = JSON.stringify(nebulaConnections);
+    console.info("[chat-gateway] Production Twitch watcher configured for #" + sharedBotChannel + " as " + sharedBotUsername + ".");
+  }
   const supportedProviders = new Set(["twitch", "discord", "kick", "youtube"]);
   const tenantsById = new Map();
   for (const connection of nebulaConnections) {
@@ -137,8 +146,6 @@ node2.push(
 // tenant, channel, and public origin are explicitly provisioned.
 if (process.env.NEBULA_ARCADE_TENANT_ID && process.env.NEBULA_ARCADE_CHANNEL_ID && process.env.NEBULA_ARCADE_PUBLIC_ORIGIN) {
   node2.push(["apps/nebula-arcade/dist/nebula-arcade-live-server.js", { PORT: process.env.NEBULA_ARCADE_PORT ?? "3100" }]);
-} else {
-  console.warn("Nebula Arcade public game server deferred: workspace tenant, state channel, and public origin have not been provisioned yet.");
 }
 
 const services = ({ node1, node2 })[role];
