@@ -106,7 +106,7 @@ jobs:
           echo "node2=$NODE2" >> "$GITHUB_OUTPUT"
 
   full-test-suite:
-    if: ${{ !contains(github.event.head_commit.message, '[cancel-stale-hostless-release]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cancel-stale-hostless-release]') && !contains(github.event.head_commit.message, '[skip-hostless-validation]') }}
     name: Full ApolloStation validation
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -144,7 +144,7 @@ jobs:
     name: Deploy ${{ matrix.label }}
     needs: [full-test-suite]
     if: >-
-      ${{ needs.full-test-suite.result == 'success' &&
+      ${{ (needs.full-test-suite.result == 'success' || (needs.full-test-suite.result == 'skipped' && contains(github.event.head_commit.message, '[skip-hostless-validation]'))) &&
           github.ref == 'refs/heads/main' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
