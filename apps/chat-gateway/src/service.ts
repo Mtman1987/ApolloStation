@@ -39,6 +39,16 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const credential = environment.CHAT_GATEWAY_WORKER_CREDENTIAL ?? "";
   if (credential.length < 32) throw new Error("A 32+ character CHAT_GATEWAY_WORKER_CREDENTIAL is required");
   const connections = parseChatGatewayConnections(environment.CHAT_GATEWAY_CONNECTIONS);
+  // Reuse the original Chat Tag donor Twitch bot credential when SPMT has not
+  // provisioned an OAuth connection. This feeds the same live provider stream
+  // into Nebula instead of running a second, competing bot.
+  const donorTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
+  const donorChannel = (environment.CHAT_TAG_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
+  const hasDonorChannel = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === donorChannel);
+  if (donorTwitchToken && !hasDonorChannel && /^[a-z0-9_]{1,25}$/.test(donorChannel)) {
+    connections.push({ schemaVersion: 1, tenantId: environment.CHAT_TAG_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-donor-twitch-mtman1987", channelId: donorChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || environment.TWITCH_USERNAME || "mtman1987", desired: true });
+    console.info("[chat-gateway] Bootstrapping donor Chat Tag Twitch transport for #" + donorChannel + ".");
+  }
   if (runtimeMode === "sandbox") {
     if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox Chat Gateway requires SPMT_OUTBOUND_MODE=disabled");
     if (!basename(databasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox Chat Gateway requires a sandbox-named database");
@@ -346,11 +356,29 @@ export class SupervisedChatGatewayService {
     }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, senders, observers,async mutation=>{await client.mutateCommlinkLiveChat(mutation.tenantId,mutation);await client.publishEvent(mutation.tenantId,"spmt.chat.message.mutated.v1",{schemaVersion:1,provider:mutation.provider,connectionId:mutation.connectionId,channelId:mutation.channelId,messageId:mutation.messageId,operation:mutation.operation,occurredAt:mutation.occurredAt},`chat-mutation:${mutation.provider}:${mutation.connectionId}:${mutation.channelId}:${mutation.messageId}:${mutation.operation}:${mutation.occurredAt}`);});
     connectedGateway = this.gateway;
+    const spmtGrantSource = new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read", "chat:edit"], discord: ["gateway", "messages:write"], kick: ["chat:read"] } } : {});
+    const grantSource = {
+      getGrant: async (connection: ProviderConnectionConfigV1) => {
+        if (connection.connectionId !== "apollo-donor-twitch-mtman1987") return spmtGrantSource.getGrant(connection);
+        const token = process.env.TWITCH_BOT_TOKEN?.trim().replace(/^oauth:/i, "");
+        if (!token) return { status: "reauthorization-required" as const, reason: "The donor Twitch bot token is not configured." };
+        const response = await (fetchImpl ?? fetch)("https://id.twitch.tv/oauth2/validate", { headers: { Authorization: "OAuth " + token }, signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) return { status: "reauthorization-required" as const, reason: "The donor Twitch bot token failed validation (HTTP " + response.status + ")." };
+        const identity = await response.json() as { login?: unknown; client_id?: unknown; expires_in?: unknown; scopes?: unknown };
+        const username = typeof identity.login === "string" ? identity.login.trim().toLowerCase() : "";
+        const clientId = typeof identity.client_id === "string" ? identity.client_id : "";
+        const expiresIn = Number(identity.expires_in);
+        if (!username || !clientId || !Number.isFinite(expiresIn) || expiresIn <= 0) return { status: "reauthorization-required" as const, reason: "Twitch token validation returned incomplete bot identity metadata." };
+        const scopes = Array.isArray(identity.scopes) ? identity.scopes.map(String) : [];
+        if (!scopes.includes("chat:read") || !scopes.includes("chat:edit")) return { status: "reauthorization-required" as const, reason: "The donor Twitch token must include chat:read and chat:edit." };
+        return { status: "ready" as const, accessToken: token, expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(), metadata: { username, clientId } };
+      },
+    };
     this.supervisor = new ChatProviderConnectionSupervisor(
       options.workerId,
       this.connectionStore,
       this.gateway,
-      new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read", "chat:edit"], discord: ["gateway", "messages:write"], kick: ["chat:read"] } } : {}),
+      grantSource,
       adapters.drivers,
       30_000,
       (envelope) => {
