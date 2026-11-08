@@ -76,6 +76,12 @@ jobs:
             echo "Cancel-only run: no Hostless node will be deployed."
             exit 0
           fi
+          if [[ "${COMMIT_MESSAGE:-}" == *"[node2-only]"* ]]; then
+            echo "node1=false" >> "$GITHUB_OUTPUT"
+            echo "node2=true" >> "$GITHUB_OUTPUT"
+            echo "Node 2-only recovery deployment requested."
+            exit 0
+          fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "node1=true" >> "$GITHUB_OUTPUT"
             echo "node2=true" >> "$GITHUB_OUTPUT"
@@ -211,7 +217,7 @@ jobs:
           const role = process.env.NODE_ROLE;
           const required = role === "node1"
             ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
-            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "TWITCH_BOT_TOKEN"];
+            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
           // Existing Hostless app environment is authoritative for optional integrations.
           // Only require the shared node-to-node credentials here. Optional OAuth, DSH,
           // Mosaic, and Nebula settings are synchronized when supplied by Actions; empty
@@ -227,22 +233,8 @@ jobs:
               process.exit(1);
             }
           }
-          if (role === "node2") {
-            const token = process.env.TWITCH_BOT_TOKEN.trim().replace(/^oauth:/i, "");
-            const response = await fetch("https://id.twitch.tv/oauth2/validate", {
-              headers: { Authorization: "OAuth " + token },
-              signal: AbortSignal.timeout(10000),
-            });
-            if (!response.ok) throw new Error("TWITCH_BOT_TOKEN failed Twitch validation (HTTP " + response.status + ").");
-            const identity = await response.json();
-            const login = String(identity.login || "").trim().toLowerCase();
-            const scopes = Array.isArray(identity.scopes) ? identity.scopes.map(String) : [];
-            if (login !== "spacemountainlive") throw new Error("TWITCH_BOT_TOKEN must authenticate as the spacemountainlive bot account.");
-            if (!scopes.includes("chat:read") || !scopes.includes("chat:edit")) {
-              throw new Error("TWITCH_BOT_TOKEN must include chat:read and chat:edit scopes.");
-            }
-            console.log("The SpaceMountain Twitch bot token is valid for the expected account and chat scopes.");
-          }
+          // TWITCH_BOT_TOKEN is already provisioned in the Hostless app environment.
+          // Do not require a duplicate GitHub Actions secret or overwrite the Hostless value.
           const runtimeConfigName = role === "node1" ? "DSH_RUNTIME_CONFIG_JSON" : "NEBULA_ARCADE_RUNTIME_CONFIG_JSON";
           if (process.env[runtimeConfigName]?.trim()) {
             let config;
