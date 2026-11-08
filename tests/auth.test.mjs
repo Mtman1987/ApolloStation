@@ -47,6 +47,25 @@ test("service credentials are hashed at rest and issue scoped short-lived access
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("reconciling an unchanged supervised service identity preserves live access tokens across processes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-auth-reconcile-"));
+  const path = join(dir, "authority.db");
+  const store = new SqliteAuthorityStore(path);
+  const credential = "chat-gateway-service-secret-123456";
+  const options = { serviceId: "chat-gateway", credential, scopes: ["events:write", "providers:grant"], tenantMode: "any" };
+  const firstProcess = new AuthService({ store, tokenFactory: tokenFactory() });
+  firstProcess.reconcileServiceIdentity(options);
+  const issued = firstProcess.issueServiceAccess("chat-gateway", credential);
+  const before = store.getServiceIdentity("chat-gateway");
+  const secondProcess = new AuthService({ store, tokenFactory: tokenFactory() });
+  const reconciled = secondProcess.reconcileServiceIdentity(options);
+  assert.equal(reconciled.authzVersion, before.authzVersion);
+  assert.equal(reconciled.credentialHash, before.credentialHash);
+  assert.equal(secondProcess.authorize(issued.accessToken, "providers:grant").actorId, "chat-gateway");
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("service credential rotation immediately invalidates previously issued access", () => {
   const dir = mkdtempSync(join(tmpdir(), "spmt-auth-"));
   const store = new SqliteAuthorityStore(join(dir, "authority.db"));
