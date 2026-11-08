@@ -60,7 +60,11 @@ test("reconciling an unchanged supervised service identity preserves live access
   const secondProcess = new AuthService({ store, tokenFactory: tokenFactory() });
   const reconciled = secondProcess.reconcileServiceIdentity(options);
   assert.equal(reconciled.authzVersion, before.authzVersion);
-  assert.equal(reconciled.credentialHash, before.credentialHash);
+  assert.equal(reconciled.credentialHash, "[REDACTED]");
+  assert.equal(reconciled.credentialSalt, "[REDACTED]");
+  const after = store.getServiceIdentity("chat-gateway");
+  assert.equal(after.credentialHash, before.credentialHash, "unchanged reconciliation must preserve the stored credential hash");
+  assert.equal(after.credentialSalt, before.credentialSalt, "unchanged reconciliation must preserve the stored credential salt");
   assert.equal(secondProcess.authorize(issued.accessToken, "providers:grant").actorId, "chat-gateway");
   store.close();
   rmSync(dir, { recursive: true, force: true });
