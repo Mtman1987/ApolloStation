@@ -39,15 +39,14 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const credential = environment.CHAT_GATEWAY_WORKER_CREDENTIAL ?? "";
   if (credential.length < 32) throw new Error("A 32+ character CHAT_GATEWAY_WORKER_CREDENTIAL is required");
   const connections = parseChatGatewayConnections(environment.CHAT_GATEWAY_CONNECTIONS);
-  // Reuse the original Chat Tag donor Twitch bot credential when SPMT has not
-  // provisioned an OAuth connection. This feeds the same live provider stream
-  // into Nebula instead of running a second, competing bot.
-  const donorTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
-  const donorChannel = (environment.CHAT_TAG_TWITCH_CHANNEL || "mtman1987").trim().toLowerCase().replace(/^#/, "");
-  const hasDonorChannel = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === donorChannel);
-  if (donorTwitchToken && !hasDonorChannel && /^[a-z0-9_]{1,25}$/.test(donorChannel)) {
-    connections.push({ schemaVersion: 1, tenantId: environment.CHAT_TAG_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-donor-twitch-mtman1987", channelId: donorChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || environment.TWITCH_USERNAME || "mtman1987", desired: true });
-    console.info("[chat-gateway] Bootstrapping donor Chat Tag Twitch transport for #" + donorChannel + ".");
+  // Bootstrap the one shared SpaceMountain Twitch bot identity when
+  // SPMT has not provisioned its connection record.
+  const sharedTwitchToken = environment.TWITCH_BOT_TOKEN?.trim();
+  const sharedBotChannel = (environment.SPACEMOUNTAIN_TWITCH_CHANNEL || "spacemountainlive").trim().toLowerCase().replace(/^#/, "");
+  const hasSharedBot = connections.some((connection) => connection.provider === "twitch" && connection.desired && connection.channelId.replace(/^#/, "").toLowerCase() === sharedBotChannel);
+  if (sharedTwitchToken && !hasSharedBot && /^[a-z0-9_]{1,25}$/.test(sharedBotChannel)) {
+    connections.push({ schemaVersion: 1, tenantId: environment.NEBULA_ARCADE_TENANT_ID || "spacemountainlive", provider: "twitch", connectionId: "apollo-shared-spacemountain-bot", channelId: sharedBotChannel, providerAccountId: environment.TWITCH_BOT_USERNAME || "spacemountainlive", desired: true });
+    console.info("[chat-gateway] Bootstrapping shared SpaceMountain Twitch bot transport.");
   }
   if (runtimeMode === "sandbox") {
     if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox Chat Gateway requires SPMT_OUTBOUND_MODE=disabled");
