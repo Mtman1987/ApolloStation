@@ -341,10 +341,12 @@ export class SupervisedChatGatewayService {
       });
       this.nebulaArcade = new NebulaArcadeProviderRuntime({ onLiveChannels:async(tenantId,names)=>{
         const template=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==='twitch'&&connection.desired);if(!template)return[];
-        const configured=new Set(options.connections.filter(connection=>connection.tenantId===tenantId&&connection.provider==='twitch').map(connection=>connection.channelId.replace(/^#/,'').toLowerCase()));
-        const wanted=[...new Set(names.map(name=>name.replace(/^#/,'').toLowerCase()))].filter(name=>/^[a-z0-9_]{1,25}$/.test(name)&&!configured.has(name)).sort().slice(0,100),desired=new Set(wanted);let added=0;const active:Array<{connectionId:string;channelId:string}>=[];
-        for(const prior of this.connectionStore.list(tenantId).filter(connection=>connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')))if(prior.desired&&!desired.has(prior.channelId))this.connectionStore.put({...prior,desired:false});
-        for(const channelId of wanted){const connectionId=`nebula-live-${channelId}`,prior=this.connectionStore.get(tenantId,'twitch',connectionId);if(!prior?.desired){if(added>=5)continue;this.connectionStore.put({...template,connectionId,channelId,desired:true});added++;}active.push({connectionId,channelId});}return active;
+        const wanted=[...new Set(names.map(name=>name.replace(/^#/,'').toLowerCase()))].filter(name=>/^[a-z0-9_]{1,25}$/.test(name)&&name!==template.channelId.replace(/^#/,'').toLowerCase()).sort();
+        const desired=new Set(wanted);
+        for(const prior of this.connectionStore.list(tenantId).filter(connection=>connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')))if(prior.desired)this.connectionStore.put({...prior,desired:false});
+        const bindings=wanted.map(channelId=>({connectionId:`nebula-live-${channelId}`,channelId}));
+        const joined=adapters.twitch.setChannels(tenantId,template.connectionId,bindings);
+        return joined.filter(item=>item.channelId!==template.channelId.replace(/^#/,'').toLowerCase());
       }, presence:async(tenantId,players)=>{
         const connection=options.connections.find(connection=>connection.tenantId===tenantId&&connection.provider==="twitch");if(!connection)throw new Error("No Twitch connection for presence");
         const grant=await new SpmtChatProviderGrantSource(client).getGrant(connection);if(grant.status!=="ready"||!grant.metadata?.clientId)throw new Error("Twitch presence grant unavailable");
