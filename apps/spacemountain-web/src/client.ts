@@ -79,7 +79,7 @@ async function boot() {
 }
 
 async function restoreShell() {
-  try { await loadShell(); sessionRecovery.authenticated(); }
+  try { await loadShell(); sessionRecovery.authenticated(); redirectToRequestedApp(); }
   catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in with your SPMT account.");
@@ -106,6 +106,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
     // Keep credentials in the form until the browser session and shell are both usable.
     // A successful /auth response alone does not prove that the browser received a usable cookie.
     await loadShell();
+    redirectToRequestedApp();
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     sessionRecovery.authenticated();
   } catch (error) {
@@ -731,6 +732,14 @@ function parsePrincipal(value: Record<string, unknown>): Principal {
   return { actorId, tenantIds, scopes };
 }
 
+function redirectToRequestedApp() {
+  const raw = new URLSearchParams(window.location.search).get("return");
+  if (!raw) return;
+  let target: URL;
+  try { target = new URL(raw, window.location.origin); } catch { return; }
+  if (target.origin !== window.location.origin || !/^\/apps\/(?:streamweaver|discord-stream-hub|hearmeout)(?:\/|$)/.test(target.pathname)) return;
+  window.location.replace(`${target.pathname}${target.search}${target.hash}`);
+}
 function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
