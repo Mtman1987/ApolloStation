@@ -25,7 +25,6 @@ const acknowledgement = element<HTMLInputElement>("developer-acknowledgement");
 const resetDeveloperButton = element<HTMLButtonElement>("reset-developer-form");
 const registerDeveloperButton = element<HTMLButtonElement>("register-developer-app");
 const loginForm = element<HTMLFormElement>("login-form");
-const registerForm = element<HTMLFormElement>("register-form");
 const dialog = element<HTMLDialogElement>("record-dialog");
 const dialogTitle = element<HTMLElement>("record-dialog-title");
 const dialogBody = element<HTMLElement>("record-dialog-body");
@@ -46,7 +45,6 @@ const eggCompletions = createBrowserEcosystemEggCompletionQueue();
 const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
-registerForm.addEventListener("submit", (event) => void submitRegistration(event));
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
@@ -844,9 +842,8 @@ function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
   const password = String(data.get("password") ?? "");
-  const displayName = String(data.get("displayName") ?? "").trim();
-  if (!username || password.length < 12) throw new Error("Use a username and a password of at least 12 characters.");
-  return { username, password, ...(includeDisplayName ? { displayName } : {}) };
+  if (!username || !password) throw new Error("Enter your existing SPMT username and password.");
+  return { username, password };
 }
 
 function requirePrincipal() {
