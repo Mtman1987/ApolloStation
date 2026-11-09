@@ -8,8 +8,8 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <meta name="theme-color" content="#f97316">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="description" content="SPMT ecosystem home, with its Shipyard app catalog, workspace, and connected community services.">
-  <title>SPMT Ecosystem</title>
-  <link rel="stylesheet" href="/assets/web/sandbox.css">
+  <title>SPMT Account · SpaceMountain</title>
+  <link rel="stylesheet" href="/assets/web/spmt-auth.css">
   <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/contracts/human-reference":"/assets/contracts/human-reference.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
@@ -27,23 +27,15 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       </ul>
     </section>
     <section class="auth-panels" aria-label="SpaceMountain account access">
-      <p id="sandbox-auth-status" class="sandbox-auth-status" role="status" aria-live="polite" hidden></p>
+      <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite" hidden></p>
       <form id="login-form" autocomplete="on">
         <span>RETURNING CAPTAIN</span>
         <h2>Sign in</h2>
         <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
-        <label>Password<input name="password" type="password" autocomplete="current-password" minlength="12" maxlength="256" required></label>
-        <button type="submit">Enter SpaceMountain</button>
+        <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label>
+        <button type="submit">Sign in to SpaceMountain</button>\n        <p class="spmt-auth-help">Use your existing SPMT username and password. This opens your production SPMT account; it does not create a sandbox account.</p>
       </form>
-      <form id="register-form" autocomplete="on">
-        <span>NEW TO SPACEMOUNTAIN</span>
-        <h2>Create your account</h2>
-        <label>Display name<input name="displayName" autocomplete="name" maxlength="120" required></label>
-        <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
-        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
-        <button type="submit">Create SpaceMountain account</button>
-      </form>
-    </section>
+   </section>
   </main>
   <main id="shell-view" hidden><div id="spacemountain-root"></div></main>
   <dialog id="developer-dialog" aria-labelledby="developer-dialog-title">
@@ -92,10 +84,10 @@ body::before{position:fixed;inset:0;pointer-events:none;background:radial-gradie
 .auth-view{position:relative;min-height:100vh;max-width:1420px;padding:40px 42px 40px;grid-template-columns:minmax(360px,1.1fr) minmax(520px,.9fr);gap:70px}
 .auth-intro{display:flex;flex-direction:column;align-items:flex-start}.auth-product-logo{width:min(530px,80vw);height:165px;margin:0 0 -20px -38px;object-fit:contain;object-position:left center;filter:drop-shadow(0 12px 28px #000b)}
 .auth-intro>span,.auth-panels form>span{font-size:9px;color:#fbbf24}.auth-intro h1{max-width:760px;margin:16px 0 22px;font-size:clamp(48px,6vw,84px);letter-spacing:-.045em;line-height:.96;text-wrap:balance}.auth-intro p{font-size:15px;color:#b6b8c1;max-width:650px}.auth-intro ul{display:grid;grid-template-columns:1fr 1fr;gap:5px 22px;margin-top:19px;padding-left:18px;color:#a8aab4;font-size:11px;line-height:1.55}
-.auth-panels{grid-template-columns:1fr 1fr;align-items:stretch}.auth-panels form{position:relative;padding:24px;border-color:#ffffff18;border-radius:24px;background:linear-gradient(145deg,#0a0b12e8,#05060bdb);box-shadow:0 28px 80px #0009;backdrop-filter:blur(24px)}.auth-panels form::before{position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,#f9731612,transparent 34%);content:""}.auth-panels form>*{position:relative}.auth-panels h2{font-size:25px}.auth-panels label{color:#b8bac3;font-size:11px}.auth-panels input{border-color:#ffffff1f;border-radius:12px;background:#030409cc;padding:12px}.auth-panels input:focus{border-color:#f97316;box-shadow:0 0 0 3px #f9731622}.auth-panels button{border:0;border-radius:13px;background:linear-gradient(135deg,#fbbf24,#f97316);color:#1b1005;padding:12px;font-weight:900;box-shadow:0 14px 34px #f9731625}.auth-panels button:hover{background:linear-gradient(135deg,#ffd45a,#ff8a31)}
+.auth-panels{grid-template-columns:minmax(0,1fr);align-items:stretch;max-width:560px}.auth-panels form{position:relative;padding:24px;border-color:#ffffff18;border-radius:24px;background:linear-gradient(145deg,#0a0b12e8,#05060bdb);box-shadow:0 28px 80px #0009;backdrop-filter:blur(24px)}.auth-panels form::before{position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,#f9731612,transparent 34%);content:""}.auth-panels form>*{position:relative}.auth-panels h2{font-size:25px}.auth-panels label{color:#b8bac3;font-size:11px}.auth-panels input{border-color:#ffffff1f;border-radius:12px;background:#030409cc;padding:12px}.auth-panels input:focus{border-color:#f97316;box-shadow:0 0 0 3px #f9731622}.auth-panels button{border:0;border-radius:13px;background:linear-gradient(135deg,#fbbf24,#f97316);color:#1b1005;padding:12px;font-weight:900;box-shadow:0 14px 34px #f9731625}.auth-panels button:hover{background:linear-gradient(135deg,#ffd45a,#ff8a31)}
 #developer-dialog,#record-dialog{border-color:#ffffff1f;background:linear-gradient(145deg,#0a0b12f5,#05060bf5);border-radius:26px}.dialog-heading span,.manifest-review span{color:#fbbf24}.manifest-tools{border-color:#ffffff17;background:#ffffff08}.manifest-tools input,.manifest-tools textarea,.developer-fields input,.developer-fields textarea,.developer-fields select{border-color:#ffffff20;background:#030409}.manifest-tools input:focus,.manifest-tools textarea:focus,.developer-fields input:focus,.developer-fields textarea:focus,.developer-fields select:focus{border-color:#f97316;box-shadow:0 0 0 3px #f9731622}.manifest-review{border-color:#f9731645;background:#030409}.manifest-review pre{color:#f7c881}.developer-actions button[type="submit"]{color:#1b1005!important;background:linear-gradient(135deg,#fbbf24,#f97316)!important}.developer-help a{color:#fbbf24}
 .sandbox-footer{background:#030407d9;color:#666976}
-.sandbox-auth-status{grid-column:1/-1;margin:0;padding:12px 14px;border:1px solid #f59e0b55;border-radius:12px;background:#111014e8;color:#f8d797;font-size:13px;line-height:1.45}.sandbox-auth-status[data-kind="error"]{border-color:#fb718577;color:#fecdd3}.sandbox-auth-status[hidden]{display:none}
+.spmt-auth-status{grid-column:1/-1;margin:0;padding:12px 14px;border:1px solid #f59e0b55;border-radius:12px;background:#111014e8;color:#f8d797;font-size:13px;line-height:1.45}.spmt-auth-status[data-kind="error"]{border-color:#fb718577;color:#fecdd3}.spmt-auth-status[hidden]{display:none}.spmt-auth-help{margin:4px 0 0;color:#a8aab4;font-size:12px;line-height:1.5}
 @media(max-width:1000px){.auth-view{grid-template-columns:1fr;padding:40px 20px 40px}.auth-panels{max-width:760px}.auth-intro ul{max-width:700px}}
 @media(max-width:700px){:root{--guard-height:0px}.sandbox-guardrail{align-items:flex-start}.auth-view{padding-top:40px}.auth-panels{grid-template-columns:1fr}.auth-product-logo{height:120px}.auth-intro h1{font-size:48px}.auth-intro ul{grid-template-columns:1fr}}
 @media(max-width:560px){.sandbox-guardrail a{display:none}.auth-view{padding-inline:14px}.auth-intro h1{font-size:42px}.auth-intro p{font-size:13px}}
