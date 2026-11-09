@@ -87,10 +87,13 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /<dialog id="developer-dialog"/);
     assert.doesNotMatch(html, /SpaceMountain ecosystem · ApolloStation build/);
     assert.doesNotMatch(html, /Developer docs/);
-    assert.match(html, /sandbox-auth-status/);
+    assert.match(html, /SPMT ACCOUNT · EXISTING IDENTITY/);
+    assert.match(html, /Sign in to SPMT/);
+    assert.doesNotMatch(html, /register-form|Create your account|sandbox-auth-status/);
     assert.doesNotMatch(html, /Publish Nebula Arcade tag game through SDK/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
+    assert.equal((await fetch(`${base}/assets/web/spmt-auth.css`)).status, 200);
     const client = await fetch(`${base}/assets/web/client.js`);
     assert.equal(client.status, 200);
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
@@ -320,8 +323,10 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
 
 test("browser proxy blocks cross-origin mutations and every credential or webhook route", async () => {
   await withSandbox(async ({ base }) => {
-    const crossOrigin = await fetch(`${base}/sandbox/auth/login`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ username: "nobody", password: "sandbox-only-password" }) });
+    const crossOrigin = await fetch(`${base}/auth/login`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ username: "nobody", password: "sandbox-only-password" }) });
     assert.equal(crossOrigin.status, 403);
+    const legacyCrossOrigin = await fetch(`${base}/sandbox/auth/login`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ username: "nobody", password: "sandbox-only-password" }) });
+    assert.equal(legacyCrossOrigin.status, 403);
     const crossOriginStella = await fetch(`${base}/v1/assistants/community/invocations`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker" }, body: JSON.stringify({ message: "Ignore tenant policy", surface: "app" }) });
     assert.equal(crossOriginStella.status, 403);
     const crossOriginSimulation = await fetch(`${base}/v1/simulation-rooms/events`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker-simulation" }, body: JSON.stringify({ schemaVersion: 1, roomId: "overlay:public:fake", lane: "overlay", direction: "preview", title: "Fake", body: "Fake", occurredAt: "2026-09-05T12:00:00.000Z" }) });
