@@ -11,7 +11,7 @@ type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
-const authStatus = element<HTMLElement>("sandbox-auth-status");
+const authStatus = element<HTMLElement>("spmt-auth-status");
 const developerDialog = element<HTMLDialogElement>("developer-dialog");
 const closeDeveloperButton = element<HTMLButtonElement>("close-developer-console");
 const developerForm = element<HTMLFormElement>("developer-form");
@@ -92,8 +92,107 @@ async function restoreShell() {
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   try {
-    const input = authInput(loginForm, false);
-    await authRequest("/sandbox/auth/login", input, loginForm);
+    const input = authInput(loginForm);
+    await authRequest("/auth/login", input, loginForm);
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+port type { SpaceMountainShellSnapshotV1 } from "@spmt/spacemountain";
+import { SpmtApiError, SpmtClient } from "@spmt/sdk";
+import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts";
+import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
+import { SpaceMountainShellUi } from "@spmt/spacemountain/ui";
+import { SpaceMountainSessionRecoveryGate, classifySpaceMountainSessionFailure } from "./session-resilience.js";
+import { createBrowserEcosystemEggCompletionQueue, EcosystemEggRetryCoordinator, reconcileEcosystemEggCompletions } from "./egg-completion-retry.js";
+
+type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
+
+const authView = element<HTMLElement>("auth-view");
+const shellView = element<HTMLElement>("shell-view");
+const shellRoot = element<HTMLElement>("spacemountain-root");
+const authStatus = element<HTMLElement>("spmt-auth-status");
+const developerDialog = element<HTMLDialogElement>("developer-dialog");
+const closeDeveloperButton = element<HTMLButtonElement>("close-developer-console");
+const developerForm = element<HTMLFormElement>("developer-form");
+const manifestUrlInput = element<HTMLInputElement>("developer-manifest-url");
+const manifestJsonInput = element<HTMLTextAreaElement>("developer-manifest-json");
+const importManifestButton = element<HTMLButtonElement>("import-developer-manifest");
+const loadJsonButton = element<HTMLButtonElement>("load-developer-json");
+const loadCandidateButton = document.querySelector<HTMLButtonElement>("#load-candidate-example") ?? undefined;
+const manifestPreview = element<HTMLElement>("developer-manifest-preview");
+const acknowledgement = element<HTMLInputElement>("developer-acknowledgement");
+const resetDeveloperButton = element<HTMLButtonElement>("reset-developer-form");
+const registerDeveloperButton = element<HTMLButtonElement>("register-developer-app");
+const loginForm = element<HTMLFormElement>("login-form");
+const registerForm = element<HTMLFormElement>("register-form");
+const dialog = element<HTMLDialogElement>("record-dialog");
+const dialogTitle = element<HTMLElement>("record-dialog-title");
+const dialogBody = element<HTMLElement>("record-dialog-body");
+
+const spmt = new SpmtClient({
+  baseUrl: window.location.origin,
+  appId: "spacemountain",
+  fetchImpl: (input, init) => fetch(input, { ...init, credentials: "same-origin", ...(init?.signal ? {} : { signal: AbortSignal.timeout(12_000) }) }),
+});
+const controller = new SpaceMountainShellController(spmt);
+let shellUi: SpaceMountainShellUi | undefined;
+let currentPrincipal: Principal | undefined;
+let loading = false;
+let registryFingerprint = "";
+let registeredAppIds = new Set<string>();
+const sessionRecovery = new SpaceMountainSessionRecoveryGate();
+const eggCompletions = createBrowserEcosystemEggCompletionQueue();
+const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
+
+loginForm.addEventListener("submit", (event) => void submitLogin(event));
+registerForm.addEventListener("submit", (event) => void submitRegistration(event));
+closeDeveloperButton.addEventListener("click", () => developerDialog.close());
+developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
+developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
+importManifestButton.addEventListener("click", () => void importDeveloperManifest());
+loadJsonButton.addEventListener("click", () => void loadPastedManifest());
+loadCandidateButton?.addEventListener("click", () => void loadCandidateExample());
+resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
+window.setInterval(() => void watchRegistry(), 20_000);
+window.setInterval(() => void watchEvents(), 15_000);
+window.setInterval(() => void watchWorkspace(), 5_000);
+window.addEventListener("focus", () => { void watchWorkspace(); void retryEggCompletions(); });
+window.addEventListener("online", () => void retryEggCompletions());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void retryEggCompletions(); });
+let watchingWorkspace = false;
+let watchingEvents = false;
+async function watchWorkspace() {
+  if (watchingWorkspace || !currentPrincipal || loading || document.visibilityState !== "visible") return;
+  watchingWorkspace = true;
+  try {
+    const tenantId = currentPrincipal.tenantIds[0]!;
+    const [workspace, outputs] = await Promise.all([spmt.getWorkspaceProfile(tenantId), spmt.getTenantOverlayOutputs(tenantId)]);
+    shellUi?.updateWorkspace(workspace, outputs as SpaceMountainShellSnapshotV1["tenantOutputs"]);
+  } catch { /* Keep the last authorized state through brief network failures. */ }
+  finally { watchingWorkspace = false; }
+}
+window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCompletion(event as CustomEvent));
+
+void boot();
+
+async function boot() {
+  await restoreShell();
+}
+
+async function restoreShell() {
+  try { await loadShell(); sessionRecovery.authenticated(); }
+  catch (error) {
+    if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
+    if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in with your SPMT account.");
+    showSessionUnavailable(message(error));
+  }
+}
+
+async function submitLogin(event: SubmitEvent) {
+  event.preventDefault();
+  try {
+    const input = authInput(loginForm);
+    await authRequest("/auth/login", input, loginForm);
   } catch (error) { setStatus(message(error), "error"); }
 }
 
@@ -110,7 +209,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   if (button) button.disabled = true;
   setStatus("Opening your SPMT session…", "working");
   try {
-    const response = await sandboxAuthRequest(path, input, path.endsWith("/login"));
+    const response = await spmtAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : `Request failed (${response.status})`);
     // Keep credentials in the form until the browser session and shell are both usable.
@@ -125,7 +224,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   }
 }
 
-async function sandboxAuthRequest(path: string, input: Record<string, string>, retry: boolean) {
+async function spmtAuthRequest(path: string, input: Record<string, string>, retry: boolean) {
   for (let attempt = 0; attempt < (retry ? 2 : 1); attempt += 1) {
     try {
       const response = await fetch(path, {
@@ -741,7 +840,7 @@ function parsePrincipal(value: Record<string, unknown>): Principal {
   return { actorId, tenantIds, scopes };
 }
 
-function authInput(form: HTMLFormElement, includeDisplayName: boolean) {
+function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
   const password = String(data.get("password") ?? "");
