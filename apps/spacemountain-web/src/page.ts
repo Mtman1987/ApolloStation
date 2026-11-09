@@ -29,11 +29,12 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
     <section class="auth-panels" aria-label="SpaceMountain account access">
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite" hidden></p>
       <form id="login-form" autocomplete="on">
-        <span>RETURNING CAPTAIN</span>
-        <h2>Sign in</h2>
+        <span>SPMT ACCOUNT · EXISTING IDENTITY</span>
+        <h2>Sign in to SPMT</h2>
         <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label>
-        <button type="submit">Sign in to SpaceMountain</button>\n        <p class="spmt-auth-help">Use your existing SPMT username and password. This opens your production SPMT account; it does not create a sandbox account.</p>
+        <button type="submit">Sign in to SpaceMountain</button>
+        <p class="spmt-auth-help">Use your existing SPMT username and password. This opens your production SPMT account; no new account is created.</p>
       </form>
    </section>
   </main>
