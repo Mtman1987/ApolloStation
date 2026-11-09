@@ -109,7 +109,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         if (!session.ok) return json(response, session.status, { error: "Sign in to view your personal overlay" });
         return json(response, 200, { url: "/workspace/overlay" });
       }
-      // Stable deep link for the production account and provider-linking screen.\n      if (request.method === "GET" && url.pathname === "/account") { response.writeHead(302, { location: `/?view=account${url.search}`, "cache-control": "no-store" }); response.end(); return; }\n      if (request.method === "GET" && url.pathname === "/apps/mission-control") { response.writeHead(302, { location: "/?app=stellar-core&panel=mission-control", "cache-control": "no-store" }); response.end(); return; }
+      // Stable deep link for the production account and provider-linking screen.
+      if (request.method === "GET" && url.pathname === "/account") { response.writeHead(302, { location: `/?view=account${url.search}`, "cache-control": "no-store" }); response.end(); return; }
+      if (request.method === "GET" && url.pathname === "/apps/mission-control") { response.writeHead(302, { location: "/?app=stellar-core&panel=mission-control", "cache-control": "no-store" }); response.end(); return; }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.setHeader("cross-origin-resource-policy","cross-origin"); response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && (url.pathname === "/simulation-rooms/arcade" || url.pathname === "/assets/nebula-arcade/widget-stage.js" || url.pathname.startsWith("/assets/nebula-arcade/widgets/"))) {
         if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
