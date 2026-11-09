@@ -36,7 +36,8 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
         <button type="submit">Sign in to SpaceMountain</button>
         <p class="spmt-auth-help">Use your existing SPMT username and password. This opens your production SPMT account; no new account is created.</p>
       </form>
-   </section>
+
+    </section>
   </main>
   <main id="shell-view" hidden><div id="spacemountain-root"></div></main>
   <dialog id="developer-dialog" aria-labelledby="developer-dialog-title">
