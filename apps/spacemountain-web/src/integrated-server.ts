@@ -65,6 +65,12 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     if(SPMT_API.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     const activityPath = url.pathname === '/activity' || url.pathname === '/activity-lite' || url.pathname === '/watch' || url.pathname === '/lounge-media/player' || url.pathname === '/spotlight-media' || url.pathname.startsWith('/spotlight-media/') || url.pathname.startsWith('/api/spotlight-media/') || url.pathname.startsWith('/api/watch/broadcast/') || (url.pathname === '/' && url.searchParams.has('frame_id')) || url.pathname === '/api/watch/activity-default' || /^\/api\/watch\/sessions\/[^/]+\/(?:state|broadcast\/[^/]+|screen\/[a-f0-9-]{36}\/[^/]+)$/.test(url.pathname) || url.pathname === '/api/discord/interactions';
     const app=activityPath?'hearmeout':greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
+      if (app === "streamweaver" && !hasSpmtBrowserSession(request)) {
+        const returnTo = `${url.pathname}${url.search}`;
+        response.writeHead(302, { location: `/?return=${encodeURIComponent(returnTo)}`, "cache-control": "no-store" });
+        response.end();
+        return;
+      }
       const path=url.pathname===`/health/${app}`?"/health/ready":url.pathname+url.search;
       return proxyDirect(request,response,options.greenAppOrigins[app]!,path,true);
     }
@@ -74,6 +80,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
   return{server:outer,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==="string")throw new Error("SpaceMountain parity base host did not bind a TCP port");basePort=address.port;await listen(outer,options.port??8080,options.host??"0.0.0.0");},async close(){closeRtc();if(outer.listening)await close(outer);await base.close();}};
 }
 
+function hasSpmtBrowserSession(request:IncomingMessage):boolean{return(request.headers.cookie??"").split(";").some((item)=>/^\s*spmt_token=.+/.test(item));}
 function isPreviewAuthorized(header:string|undefined,password:string):boolean{
   if(!header?.startsWith("Basic "))return false;
   let decoded:string;
