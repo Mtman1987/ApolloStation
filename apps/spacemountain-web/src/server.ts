@@ -168,7 +168,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         }
         return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       }
-      if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && ["/assets/web/sandbox.css", "/assets/web/spmt-auth.css"].includes(url.pathname)) return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if(request.method==="GET"&&["/docs","/docs/streamweaver","/docs/developers/streamweaver","/docs/streamweaver/parity"].includes(url.pathname))return html(response,200,renderEcosystemDocs(url.pathname,buildSha)!);
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));
@@ -185,18 +185,18 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
         return proxyNebulaArcade(response, request, url, nebulaArcadeOrigin, fetchImpl);
       }
-      if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {
+      if (request.method === "POST" && ["/auth/logout", "/sandbox/auth/logout"].includes(url.pathname)) {
         requireSameOrigin(request);
         const upstream = await fetchImpl(`${spmtOrigin}/v1/auth/logout`, {method:"POST", headers:{cookie:request.headers.cookie ?? ""}, redirect:"manual", signal:AbortSignal.timeout(10000)});
         if (!upstream.ok) throw new WebHostError(503, "Sign-out could not complete. Please retry.");
         await upstream.arrayBuffer();
         return json(response, 200, { ok: true }, { "set-cookie": clearSessionCookie() });
       }
-      if (request.method === "POST" && url.pathname === "/sandbox/auth/login") {
+      if (request.method === "POST" && ["/auth/login", "/sandbox/auth/login"].includes(url.pathname)) {
         requireSameOrigin(request);
         return login(response, spmtOrigin, fetchImpl, await readJsonBody(request));
       }
-      if (request.method === "POST" && url.pathname === "/sandbox/auth/register") {
+      if (request.method === "POST" && ["/auth/register", "/sandbox/auth/register"].includes(url.pathname)) {
         requireSameOrigin(request);
         return register(response, spmtOrigin, fetchImpl, await readJsonBody(request));
       }
@@ -590,7 +590,7 @@ async function limitedBody(response: Response, maximum: number, errorMessage: st
 }
 
 function credentialsFrom(body: Record<string, unknown>, enforceRegistrationPasswordPolicy = false) { return { username: requiredText(body.username, "username", 120), password: requiredText(body.password, "password", 256, false, enforceRegistrationPasswordPolicy ? 12 : 1) }; }
-function requiredText(value: unknown, name: string, max: number, trim = true, minimum = 1) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (result.length < minimum) throw new WebHostError(400, "Use a sandbox-only password of at least 12 characters"); return result; }
+function requiredText(value: unknown, name: string, max: number, trim = true, minimum = 1) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (result.length < minimum) throw new WebHostError(400, "Use a password that meets the SPMT account policy"); return result; }
 function sessionHeaders(response: Response) { const cookies = getSetCookies(response.headers).filter((value) => value.startsWith("spmt_token=")); return cookies.length ? { "set-cookie": cookies } : {}; }
 function getSetCookies(headers: Headers) { const value = headers as Headers & { getSetCookie?: () => string[] }; const result = value.getSetCookie?.() ?? []; if (result.length) return result; const single = headers.get("set-cookie"); return single ? [single] : []; }
 function clearSessionCookie() { return "spmt_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"; }

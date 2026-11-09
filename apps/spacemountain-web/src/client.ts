@@ -11,7 +11,7 @@ type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
-const authStatus = element<HTMLElement>("sandbox-auth-status");
+const authStatus = element<HTMLElement>("spmt-auth-status");
 const developerDialog = element<HTMLDialogElement>("developer-dialog");
 const closeDeveloperButton = element<HTMLButtonElement>("close-developer-console");
 const developerForm = element<HTMLFormElement>("developer-form");
@@ -25,7 +25,6 @@ const acknowledgement = element<HTMLInputElement>("developer-acknowledgement");
 const resetDeveloperButton = element<HTMLButtonElement>("reset-developer-form");
 const registerDeveloperButton = element<HTMLButtonElement>("register-developer-app");
 const loginForm = element<HTMLFormElement>("login-form");
-const registerForm = element<HTMLFormElement>("register-form");
 const dialog = element<HTMLDialogElement>("record-dialog");
 const dialogTitle = element<HTMLElement>("record-dialog-title");
 const dialogBody = element<HTMLElement>("record-dialog-body");
@@ -46,7 +45,6 @@ const eggCompletions = createBrowserEcosystemEggCompletionQueue();
 const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
-registerForm.addEventListener("submit", (event) => void submitRegistration(event));
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
@@ -81,7 +79,7 @@ async function boot() {
 }
 
 async function restoreShell() {
-  try { await loadShell(); sessionRecovery.authenticated(); }
+  try { await loadShell(); sessionRecovery.authenticated(); redirectToRequestedApp(); }
   catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in with your SPMT account.");
@@ -92,16 +90,8 @@ async function restoreShell() {
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   try {
-    const input = authInput(loginForm, false);
-    await authRequest("/sandbox/auth/login", input, loginForm);
-  } catch (error) { setStatus(message(error), "error"); }
-}
-
-async function submitRegistration(event: SubmitEvent) {
-  event.preventDefault();
-  try {
-    const input = authInput(registerForm, true);
-    await authRequest("/sandbox/auth/register", input, registerForm);
+    const input = authInput(loginForm);
+    await authRequest("/auth/login", input, loginForm);
   } catch (error) { setStatus(message(error), "error"); }
 }
 
@@ -110,12 +100,13 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   if (button) button.disabled = true;
   setStatus("Opening your SPMT session…", "working");
   try {
-    const response = await sandboxAuthRequest(path, input, path.endsWith("/login"));
+    const response = await spmtAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : `Request failed (${response.status})`);
     // Keep credentials in the form until the browser session and shell are both usable.
     // A successful /auth response alone does not prove that the browser received a usable cookie.
     await loadShell();
+    redirectToRequestedApp();
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     sessionRecovery.authenticated();
   } catch (error) {
@@ -125,7 +116,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   }
 }
 
-async function sandboxAuthRequest(path: string, input: Record<string, string>, retry: boolean) {
+async function spmtAuthRequest(path: string, input: Record<string, string>, retry: boolean) {
   for (let attempt = 0; attempt < (retry ? 2 : 1); attempt += 1) {
     try {
       const response = await fetch(path, {
@@ -741,15 +732,21 @@ function parsePrincipal(value: Record<string, unknown>): Principal {
   return { actorId, tenantIds, scopes };
 }
 
-function authInput(form: HTMLFormElement, includeDisplayName: boolean) {
+function redirectToRequestedApp() {
+  const raw = new URLSearchParams(window.location.search).get("return");
+  if (!raw) return;
+  let target: URL;
+  try { target = new URL(raw, window.location.origin); } catch { return; }
+  if (target.origin !== window.location.origin || !/^\/apps\/(?:streamweaver|discord-stream-hub|hearmeout)(?:\/|$)/.test(target.pathname)) return;
+  window.location.replace(`${target.pathname}${target.search}${target.hash}`);
+}
+function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
   const password = String(data.get("password") ?? "");
-  const displayName = String(data.get("displayName") ?? "").trim();
-  if (!username || password.length < 12) throw new Error("Use a username and a password of at least 12 characters.");
-  return { username, password, ...(includeDisplayName ? { displayName } : {}) };
+  if (!username || !password) throw new Error("Enter your existing SPMT username and password.");
+  return { username, password };
 }
-
 function requirePrincipal() {
   if (!currentPrincipal) throw new Error("Sign in to your SPMT account first.");
   return currentPrincipal;
