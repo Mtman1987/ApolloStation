@@ -141,7 +141,11 @@ test("Workspace room surfaces and room lifecycle APIs are reachable through brow
     assert.match(surface.headers.get("content-security-policy"),/frame-ancestors 'self'/);
     assert.match(await surface.text(),/simulation-rooms-client.js/);
     const registration = await fetch(`${base}/sandbox/auth/register`,{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"room-tester",displayName:"Room Tester",password:"test-only-room-password"})});
-    const cookie=registration.headers.get("set-cookie").split(";")[0];
+    assert.equal(registration.status, 201);
+    const signIn = await fetch(`${base}/auth/login`, { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ username: "room-tester", password: "test-only-room-password" }) });
+    assert.equal(signIn.status, 200, "canonical SPMT sign-in route authenticates against the SPMT authority");
+    assert.match(signIn.headers.get("set-cookie") ?? "", /^spmt_token=/, "successful SPMT sign-in sets the browser session cookie");
+    const cookie=signIn.headers.get("set-cookie").split(";")[0];
     const principal=await (await fetch(`${base}/v1/session`,{headers:{cookie}})).json();
     const headers={cookie,origin:base,"x-spmt-tenant":principal.tenantIds[0],"content-type":"application/json","idempotency-key":"room-preview"};
     assert.equal((await fetch(`${base}/v1/simulation-rooms/events`,{method:"POST",headers,body:JSON.stringify({schemaVersion:1,roomId:"preview",lane:"chat",direction:"ingress",title:"Input",body:"hello",occurredAt:new Date().toISOString()})})).status,200);
