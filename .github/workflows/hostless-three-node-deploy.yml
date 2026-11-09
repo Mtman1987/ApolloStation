@@ -398,3 +398,62 @@ jobs:
           APOLLO_RUNTIME_NODE1_DSH_MTFIXIT_STORE: ${{ secrets.DSH_MTFIXIT_STORE }}
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
+
+  attach-spacemountain-domain:
+    name: Attach spacemountain.live to the Node 1 same-origin gateway
+    needs: [full-test-suite, deploy-node]
+    if: >-
+      ${{ github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' ||
+           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) &&
+          needs.full-test-suite.result == 'success' &&
+          needs.deploy-node.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Attach domain without changing existing mappings
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://api.hostless.cloud/v1";
+          const app = "apollo-node-1";
+          const domain = "spacemountain.live";
+          const token = process.env.HOSTLESS_TOKEN;
+          if (!token) throw new Error("HOSTLESS_NODE1_TOKEN is missing.");
+          async function call(method, path, body) {
+            const response = await fetch(base + path, {
+              method,
+              headers: { Authorization: token, Accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
+              ...(body ? { body: JSON.stringify(body) } : {}),
+            });
+            const raw = await response.text();
+            let value = {};
+            try { value = raw ? JSON.parse(raw) : {}; } catch { value = { message: raw.slice(0, 300) }; }
+            if (!response.ok) {
+              const detail = value?.message ?? value?.error ?? ("HTTP " + response.status);
+              throw new Error("Hostless " + method + " " + path + " failed (" + response.status + "): " + String(detail).slice(0, 500));
+            }
+            return value;
+          }
+          function list(value) {
+            if (Array.isArray(value)) return value;
+            for (const key of ["domains", "customDomains", "items", "data"]) {
+              if (Array.isArray(value?.[key])) return value[key];
+              if (Array.isArray(value?.data?.[key])) return value.data[key];
+            }
+            return [];
+          }
+          const current = await call("GET", "/apps/" + app + "/custom-domains");
+          const found = list(current).find(item => String(item?.domain ?? item?.hostname ?? item?.name ?? "").toLowerCase() === domain);
+          let result;
+          if (found) {
+            result = { alreadyAttached: true, domain, existing: found };
+          } else {
+            const attached = await call("POST", "/apps/" + app + "/custom-domains", { domain });
+            result = { alreadyAttached: false, domain, attached };
+          }
+          const safe = JSON.stringify(result, (key, value) => /token|secret|password|cookie|authorization/i.test(key) ? "[redacted]" : value, 2);
+          console.log(safe);
+          NODE
