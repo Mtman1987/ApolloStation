@@ -463,7 +463,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
-        const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
         const password = str(body.password, "password");
 
         // Production credentials remain owned by the existing donor SPMT service.
