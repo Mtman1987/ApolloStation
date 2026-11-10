@@ -11,7 +11,7 @@ import { SpmtClient } from "../packages/sdk/dist/index.js";
 test("Stella uses one metered durable job path for hosted Qwen and eligible Companion routing", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-vertical-"));
   const credential = "stellar-worker-test-credential-1234567890";
-  const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
+  const service = createSpmtService({ runtimeMode: "sandbox", databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
   try {
     service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     await service.listen();
