@@ -18,7 +18,7 @@ test("signed-in users can verify and link Twitch and Discord through the existin
     if (url === "https://discord.com/api/v10/users/@me") return Response.json({ id: "discord-user-8", username: "captain" });
     throw new Error(`Unexpected provider request: ${url}`);
   };
-  const service = createSpmtService({
+  const service = createSpmtService({ runtimeMode: "sandbox",
     databasePath: join(directory, "spmt.sqlite"),
     webhookKey: Buffer.alloc(32, 9),
     host: "127.0.0.1",
