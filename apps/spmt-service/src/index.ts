@@ -463,15 +463,50 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
-        const username = str(body.username, "username");
+        const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        const password = str(body.password, "password");
+
+        // Production credentials remain owned by the existing donor SPMT service.
+        // Apollo creates only a short-lived local session for an already-linked owner
+        // workspace; it never creates a second password or accepts a client tenant ID.
+        if (runtimeMode === "production") {
+          try {
+            const donorLogin = await upstreamJson(fetchImpl, "https://spmt.live/api/auth/login", { username, password });
+            if (!donorLogin.response.ok) return json(response, donorLogin.response.status === 401 ? 401 : 503, { error: donorLogin.response.status === 401 ? "invalid_credentials" : "identity_unavailable" });
+            const donorToken = typeof record(donorLogin.body)?.token === "string" ? record(donorLogin.body)!.token as string : "";
+            if (!donorToken) return json(response, 502, { error: "identity_unavailable" });
+            const donorMe = await fetchImpl("https://spmt.live/api/auth/me", { headers: { accept: "application/json", authorization: `Bearer ${donorToken}` }, redirect: "manual", signal: AbortSignal.timeout(8000) });
+            if (!donorMe.ok) return json(response, 502, { error: "identity_unavailable" });
+            const donorPayload = record(await donorMe.json().catch(() => ({})));
+            const donorUser = record(donorPayload?.user);
+            const donorId = typeof donorUser?.id === "string" ? donorUser.id : "";
+            const donorUsername = typeof donorUser?.username === "string" ? donorUser.username.trim().toLowerCase() : "";
+            if (!donorId || !donorUsername || donorUsername !== username) return json(response, 401, { error: "invalid_credentials" });
+
+            const profile = data.getProfileByUsername(donorUsername);
+            if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "This SPMT account has no existing Apollo workspace mapping." });
+            const tenantIds = profile.tenantIds.filter((tenantId) => {
+              try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
+              catch { return false; }
+            });
+            if (!tenantIds.length || !authority.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
+
+            const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
+            const browser = auth.issueBrowserSession(issued.accessToken);
+            return json(response, 200, { profile, tenantIds }, { "set-cookie": browserSessionCookie(browser.accessToken) });
+          } catch {
+            return json(response, 503, { error: "identity_unavailable", message: "The existing SPMT identity service could not verify this login." });
+          }
+        }
+
         const inspection = accounts.inspectSignIn(username);
         if (inspection.state === "setup-required") {
           return json(response, 409, { error: "setup_required", flow: "first-time-setup", next: "spacemountain-invite", optionsUrl: "/v1/auth/setup-options", tenantId: inspection.tenantId });
         }
         try {
           const ownerUsername = options.sandboxOwnerUsername?.trim().toLowerCase();
-          const isSandboxOwner = runtimeMode === "sandbox" && Boolean(ownerUsername) && username.trim().toLowerCase() === ownerUsername;
-          const result = data.login(username, str(body.password, "password"), isSandboxOwner ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
+          const isSandboxOwner = runtimeMode === "sandbox" && Boolean(ownerUsername) && username === ownerUsername;
+          const result = data.login(username, password, isSandboxOwner ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
           const browser = auth.issueBrowserSession(result.tokens.accessToken);
           return json(response, 200, result, { "set-cookie": browserSessionCookie(browser.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
