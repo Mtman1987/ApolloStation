@@ -461,8 +461,9 @@ jobs:
           }
 
           function hostname(item) {
-            return String(item?.domain ?? item?.hostname ?? item?.name ?? "")
-              .toLowerCase().replace(/^https?:\\/\\//, "").replace(/\\/$/, "");
+            let value = String(item?.domain ?? item?.hostname ?? item?.name ?? "").toLowerCase();
+            value = value.replace("https://", "").replace("http://", "");
+            return value.endsWith("/") ? value.slice(0, -1) : value;
           }
 
           const path = "/apps/" + app + "/custom-domains";
