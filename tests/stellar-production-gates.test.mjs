@@ -29,12 +29,12 @@ test("a new supervised cohort rotates the durable Stellar worker credential", as
   const databasePath = join(directory, "stellar.sqlite");
   const firstCredential = "stellar-worker-first-credential-123456789";
   const nextCredential = "stellar-worker-next-credential-1234567890";
-  let service = createSpmtService({ databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: firstCredential });
+  let service = createSpmtService({ runtimeMode: "sandbox", databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: firstCredential });
   try {
     await service.listen();
     assert.ok(service.auth.issueServiceAccess("stellar-core", firstCredential).accessToken);
     await service.close();
-    service = createSpmtService({ databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: nextCredential });
+    service = createSpmtService({ runtimeMode: "sandbox", databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: nextCredential });
     await service.listen();
     assert.ok(service.auth.issueServiceAccess("stellar-core", nextCredential).accessToken);
     assert.throws(() => service.auth.issueServiceAccess("stellar-core", firstCredential), /Invalid service credential/);
@@ -46,7 +46,7 @@ test("a new supervised cohort rotates the durable Stellar worker credential", as
 
 test("Stellar privacy minimizes raw content, exports only the caller, and deletes only the caller", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-privacy-"));
-  const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 6), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test" });
+  const service = createSpmtService({ runtimeMode: "sandbox", databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 6), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test" });
   try {
     service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     for (const [userId, username] of [["user-one", "privacy-one"], ["user-two", "privacy-two"]]) { service.authority.ensureUser(userId); service.data.registerUser({ userId, username, displayName: username, password: "privacy-password-123", tenantIds: ["tenant-privacy"] }); }
@@ -79,7 +79,7 @@ test("Stellar privacy minimizes raw content, exports only the caller, and delete
 
 test("the real Stella route reaches Free-plan warning and hard-stop boundaries", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-cap-")), credential = "stellar-worker-quota-credential-123456789";
-  const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 7), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
+  const service = createSpmtService({ runtimeMode: "sandbox", databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 7), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
   try {
     service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     await service.listen();
