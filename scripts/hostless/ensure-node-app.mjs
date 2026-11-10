@@ -238,8 +238,30 @@ if (matching.length === 0) {
 }
 // Preserve existing Nebula tenant/channel/runtime settings when Actions has no replacement values.\n// Runtime sync below only updates explicitly supplied non-empty values.
 if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
-  process.env.SPMT_ORIGIN = await resolveNode1Origin();
-  process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN = process.env.SPMT_ORIGIN;
+  // Prefer the explicit, workflow-provisioned Node 1 origin. The Hostless app
+  // details response may expose both its default and custom domains; treating
+  // those as competing origins would incorrectly block a correctly configured
+  // Node 2 release. Discovery remains a fallback only when no origin is set.
+  const configuredOrigin = process.env.APOLLO_RUNTIME_NODE2_SPMT_ORIGIN?.trim();
+  if (configuredOrigin) {
+    let parsedOrigin;
+    try { parsedOrigin = new URL(configuredOrigin); } catch {
+      fail("APOLLO_RUNTIME_NODE2_SPMT_ORIGIN must be a valid HTTPS origin.");
+    }
+    if (parsedOrigin.protocol !== "https:" || parsedOrigin.pathname !== "/" ||
+        parsedOrigin.search || parsedOrigin.hash || parsedOrigin.username || parsedOrigin.password) {
+      fail("APOLLO_RUNTIME_NODE2_SPMT_ORIGIN must be a clean HTTPS origin without credentials, path, query, or fragment.");
+    }
+    const health = await fetch(`${parsedOrigin.origin}/health/ready`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!health.ok) fail(`Configured Node 1 origin readiness returned HTTP ${health.status}; Node 2 will not deploy against an unhealthy authority.`);
+    process.env.SPMT_ORIGIN = parsedOrigin.origin;
+    console.log("Using the configured, healthy Node 1 SPMT origin.");
+  } else {
+    process.env.SPMT_ORIGIN = await resolveNode1Origin();
+  }
 }
 await syncRuntimeSecrets(projectId, node.app);
 console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
