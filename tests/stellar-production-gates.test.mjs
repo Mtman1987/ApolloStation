@@ -86,7 +86,7 @@ test("the real Stella route reaches Free-plan warning and hard-stop boundaries",
     const address = service.server.address(); assert.ok(address && typeof address !== "string"); const baseUrl = `http://127.0.0.1:${address.port}`;
     const registration = await fetch(`${baseUrl}/v1/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "quota-user", displayName: "Quota User", password: "quota-password-123" }) }).then((response) => response.json());
     service.control.installApp(registration.tenantId, "stellar-core");
-    const session = await fetch(`${baseUrl}/v1/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "quota-user", password: "quota-password-123" }) }).then((response) => response.json());
+    const session = service.data.login("quota-user", "quota-password-123", ["assistants:invoke", "usage:read", "stellar:context:read", "stellar:context:write", "jobs:read", "jobs:write"]);
     const user = new SpmtClient({ baseUrl, appId: "spacemountain", getAccessToken: () => session.tokens.accessToken });
     const worker = new SpmtClient({ baseUrl, appId: "stellar-core", getAccessToken: () => service.auth.issueServiceAccess("stellar-core", credential).accessToken });
     await worker.reportExecutionWorker({ executionOwner: "stellar-core", workerId: "quota-worker", executionTarget: "sprite", state: "ready", capabilityIds: [STELLAR_CHAT_CAPABILITY_ID], providerHealthy: true, startedAt: new Date().toISOString(), metrics });
