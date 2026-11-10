@@ -24,7 +24,7 @@ async function fixture(t) {
   const tenantId=registration.body.tenantId; const userId=registration.body.profile.userId;
   const login=await jsonRequest(`${base}/v1/auth/login`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username:"captain",password:"correct-horse-battery-staple"})});
   assert.equal(login.response.status,200); assert.match(login.response.headers.get("set-cookie")??"",/HttpOnly/);
-  return {service,base,tenantId,userId,userToken:login.body.tokens.accessToken,deliveries};
+  const browserToken=(login.response.headers.get("set-cookie")??"").match(/(?:^|;\s*)spmt_token=([^;]+)/)?.[1]; assert.ok(browserToken,"production donor login must issue an Apollo browser session"); return {service,base,tenantId,userId,userToken:decodeURIComponent(browserToken),deliveries};
 }
 
 test("human login and confidential OAuth preserve state, exact redirect, userinfo and one-time code semantics", async(t)=>{
