@@ -29,6 +29,7 @@ on:
       - "hostless.yaml"
       - "package.json"
       - "package-lock.json"
+      - "tests/**"
       - "tsconfig*.json"
       - "scripts/hostless/**"
       - "scripts/nebula-tenant-discovery.mjs"
