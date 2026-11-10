@@ -79,7 +79,7 @@ test("Stellar privacy minimizes raw content, exports only the caller, and delete
 
 test("the real Stella route reaches Free-plan warning and hard-stop boundaries", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-cap-")), credential = "stellar-worker-quota-credential-123456789";
-  const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 7), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
+  const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 7), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential, fetchImpl: async (url) => { const path = new URL(String(url)).pathname; if (path === "/api/auth/login") return new Response(JSON.stringify({ token: "donor-quota-test-token" }), { status: 200, headers: { "content-type": "application/json" } }); if (path === "/api/auth/me") return new Response(JSON.stringify({ user: { id: "donor-quota-user-1", username: "quota-user" } }), { status: 200, headers: { "content-type": "application/json" } }); return new Response("unexpected outbound request", { status: 500 }); } });
   try {
     service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     await service.listen();
