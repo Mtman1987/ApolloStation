@@ -14,7 +14,7 @@ async function jsonRequest(url, options={}) { const response=await fetch(url,opt
 async function fixture(t) {
   const dir=mkdtempSync(join(tmpdir(),"spmt-final-"));
   const deliveries=[];
-  const service=createSpmtService({ databasePath:join(dir,"spmt.db"),webhookKey:Buffer.alloc(32,9),port:0,host:"127.0.0.1",fetchImpl:async(url,options)=>{deliveries.push({url:String(url),options});return new Response("ok",{status:200});}});
+  const service=createSpmtService({ databasePath:join(dir,"spmt.db"),webhookKey:Buffer.alloc(32,9),port:0,host:"127.0.0.1",fetchImpl:async(url,options)=>{const target=new URL(String(url));if(target.pathname==="/api/auth/login")return new Response(JSON.stringify({token:"donor-test-token"}),{status:200,headers:{"content-type":"application/json"}});if(target.pathname==="/api/auth/me")return new Response(JSON.stringify({user:{id:"donor-captain-1",username:"captain"}}),{status:200,headers:{"content-type":"application/json"}});deliveries.push({url:String(url),options});return new Response("ok",{status:200});}});
   await service.listen();
   t.after(async()=>{await service.close();rmSync(dir,{recursive:true,force:true});});
   const address=service.server.address(); assert.ok(address&&typeof address!=="string");
