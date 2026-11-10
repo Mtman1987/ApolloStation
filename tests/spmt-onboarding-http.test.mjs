@@ -8,7 +8,7 @@ import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 async function withService(run) {
   const dir = mkdtempSync(join(tmpdir(), "spmt-onboarding-http-"));
   const sent = [];
-  const service = createSpmtService({ runtimeMode: "sandbox", databasePath: join(dir, "spmt.db"), webhookKey: Buffer.alloc(32, 7), port: 0, host: "127.0.0.1", publicBaseUrl: "https://spmt.live", sendDiscordDm: async (id, message) => sent.push({ id, message }) });
+  const service = createSpmtService({ databasePath: join(dir, "spmt.db"), webhookKey: Buffer.alloc(32, 7), port: 0, host: "127.0.0.1", publicBaseUrl: "https://spmt.live", sendDiscordDm: async (id, message) => sent.push({ id, message }) });
   try {
     await service.listen();
     const address = service.server.address();
