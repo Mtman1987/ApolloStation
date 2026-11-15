@@ -461,6 +461,41 @@ export function createSpmtService(options: SpmtServiceOptions) {
         return json(response, 201, { profile, tenantId });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge") {
+        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
+        const body = await readBody(request);
+        const bridgeToken = str(body.token, "token");
+        if (bridgeToken.length > 8192) return json(response, 400, { error: "invalid_request" });
+        try {
+          // Verify the donor-issued assertion with the donor itself. Never trust
+          // decoded claims or accept a client-supplied username or tenant.
+          const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
+            headers: { accept: "application/json", authorization: `Bearer ${bridgeToken}` },
+            redirect: "manual", signal: AbortSignal.timeout(8000),
+          });
+          if (!donorMe.ok) return json(response, donorMe.status === 401 || donorMe.status === 403 ? 401 : 503, { error: "identity_unavailable" });
+          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
+          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
+          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
+          const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim().toLowerCase() : "";
+          if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_donor_session" });
+
+          const profile = data.getProfileByUsername(donorUsername);
+          if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "This SPMT account has no existing Apollo workspace mapping." });
+          const tenantIds = profile.tenantIds.filter((tenantId) => {
+            try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
+            catch { return false; }
+          });
+          if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
+
+          const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
+          const browser = auth.issueBrowserSession(issued.accessToken);
+          return json(response, 200, { profile, tenantIds }, { "set-cookie": browserSessionCookie(browser.accessToken) });
+        } catch {
+          return json(response, 503, { error: "identity_unavailable", message: "The existing SPMT identity service could not verify this browser session." });
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
         const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
