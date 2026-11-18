@@ -88,6 +88,9 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(callbackClient, /completeSpmtOAuthCallback/);
     assert.match(callbackClient, /api\/oauth\/authorize/);
     assert.match(callbackClient, /spmt_oauth_state/);
+    assert.match(callbackClient, /code_challenge_method/);
+    assert.match(callbackClient, /spmt_oauth_code_verifier/);
+    assert.match(callbackClient, /codeVerifier/);
     const html = await page.text();
     assert.doesNotMatch(html, /SPACEMOUNTAIN\.LIVE|sandbox-guardrail|sandbox-status|refresh-shell|id="logout"|Sandbox open/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
@@ -103,10 +106,10 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     assert.equal((await fetch(`${base}/assets/web/spmt-auth.css`)).status, 200);
-    const client = await fetch(`${base}/assets/web/client.js`);
-    assert.equal(client.status, 200);
-    assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
-    const clientSource = await client.text();
+    const resilientClient = await fetch(`${base}/assets/web/client.js`);
+    assert.equal(resilientClient.status, 200);
+    assert.match(resilientClient.headers.get("content-type") ?? "", /text\/javascript/);
+    const clientSource = await resilientClient.text();
     assert.match(clientSource, /AbortSignal\.timeout\(12_000\)/);
     assert.match(clientSource, /retrying sign-in once/);
     assert.match(clientSource, /Tap Enter SpaceMountain to try again/);
@@ -455,14 +458,14 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(runner, /offline-network-guard/);
   assert.match(runner, /NODE_OPTIONS: `--import=\$\{offlineNetworkGuardPath\}`/);
   assert.match(runner, /randomBytes\(32\)\.toString\("base64url"\)/);
-  const client = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
-  assert.match(client, /document\.visibilityState !== "visible"/);
-  assert.match(client, /await spmt\.listApps\(\)/);
-  assert.match(client, /next !== registryFingerprint/);
-  assert.match(client, /await spmt\.registerApp\(manifest\)/);
-  assert.match(client, /\/sandbox\/developer\/import-manifest/);
-  assert.doesNotMatch(client, /function publishCandidate/);
-  assert.doesNotMatch(client, /localStorage|sessionStorage/);
+  const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
+  assert.match(clientSource, /document\.visibilityState !== "visible"/);
+  assert.match(clientSource, /await spmt\.listApps\(\)/);
+  assert.match(clientSource, /next !== registryFingerprint/);
+  assert.match(clientSource, /await spmt\.registerApp\(manifest\)/);
+  assert.match(clientSource, /\/sandbox\/developer\/import-manifest/);
+  assert.doesNotMatch(clientSource, /function publishCandidate/);
+  assert.doesNotMatch(clientSource, /localStorage|sessionStorage/);
 });
 
 test("supervised runner makes both layers healthy and stops both children together", async () => {
