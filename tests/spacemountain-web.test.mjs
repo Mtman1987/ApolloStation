@@ -458,7 +458,7 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(runner, /offline-network-guard/);
   assert.match(runner, /NODE_OPTIONS: `--import=\$\{offlineNetworkGuardPath\}`/);
   assert.match(runner, /randomBytes\(32\)\.toString\("base64url"\)/);
-  const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/clientSource.ts", import.meta.url), "utf8");
+  const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
   assert.match(clientSource, /document\.visibilityState !== "visible"/);
   assert.match(clientSource, /await spmt\.listApps\(\)/);
   assert.match(clientSource, /next !== registryFingerprint/);
