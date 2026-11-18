@@ -1,0 +1,66 @@
+name: Pull Apollo node auth logs
+
+# Manual: pulls recent runtime logs from Apollo node 1 and node 2 and uploads them as artifacts.
+# The auth-lines file keeps only session/auth lines (donor cookie, token, refresh, expiry, bridge, login).
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: Log window (for example 30m, 2h, 1d)
+        required: true
+        type: string
+        default: 2h
+      search:
+        description: Extended regex for the auth-lines file
+        required: true
+        type: string
+        default: "spmt|donor|session|token|refresh|expire|invalid|auth|bridge|login|workspace|403|401"
+
+permissions:
+  contents: read
+
+jobs:
+  pull:
+    name: Pull ${{ matrix.label }} logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Node 1
+            app: apollo-node-1
+            secret: HOSTLESS_NODE1_TOKEN
+          - label: Node 2
+            app: apollo-node-2
+            secret: HOSTLESS_NODE2_TOKEN
+    steps:
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+
+      - name: Pull logs
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
+          APP: ${{ matrix.app }}
+          WINDOW: ${{ inputs.since }}
+          PATTERN: ${{ inputs.search }}
+        run: |
+          set +e
+          mkdir -p logs
+          hostless logs --app "$APP" --since "$WINDOW" --level all --limit 5000 > "logs/$APP-all.log" 2>&1
+          echo "hostless exit=$?" > logs/status.txt
+          grep -iE "$PATTERN" "logs/$APP-all.log" > "logs/$APP-auth-lines.log" || true
+          echo "total lines: $(wc -l < "logs/$APP-all.log")"
+          echo "auth lines: $(wc -l < "logs/$APP-auth-lines.log")"
+          echo "--- auth lines (last 200) ---"
+          tail -n 200 "logs/$APP-auth-lines.log"
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: apollo-${{ matrix.app }}-auth-logs-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: warn
