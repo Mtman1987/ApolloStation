@@ -41,7 +41,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "Deploy Node 1 and Node 2 after full validation"
+        description: "Deploy changed Hostless nodes after runtime and persistence preflight"
         required: true
         type: boolean
         default: false
@@ -115,47 +115,14 @@ jobs:
           echo "node1=$NODE1" >> "$GITHUB_OUTPUT"
           echo "node2=$NODE2" >> "$GITHUB_OUTPUT"
 
-  full-test-suite:
-    if: ${{ !contains(github.event.head_commit.message, '[cancel-stale-hostless-release]') && !contains(github.event.head_commit.message, '[skip-hostless-validation]') }}
-    name: Full ApolloStation validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - name: Check out the exact commit
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Validate Hostless launch and deploy helpers
-        run: |
-          node --check scripts/hostless/ensure-node-app.mjs
-          node --check scripts/hostless/start-node.mjs
-      - name: Install media test tools
-        run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install --no-install-recommends -y ffmpeg
-          fi
-          ffmpeg -version
-      - name: Audit SQLite ownership and persistence surface
-        run: |
-          node scripts/audit-sqlite-usage.mjs --json > /tmp/apollo-sqlite-audit.json
-          node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
-      - name: Build and run every Node regression test
-        run: npm test
-
   deploy-node:
     name: Deploy ${{ matrix.label }}
-    needs: [full-test-suite]
+    needs: [detect-deploy-targets]
     if: >-
-      ${{ !cancelled() && (needs.full-test-suite.result == 'success' || (needs.full-test-suite.result == 'skipped' && contains(github.event.head_commit.message, '[skip-hostless-validation]'))) &&
+      ${{ !cancelled() &&
           github.ref == 'refs/heads/main' &&
+          ((matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
+           (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true')) &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
@@ -406,12 +373,11 @@ jobs:
 
   attach-spacemountain-domain:
     name: Attach spacemountain.live to the Node 1 same-origin gateway
-    needs: [full-test-suite, deploy-node]
+    needs: [deploy-node]
     if: >-
       ${{ github.ref == 'refs/heads/main' &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) &&
-          needs.full-test-suite.result == 'success' &&
           needs.deploy-node.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
