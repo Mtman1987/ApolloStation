@@ -274,9 +274,10 @@ if (process.env.APOLLO_SYNC_ONLY === "1") {
   const variables = rows(response, ["variables", "environmentVariables", "items"]);
   if (!variables) fail("Hostless environment-variable listing returned an unexpected response shape; cannot verify secret migration.");
   const present = new Set(variables.map(item => item?.name ?? item?.key).filter(value => typeof value === "string"));
+  const prefix = nodeKey.toUpperCase() + "_";
   const expected = Object.keys(Object.fromEntries(Object.entries(process.env)
-    .filter(([key, value]) => key.startsWith("APOLLO_RUNTIME_") && typeof value === "string" && value.length > 0)
-    .map(([key, value]) => [key.slice("APOLLO_RUNTIME_".length), value])));
+    .filter(([key, value]) => key.startsWith("APOLLO_RUNTIME_" + prefix) && typeof value === "string" && value.length > 0)
+    .map(([key, value]) => [key.slice("APOLLO_RUNTIME_".length + prefix.length), value])));
   const missing = expected.filter(key => !present.has(key));
   if (missing.length) fail(`Hostless secret migration verification failed for ${node.app}; missing names: ${missing.join(", ")}`);
   console.log(JSON.stringify({ node: nodeKey, app: node.app, verified: true, expectedNames: expected.length, missingNames: [] }));
