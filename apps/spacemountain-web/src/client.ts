@@ -75,7 +75,54 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
+  if (window.location.pathname === "/auth/callback") {
+    try {
+      await completeSpmtOAuthCallback();
+      await loadShell();
+      sessionRecovery.authenticated();
+      redirectToRequestedApp();
+    } catch (error) {
+      showAuth(message(error) || "SPMT could not complete the sign-in handoff.");
+    }
+    return;
+  }
   await restoreShell();
+}
+
+async function completeSpmtOAuthCallback() {
+  const query = new URLSearchParams(window.location.search);
+  const code = query.get("code") || "";
+  const state = query.get("state") || "";
+  const expectedState = window.sessionStorage.getItem("spmt_oauth_state") || "";
+  if (!code || !state || !expectedState || state !== expectedState) {
+    throw new Error("The SPMT sign-in handoff expired or could not be verified. Open SpaceMountain again from your SPMT session.");
+  }
+  window.sessionStorage.removeItem("spmt_oauth_state");
+  const redirectUri = `${window.location.origin}/auth/callback`;
+  const response = await fetch("/v1/auth/session/bridge", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ code, redirectUri }),
+    signal: AbortSignal.timeout(12000),
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "SPMT could not exchange the one-time sign-in code.");
+  query.delete("code");
+  query.delete("state");
+  window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
+}
+
+function beginSpmtSso() {
+  const state = crypto.randomUUID();
+  window.sessionStorage.setItem("spmt_oauth_state", state);
+  const redirectUri = `${window.location.origin}/auth/callback`;
+  const authorize = new URL("https://spmt.live/api/oauth/authorize");
+  authorize.searchParams.set("client_id", "spacemountain-live");
+  authorize.searchParams.set("redirect_uri", redirectUri);
+  authorize.searchParams.set("state", state);
+  window.location.assign(authorize.toString());
 }
 
 async function restoreShell() {
@@ -83,45 +130,11 @@ async function restoreShell() {
   catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      try {
-        await restoreDonorBrowserSession();
-        await loadShell();
-        sessionRecovery.authenticated();
-        redirectToRequestedApp();
-        return;
-      } catch (bridgeError) {
-        return showAuth(message(bridgeError) || "Your existing SPMT browser session could not be connected.");
-      }
+      beginSpmtSso();
+      return;
     }
     showSessionUnavailable(message(error));
   }
-}
-
-async function restoreDonorBrowserSession() {
-  // The donor cookie belongs to spmt.live and is never copied into Apollo storage.
-  // The donor validates it and returns a short-lived assertion which Apollo
-  // exchanges server-side for its own HttpOnly browser session.
-  let donorResponse: Response;
-  try {
-    donorResponse = await fetch("https://spmt.live/api/session/bridge", {
-      method: "GET", credentials: "include", cache: "no-store",
-      headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000),
-    });
-  } catch {
-    throw new Error("Could not reach the existing SPMT session. Open SpaceMountain from spacemountain.live and try again.");
-  }
-  const donorPayload = await donorResponse.json().catch(() => ({})) as Record<string, unknown>;
-  const bridgeToken = typeof donorPayload.token === "string" ? donorPayload.token : "";
-  if (!donorResponse.ok || !bridgeToken) {
-    throw new Error("The existing SPMT browser session was not accepted. Your session has not been changed.");
-  }
-  const exchange = await fetch("/v1/auth/session/bridge", {
-    method: "POST", credentials: "same-origin", cache: "no-store",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ token: bridgeToken }), signal: AbortSignal.timeout(12000),
-  });
-  const result = await exchange.json().catch(() => ({})) as Record<string, unknown>;
-  if (!exchange.ok) throw new Error(typeof result.message === "string" ? result.message : "Apollo could not map the existing SPMT identity to its owner workspace.");
 }
 
 async function submitLogin(event: SubmitEvent) {

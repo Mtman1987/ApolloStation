@@ -64,6 +64,7 @@ export interface SpmtServiceOptions {
   fetchImpl?: typeof fetch;
   publicBaseUrl?: string;
   appLaunchBaseUrl?: string;
+  spacemountainClientSecret?: string;
   twitchClientId?: string;
   twitchClientSecret?: string;
   discordBotToken?: string;
@@ -464,8 +465,33 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge") {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         const body = await readBody(request);
-        const bridgeToken = str(body.token, "token");
-        if (bridgeToken.length > 8192) return json(response, 400, { error: "invalid_request" });
+        let bridgeToken = typeof body.token === "string" ? body.token.trim() : "";
+        if (!bridgeToken && typeof body.code === "string") {
+          const code = body.code.trim();
+          const redirectUri = str(body.redirectUri, "redirectUri");
+          const expectedRedirectUri = `${appLaunchBaseUrl}/auth/callback`;
+          if (!code || code.length > 2048 || redirectUri !== expectedRedirectUri) return json(response, 400, { error: "invalid_request" });
+          if (!options.spacemountainClientSecret) return json(response, 503, { error: "sso_not_configured", message: "The existing SPMT OAuth client secret is not configured on this Apollo node." });
+          const tokenResponse = await fetchImpl("https://spmt.live/api/oauth/token", {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({
+              grant_type: "authorization_code",
+              code,
+              client_id: "spacemountain-live",
+              client_secret: options.spacemountainClientSecret,
+              redirect_uri: redirectUri,
+            }),
+            redirect: "manual",
+            signal: AbortSignal.timeout(8000),
+          });
+          const tokenPayload = await tokenResponse.json().catch(() => ({})) as Record<string, unknown>;
+          if (!tokenResponse.ok || typeof tokenPayload.access_token !== "string") {
+            return json(response, tokenResponse.status === 400 || tokenResponse.status === 401 ? 401 : 503, { error: "oauth_exchange_failed", message: "SPMT could not verify the one-time authorization code. Start sign-in again from your existing SPMT session." });
+          }
+          bridgeToken = tokenPayload.access_token;
+        }
+        if (!bridgeToken || bridgeToken.length > 8192) return json(response, 400, { error: "invalid_request" });
         try {
           // Verify the donor-issued assertion with the donor itself. Never trust
           // decoded claims or accept a client-supplied username or tenant.

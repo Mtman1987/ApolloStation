@@ -79,6 +79,15 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(page.headers.get("content-security-policy") ?? "", /img-src 'self' data: https:/);
     assert.equal(page.headers.get("x-frame-options"), "DENY");
     assert.equal(page.headers.get("cross-origin-resource-policy"), "same-origin");
+    const callbackPage = await fetch(`${base}/auth/callback?code=temporary&state=temporary`);
+    assert.equal(callbackPage.status, 200, "SPMT OAuth returns to the SpaceMountain shell callback");
+    assert.match(await callbackPage.text(), /assets\/web\/client\.js/);
+    const client = await fetch(`${base}/assets/web/client.js`);
+    assert.equal(client.status, 200);
+    const callbackClient = await client.text();
+    assert.match(callbackClient, /completeSpmtOAuthCallback/);
+    assert.match(callbackClient, /api\/oauth\/authorize/);
+    assert.match(callbackClient, /spmt_oauth_state/);
     const html = await page.text();
     assert.doesNotMatch(html, /SPACEMOUNTAIN\.LIVE|sandbox-guardrail|sandbox-status|refresh-shell|id="logout"|Sandbox open/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);

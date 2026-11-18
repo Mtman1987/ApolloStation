@@ -161,7 +161,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/apps/commlink") {
         await requireVerifiedCommlinkSession(request, spmtOrigin, fetchImpl);
       }
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || url.pathname === "/auth/callback" || SHELL_APP_PATHS.has(url.pathname))) {
         if (url.searchParams.get("surface") === "workspace-service") {
           response.removeHeader("x-frame-options");
           response.setHeader("content-security-policy", String(response.getHeader("content-security-policy")).replace("frame-ancestors 'none'", "frame-ancestors 'self'"));

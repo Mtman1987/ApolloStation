@@ -57,6 +57,7 @@ const service = createSpmtServiceWithProviderIdentity({
   port,
   publicBaseUrl,
   appLaunchBaseUrl: process.env.SPMT_APP_LAUNCH_BASE_URL ?? "https://apollo-node-1.hostless.app",
+  ...(process.env.SPACEMOUNTAIN_CLIENT_SECRET ? { spacemountainClientSecret: process.env.SPACEMOUNTAIN_CLIENT_SECRET } : {}),
   runtimeMode,
   sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
   ...(checked?.sandboxOwnerUsername ? { sandboxOwnerUsername: checked.sandboxOwnerUsername } : {}),

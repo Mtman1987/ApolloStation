@@ -94,3 +94,56 @@ test('production donor browser-session bridge reuses the existing SPMT identity 
     assert.equal((await session.json()).actorId,'usr_owner-account');
   }finally{await spmt.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+
+test('SPMT OAuth callback exchanges a one-time code and restores the existing Apollo owner session',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'apollo-oauth-bridge-'));
+  const redirectUri='https://apollo-node-1.hostless.app/auth/callback';
+  const donorFetch=async(input,init={})=>{
+    if(String(input)==='https://spmt.live/api/oauth/token'){
+      const body=JSON.parse(String(init.body));
+      assert.equal(body.grant_type,'authorization_code');
+      assert.equal(body.client_id,'spacemountain-live');
+      assert.equal(body.client_secret,'test-spacemountain-client-secret');
+      assert.equal(body.code,'one-time-spmt-code');
+      assert.equal(body.redirect_uri,redirectUri);
+      return Response.json({access_token:'verified-spmt-oauth-access-token',token_type:'Bearer'});
+    }
+    if(String(input)==='https://spmt.live/api/auth/me'){
+      assert.equal(new Headers(init.headers).get('authorization'),'Bearer verified-spmt-oauth-access-token');
+      return Response.json({user:{id:'donor-user-84',username:'owner-account'}});
+    }
+    throw new Error('Unexpected upstream request');
+  };
+  const spmt=createSpmtService({
+    databasePath:join(dir,'spmt.sqlite'),
+    webhookKey:Buffer.alloc(32,8),
+    host:'127.0.0.1',
+    port:0,
+    runtimeMode:'production',
+    appLaunchBaseUrl:'https://apollo-node-1.hostless.app',
+    spacemountainClientSecret:'test-spacemountain-client-secret',
+    fetchImpl:donorFetch,
+  });
+  try{
+    spmt.authority.ensureUser('usr_owner-account');
+    spmt.control.registerTenant({tenantId:'tenant_owner-account',ownerUserId:'usr_owner-account',displayName:'Owner'});
+    spmt.authority.getOrCreateWorkspace('tenant_owner-account');
+    spmt.data.registerUser({userId:'usr_owner-account',username:'owner-account',displayName:'Owner',password:'unused-test-password',tenantIds:['tenant_owner-account']});
+    await spmt.listen();
+    const origin=`http://127.0.0.1:${spmt.server.address().port}`;
+    const exchange=await fetch(origin+'/v1/auth/session/bridge',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({code:'one-time-spmt-code',redirectUri}),
+    });
+    assert.equal(exchange.status,200);
+    const payload=await exchange.json();
+    assert.equal(payload.profile.username,'owner-account');
+    assert.deepEqual(payload.tenantIds,['tenant_owner-account']);
+    const cookie=exchange.headers.get('set-cookie').split(';')[0];
+    const session=await fetch(origin+'/v1/session',{headers:{cookie,'x-spmt-app':'spacemountain'}});
+    assert.equal(session.status,200);
+    assert.equal((await session.json()).actorId,'usr_owner-account');
+  }finally{await spmt.close();rmSync(dir,{recursive:true,force:true});}
+});
