@@ -106,10 +106,10 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     assert.equal((await fetch(`${base}/assets/web/spmt-auth.css`)).status, 200);
-    const client = await fetch(`${base}/assets/web/client.js`);
-    assert.equal(client.status, 200);
-    assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
-    const clientSource = await client.text();
+    const resilientClient = await fetch(`${base}/assets/web/client.js`);
+    assert.equal(resilientClient.status, 200);
+    assert.match(resilientClient.headers.get("content-type") ?? "", /text\/javascript/);
+    const clientSource = await resilientClient.text();
     assert.match(clientSource, /AbortSignal\.timeout\(12_000\)/);
     assert.match(clientSource, /retrying sign-in once/);
     assert.match(clientSource, /Tap Enter SpaceMountain to try again/);
