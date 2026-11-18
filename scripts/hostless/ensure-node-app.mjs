@@ -264,7 +264,24 @@ if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
     process.env.SPMT_ORIGIN = await resolveNode1Origin();
   }
 }
-await syncRuntimeSecrets(projectId, node.app);
+if (process.env.APOLLO_SYNC_RUNTIME_SECRETS === "1") {
+  await syncRuntimeSecrets(projectId, node.app);
+} else {
+  console.log("Runtime secret synchronization skipped; Hostless environment remains authoritative.");
+}
+if (process.env.APOLLO_SYNC_ONLY === "1") {
+  const response = await request(`/apps/${encodeURIComponent(node.app)}/environment-variables`);
+  const variables = rows(response, ["variables", "environmentVariables", "items"]);
+  if (!variables) fail("Hostless environment-variable listing returned an unexpected response shape; cannot verify secret migration.");
+  const present = new Set(variables.map(item => item?.name ?? item?.key).filter(value => typeof value === "string"));
+  const expected = Object.keys(Object.fromEntries(Object.entries(process.env)
+    .filter(([key, value]) => key.startsWith("APOLLO_RUNTIME_") && typeof value === "string" && value.length > 0)
+    .map(([key, value]) => [key.slice("APOLLO_RUNTIME_".length), value])));
+  const missing = expected.filter(key => !present.has(key));
+  if (missing.length) fail(`Hostless secret migration verification failed for ${node.app}; missing names: ${missing.join(", ")}`);
+  console.log(JSON.stringify({ node: nodeKey, app: node.app, verified: true, expectedNames: expected.length, missingNames: [] }));
+  process.exit(0);
+}
 console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
 runCli(
   ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
