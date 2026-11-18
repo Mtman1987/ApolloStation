@@ -56,7 +56,7 @@ const service = createSpmtServiceWithProviderIdentity({
   webhookKey,
   port,
   publicBaseUrl,
-  appLaunchBaseUrl: process.env.SPMT_APP_LAUNCH_BASE_URL ?? "https://apollo-node-1.hostless.app",
+  appLaunchBaseUrl: process.env.SPMT_APP_LAUNCH_BASE_URL ?? "https://spacemountain.live",
   ...(process.env.SPACEMOUNTAIN_CLIENT_SECRET ? { spacemountainClientSecret: process.env.SPACEMOUNTAIN_CLIENT_SECRET } : {}),
   runtimeMode,
   sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
