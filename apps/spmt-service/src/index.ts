@@ -117,7 +117,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const authority = new AuthorityService({ store });
   const auth = new AuthService({ store, refreshRotationKey: options.webhookKey });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
-  const appLaunchBaseUrl = (options.appLaunchBaseUrl ?? process.env.SPMT_APP_LAUNCH_BASE_URL ?? publicBaseUrl).replace(/\/$/, "");
+  const appLaunchBaseUrl = (options.appLaunchBaseUrl ?? process.env.SPMT_APP_LAUNCH_BASE_URL ?? "https://spacemountain.live").replace(/\/$/, "");
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
   // Keep the production Shipyard catalog populated from the first-party app manifests.
   // registerApp is an idempotent upsert: it preserves existing tenant installs and data.
