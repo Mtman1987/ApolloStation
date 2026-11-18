@@ -131,3 +131,14 @@ test("Hostless Node 1 and Node 2 receive the same canonical Turso database URL",
   assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
   assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: \$\{\{ secrets\.NODE1_TURSO_AUTH_TOKEN \}\}/);
 });
+
+
+test("production SPMT app launch defaults to the canonical SpaceMountain domain", () => {
+  const launcher = readFileSync(new URL("../apps/spmt-service/src/provider-identity-start.ts", import.meta.url), "utf8");
+  const service = readFileSync(new URL("../apps/spmt-service/src/index.ts", import.meta.url), "utf8");
+  const browser = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
+  assert.match(launcher, /SPMT_APP_LAUNCH_BASE_URL \\?\\? "https:\\/\\/spacemountain\\.live"/);
+  assert.match(service, /SPMT_APP_LAUNCH_BASE_URL \\?\\? "https:\\/\\/spacemountain\\.live"/);
+  assert.match(browser, /const canonicalOAuthRedirectUri = \`\\$\\{canonicalAppOrigin\\}\\/auth\\/callback\`/);
+  assert.doesNotMatch(launcher, /apollo-node-1\\.hostless\\.app/);
+});
