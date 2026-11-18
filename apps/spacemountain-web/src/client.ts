@@ -168,7 +168,7 @@ async function restoreSpmtCookieSession() {
     method: "GET",
     credentials: "include",
     cache: "no-store",
-    headers: { accept: "application/json", "x-spmt-app": "spacemountain" },
+    headers: { accept: "application/json" },
     signal: AbortSignal.timeout(8000),
   });
   if (response.status === 401 || response.status === 403) return false;
