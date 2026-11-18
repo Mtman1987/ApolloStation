@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Commit-trigger for the canonical ApolloStation Hostless two-node release.
+ * Retest marker: retry after checking the GitHub Actions account restriction.
  *
  * This file is intentionally side-effect free. Updating or committing it to
  * main matches the hostless-three-node-deploy.yml push path filter and starts
