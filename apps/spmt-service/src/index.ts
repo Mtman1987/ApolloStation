@@ -488,16 +488,22 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
           const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim().toLowerCase() : "";
           if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_donor_session" });
-          const profile = data.getProfileByUsername(donorUsername);
-          if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "The verified SPMT account has no existing Apollo workspace mapping." });
-          const tenantIds = profile.tenantIds.filter((tenantId) => {
-            try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
-            catch { return false; }
+          // Boss Key is a private developer bootstrap. The verified SPMT identity is
+          // the principal; do not require or create a legacy Apollo profile/workspace.
+          // Global scope is limited to this server-side, Boss-Key-protected claim path.
+          const issued = auth.issueHumanSession({
+            userId: donorId,
+            scopes: ["*"],
+            tenantMode: "any",
+            tenantIds: [],
           });
-          if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
-          const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
-          return json(response, 200, { profile, tenantIds, spmtIdentity: { id: donorId, username: donorUsername, user: donorUser } }, { "set-cookie": browserSessionCookie(browser.accessToken) });
+          return json(response, 200, {
+            authenticated: true,
+            developer: true,
+            spmtIdentity: { id: donorId, username: donorUsername, user: donorUser },
+            accessExpiresAt: issued.accessExpiresAt,
+          }, { "set-cookie": browserSessionCookie(browser.accessToken) });
         } catch {
           return json(response, 503, { error: "identity_unavailable", message: "Apollo could not parse or verify the configured SPMT bridge identity." });
         }
