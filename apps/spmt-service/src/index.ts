@@ -203,6 +203,68 @@ export function createSpmtService(options: SpmtServiceOptions) {
     ),
   });
 
+  // Shared owner resolution for SPMT donor identities: provider links (Discord, then
+  // Twitch), then username. Creates a workspace only when APOLLO_SPMT_BRIDGE_BOOTSTRAP=1.
+  type DonorWorkspace =
+    | { ok: true; profile: ReturnType<PlatformDataService["getProfileByUsername"]> & object; tenantIds: string[] }
+    | { ok: false; status: number; body: Record<string, unknown> };
+  const resolveDonorWorkspace = (donor: { id: string; username: string; discordId?: unknown; twitchId?: unknown }): DonorWorkspace => {
+    const donorUsername = donor.username.trim().toLowerCase();
+    const donorDiscordId = typeof donor.discordId === "string" ? donor.discordId.trim() : "";
+    const donorTwitchId = typeof donor.twitchId === "string" ? donor.twitchId.trim() : "";
+    const linkedUserId = ([["discord", donorDiscordId], ["twitch", donorTwitchId]] as const)
+      .map(([provider, providerUserId]) => {
+        if (!providerUserId) return undefined;
+        const link = store.getProviderLink(provider, providerUserId);
+        return link && !link.revokedAt ? link.userId : undefined;
+      })
+      .find((value): value is string => Boolean(value));
+    const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
+    let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined = linkedProfile;
+    if (!profile) profile = data.getProfileByUsername(donorUsername);
+    if (!profile && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
+      return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
+    }
+    if (!profile) {
+      const userId = `usr_${donor.id.replace(/[^a-zA-Z0-9]/g, "")}`;
+      const tenantId = `tenant_${userId}`;
+      authority.ensureUser(userId);
+      if (!store.getUser(userId)) throw new Error("Apollo user could not be created.");
+      control.registerTenant({ tenantId, ownerUserId: userId, displayName: donor.username });
+      authority.getOrCreateWorkspace(tenantId);
+      // The profile gets a random password nobody holds, so password login stays closed for it.
+      profile = data.registerUser({ userId, username: donorUsername, displayName: donor.username, password: randomBytes(32).toString("base64url"), tenantIds: [tenantId] });
+      installSandboxApps(control, tenantId, options.sandboxApps ?? []);
+    }
+    const tenantIds = profile.tenantIds.filter((tenantId) => {
+      try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
+      catch { return false; }
+    });
+    if (!tenantIds.length) return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." } };
+    return { ok: true, profile, tenantIds };
+  };
+
+  // Resume an Apollo browser session from the SPMT donor cookie when the browser has
+  // none (or an expired one). The donor token is re-validated against SPMT every time.
+  const resumeDonorSession = async (request: IncomingMessage): Promise<string | undefined> => {
+    const donorToken = cookie(request, "spmt_donor_session");
+    if (!donorToken) return undefined;
+    const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
+      headers: { accept: "application/json", authorization: `Bearer ${donorToken}` },
+      redirect: "manual", signal: AbortSignal.timeout(10000),
+    }).catch(() => undefined);
+    if (!donorMe?.ok) return undefined;
+    const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
+    const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
+    const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
+    const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
+    if (!donorId || !donorUsername) return undefined;
+    const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
+    if (!resolved.ok) return undefined;
+    const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
+    return auth.issueBrowserSession(issued.accessToken).accessToken;
+  };
+
   const server = createServer(async (request, response) => {
     try {
       const path = request.url ?? "/";
@@ -506,43 +568,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
           const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
           if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_spmt_identity", message: "SPMT validated the token but did not return a usable user identity." });
-          // SPMT already validated this identity. Reuse its Apollo profile and
-          // owned tenant when present; otherwise create them on first sign-in,
-          // using the same steps as /v1/auth/register. The profile gets a random
-          // password nobody holds, so password login stays closed for it.
-          // Resolve the existing owner first through provider links (Discord, then
-          // Twitch), then by username. Never bootstrap an empty workspace unless the
-          // operator explicitly sets APOLLO_SPMT_BRIDGE_BOOTSTRAP=1.
-          const donorDiscordId = typeof donorUser.discordId === "string" ? donorUser.discordId.trim() : "";
-          const donorTwitchId = typeof donorUser.twitchId === "string" ? donorUser.twitchId.trim() : "";
-          const linkedUserId = ([["discord", donorDiscordId], ["twitch", donorTwitchId]] as const)
-            .map(([provider, providerUserId]) => {
-              if (!providerUserId) return undefined;
-              const link = store.getProviderLink(provider, providerUserId);
-              return link && !link.revokedAt ? link.userId : undefined;
-            })
-            .find((value): value is string => Boolean(value));
-          const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
-          let profile = linkedProfile;
-          if (!profile) profile = data.getProfileByUsername(donorUsername.toLowerCase());
-          if (!profile && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
-            return json(response, 403, { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." });
-          }
-          if (!profile) {
-            const userId = `usr_${donorId.replace(/[^a-zA-Z0-9]/g, "")}`;
-            const tenantId = `tenant_${userId}`;
-            authority.ensureUser(userId);
-            if (!store.getUser(userId)) throw new Error("Apollo user could not be created.");
-            control.registerTenant({ tenantId, ownerUserId: userId, displayName: donorUsername });
-            authority.getOrCreateWorkspace(tenantId);
-            profile = data.registerUser({ userId, username: donorUsername.toLowerCase(), displayName: donorUsername, password: randomBytes(32).toString("base64url"), tenantIds: [tenantId] });
-            installSandboxApps(control, tenantId, options.sandboxApps ?? []);
-          }
-          const tenantIds = profile.tenantIds.filter((tenantId) => {
-            try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
-            catch { return false; }
-          });
-          if (!tenantIds.length) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
+          // SPMT already validated this identity. Resolve the existing Apollo owner
+          // workspace through the shared helper; never create an empty one by default.
+          const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
+          if (!resolved.ok) return json(response, resolved.status, resolved.body);
+          const { profile, tenantIds } = resolved;
           const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           return json(response, 200, {
@@ -774,10 +804,19 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      // Browser has no usable Apollo session but holds the SPMT donor cookie: rebuild the
+      // Apollo browser session from it so returning visitors land signed in.
+      let resumedToken: string | undefined;
+      const existingBrowserToken = cookie(request, "spmt_token");
+      if (request.method === "GET" && url.pathname === "/v1/session" && runtimeMode === "production" && !request.headers.authorization && !(existingBrowserToken && auth.authenticateAccessToken(existingBrowserToken))) {
+        resumedToken = await resumeDonorSession(request);
+        if (resumedToken) response.setHeader("set-cookie", browserSessionCookie(resumedToken));
+      }
+
       const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request);
       const headers = Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(",") : value]));
       if (!headers.authorization) {
-        const cookieToken = cookie(request, "spmt_token");
+        const cookieToken = resumedToken ?? cookie(request, "spmt_token");
         if (cookieToken) headers.authorization = `Bearer ${cookieToken}`;
       }
       const result = api.handle({ method: request.method ?? "GET", path, headers, ...(body === undefined ? {} : { body }) });
