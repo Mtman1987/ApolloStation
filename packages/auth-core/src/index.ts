@@ -264,7 +264,7 @@ export class AuthService {
       const access = this.issueAccess({
         actorType: "user",
         actorId: input.userId,
-        scopes,
+        scopes: input.scopes,
         tenantMode,
         tenantIds,
         ttlSeconds: clampTtl(input.accessTtlSeconds ?? 900, 60, 3600),
@@ -272,7 +272,7 @@ export class AuthService {
       const refresh = this.issueRefresh({
         familyId,
         actorId: input.userId,
-        scopes,
+        scopes: input.scopes,
         tenantIds,
         ttlSeconds: clampTtl(input.refreshTtlSeconds ?? 2_592_000, 300, 7_776_000),
       });
