@@ -208,6 +208,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
   type DonorWorkspace =
     | { ok: true; profile: ReturnType<PlatformDataService["getProfileByUsername"]> & object; tenantIds: string[] }
     | { ok: false; status: number; body: Record<string, unknown> };
+  const OWNER_SPMT_USERNAME = "mtman1987";
+  const OWNER_DISCORD_ID = "767875979561009173";
+  const OWNER_TWITCH_ID = "94371378";
   const resolveDonorWorkspace = (donor: { id: string; username: string; discordId?: unknown; twitchId?: unknown }): DonorWorkspace => {
     const donorUsername = donor.username.trim().toLowerCase();
     const donorDiscordId = typeof donor.discordId === "string" ? donor.discordId.trim() : "";
@@ -222,7 +225,13 @@ export function createSpmtService(options: SpmtServiceOptions) {
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
     let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined = linkedProfile;
     if (!profile) profile = data.getProfileByUsername(donorUsername);
-    if (!profile && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
+    // First sign-in for the owner: SPMT has already validated this identity, so the
+    // owner's own SPMT account may create its Apollo workspace. Other identities still
+    // need an existing linked workspace unless the operator sets the env flag.
+    const ownerBootstrap = donorUsername === OWNER_SPMT_USERNAME
+      || donorDiscordId === OWNER_DISCORD_ID
+      || donorTwitchId === OWNER_TWITCH_ID;
+    if (!profile && !ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
     if (!profile) {
