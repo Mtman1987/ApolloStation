@@ -8,8 +8,6 @@ import { createBrowserEcosystemEggCompletionQueue, EcosystemEggRetryCoordinator,
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 
-const canonicalAppOrigin = "https://spacemountain.live";
-const canonicalOAuthRedirectUri = `${canonicalAppOrigin}/auth/callback`;
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
@@ -77,79 +75,9 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
-  // Keep the OAuth state and PKCE verifier on the canonical origin that SPMT
-  // already has registered. The explicit return link is the only Node 1
-  // entry allowed to stay on Hostless, where its own SPMT session is restored.
-  if (window.location.hostname === "apollo-node-1.hostless.app" && new URLSearchParams(window.location.search).get("spmt_return") !== "1") {
-    window.location.replace(`${canonicalAppOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`);
-    return;
-  }
-  if (window.location.pathname === "/auth/callback") {
-    try {
-      await completeSpmtOAuthCallback();
-      await loadShell();
-      sessionRecovery.authenticated();
-      redirectToRequestedApp();
-    } catch (error) {
-      showAuth(message(error) || "SPMT could not complete the sign-in handoff.");
-    }
-    return;
-  }
-  // Node 1 stays the destination. If its SPMT session is not already bridged,
-  // the approved canonical callback presents a verified one-click return.
+  // Node 1 remains the login destination. The owner claim flow is the only
+  // interactive sign-in path; never bounce to the retired SPMT OAuth client.
   await restoreShell();
-}
-
-async function completeSpmtOAuthCallback() {
-  const query = new URLSearchParams(window.location.search);
-  const code = query.get("code") || "";
-  const state = query.get("state") || "";
-  const expectedState = window.sessionStorage.getItem("spmt_oauth_state") || "";
-  const codeVerifier = window.sessionStorage.getItem("spmt_oauth_code_verifier") || "";
-  if (!code || !state || !expectedState || state !== expectedState || !codeVerifier) {
-    throw new Error("The SPMT sign-in handoff expired or could not be verified. Open SpaceMountain again from your SPMT session.");
-  }
-  window.sessionStorage.removeItem("spmt_oauth_state");
-  window.sessionStorage.removeItem("spmt_oauth_code_verifier");
-  const redirectUri = canonicalOAuthRedirectUri;
-  const response = await fetch("/v1/auth/session/bridge", {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ code, redirectUri, codeVerifier }),
-    signal: AbortSignal.timeout(12000),
-  });
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "SPMT could not exchange the one-time sign-in code.");
-  query.delete("code");
-  query.delete("state");
-  window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
-  return payload.profile;
-}
-
-async function beginSpmtSso() {
-  const state = crypto.randomUUID();
-  const random = crypto.getRandomValues(new Uint8Array(32));
-  const codeVerifier = base64Url(random);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier));
-  const codeChallenge = base64Url(new Uint8Array(digest));
-  window.sessionStorage.setItem("spmt_oauth_state", state);
-  window.sessionStorage.setItem("spmt_oauth_code_verifier", codeVerifier);
-  const redirectUri = canonicalOAuthRedirectUri;
-  const authorize = new URL("https://spmt.live/api/oauth/authorize");
-  authorize.searchParams.set("client_id", "spacemountain-live");
-  authorize.searchParams.set("redirect_uri", redirectUri);
-  authorize.searchParams.set("state", state);
-  authorize.searchParams.set("code_challenge", codeChallenge);
-  authorize.searchParams.set("code_challenge_method", "S256");
-  window.location.assign(authorize.toString());
-}
-
-function base64Url(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
 }
 
 async function restoreShell() {
@@ -161,7 +89,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      await beginSpmtSso();
+      showAuth("Enter your Boss Key to claim your existing Apollo owner account.");
       return;
     }
     showSessionUnavailable(message(error));

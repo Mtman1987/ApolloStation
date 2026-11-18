@@ -507,33 +507,6 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         const body = await readBody(request);
         let bridgeToken = typeof body.token === "string" ? body.token.trim() : "";
-        if (!bridgeToken && typeof body.code === "string") {
-          const code = body.code.trim();
-          const redirectUri = str(body.redirectUri, "redirectUri");
-          const codeVerifier = str(body.codeVerifier, "codeVerifier");
-          // SPMT's existing spacemountain-live OAuth client is registered to this exact callback.
-          // Keep it independent of the app-launch URL, which may point at the Hostless node.
-          const expectedRedirectUri = "https://spacemountain.live/auth/callback";
-          if (!code || code.length > 2048 || redirectUri !== expectedRedirectUri || !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)) return json(response, 400, { error: "invalid_request" });
-          const tokenResponse = await fetchImpl("https://spmt.live/api/oauth/token", {
-            method: "POST",
-            headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({
-              grant_type: "authorization_code",
-              code,
-              client_id: "spacemountain-live",
-              code_verifier: codeVerifier,
-              redirect_uri: redirectUri,
-            }),
-            redirect: "manual",
-            signal: AbortSignal.timeout(8000),
-          });
-          const tokenPayload = await tokenResponse.json().catch(() => ({})) as Record<string, unknown>;
-          if (!tokenResponse.ok || typeof tokenPayload.access_token !== "string") {
-            return json(response, tokenResponse.status === 400 || tokenResponse.status === 401 ? 401 : 503, { error: "oauth_exchange_failed", message: "SPMT could not verify the one-time authorization code. Start sign-in again from your existing SPMT session." });
-          }
-          bridgeToken = tokenPayload.access_token;
-        }
         if (!bridgeToken || bridgeToken.length > 8192) return json(response, 400, { error: "invalid_request" });
         try {
           // Verify the donor-issued assertion with the donor itself. Never trust
