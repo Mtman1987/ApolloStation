@@ -77,6 +77,13 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
+  // Keep the OAuth state and PKCE verifier on the canonical origin that SPMT
+  // already has registered. The explicit return link is the only Node 1
+  // entry allowed to stay on Hostless, where its own SPMT session is restored.
+  if (window.location.hostname === "apollo-node-1.hostless.app" && new URLSearchParams(window.location.search).get("spmt_return") !== "1") {
+    window.location.replace(`${canonicalAppOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`);
+    return;
+  }
   if (window.location.pathname === "/auth/callback") {
     try {
       const profile = await completeSpmtOAuthCallback();
