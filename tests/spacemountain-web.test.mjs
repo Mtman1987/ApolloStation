@@ -60,7 +60,7 @@ test("production SPMT startup seeds the first-party Shipyard catalog idempotentl
     ]);
     for (const app of apps) {
       assert.equal(app.status, "active");
-      assert.equal(new URL(app.launchUrl).origin, "https://apollo-node-1.hostless.app");
+      assert.equal(new URL(app.launchUrl).origin, "https://spacemountain.live");
       assert.ok(app.launchUrl.endsWith("/apps/" + app.appId));
     }
   } finally {
@@ -71,6 +71,10 @@ test("production SPMT startup seeds the first-party Shipyard catalog idempotentl
 
 test("private SpaceMountain host serves explicit browser modules with restrictive security headers", async () => {
   await withSandbox(async ({ base }) => {
+    const legacyHostEntry = await fetch(base, { headers: { host: "apollo-node-1.hostless.app", accept: "text/html" }, redirect: "manual" });
+    assert.equal(legacyHostEntry.status, 308, "Hostless browser entry must redirect before stale JavaScript can start OAuth");
+    assert.equal(legacyHostEntry.headers.get("location"), "https://spacemountain.live/");
+    assert.equal(legacyHostEntry.headers.get("cache-control"), "no-store");
     const page = await fetch(base);
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'none'/);
@@ -86,7 +90,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.equal(client.status, 200);
     const callbackClient = await client.text();
     assert.match(callbackClient, /completeSpmtOAuthCallback/);
-    assert.match(callbackClient, /api\/oauth\/authorize/);
+    assert.match(callbackClient, /api\/oauth\/authorize/);\n    assert.match(callbackClient, /https:\/\/spacemountain\.live\/auth\/callback/);\n    assert.doesNotMatch(callbackClient, /apollo-node-1\.hostless\.app\/auth\/callback/);
     assert.match(callbackClient, /spmt_oauth_state/);
     assert.match(callbackClient, /code_challenge_method/);
     assert.match(callbackClient, /spmt_oauth_code_verifier/);
