@@ -284,9 +284,64 @@ if (process.env.APOLLO_SYNC_ONLY === "1") {
   process.exit(0);
 }
 console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
-runCli(
-  ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
-  `Deploy ${node.app}`,
-);
+// Trigger and wait are separate steps. The trigger is retried on transient
+// API/CLI failures; the status poll is retried independently, so one
+// api.hostless.cloud timeout no longer fails a deployment that is still building.
+const scope = ["--app", node.app, "--project", String(projectId)];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function tryCliJson(args) {
+  const result = spawnSync("hostless", args, {
+    encoding: "utf8",
+    env: process.env,
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: 3 * 60 * 1000,
+    killSignal: "SIGTERM",
+  });
+  if (result.status !== 0 || result.error) {
+    return { ok: false, error: result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}` };
+  }
+  try {
+    return { ok: true, value: JSON.parse(result.stdout || "{}") };
+  } catch {
+    return { ok: false, error: "non-JSON CLI output" };
+  }
+}
+
+let trigger;
+for (let attempt = 1; attempt <= 3 && !trigger?.ok; attempt++) {
+  trigger = tryCliJson(["deploy", "--json", "--yes", ...scope, "--commit", commit]);
+  if (!trigger.ok) {
+    console.error(`Trigger ${node.app} attempt ${attempt}/3 failed: ${String(trigger.error).slice(0, 300)}`);
+    if (attempt < 3) await sleep(10000 * attempt);
+  }
+}
+if (!trigger?.ok) fail(`Hostless deploy trigger for ${node.app} failed after 3 attempts: ${trigger?.error}`);
+const deployment = trigger.value;
+const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?.deploymentId ?? null;
+if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
+console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
+
+const SUCCESS = new Set(["ready", "live", "active", "succeeded", "success", "deployed", "completed"]);
+const FAILURE = new Set(["failed", "error", "errored", "cancelled", "canceled", "rejected"]);
+const deadline = Date.now() + 40 * 60 * 1000;
+let pollFailures = 0;
+let lastStatus = "unknown";
+while (Date.now() < deadline) {
+  await sleep(15000);
+  const poll = tryCliJson(["deploy", "status", String(deploymentId), "--json", ...scope]);
+  if (!poll.ok) {
+    pollFailures += 1;
+    console.error(`Status poll ${pollFailures} for ${deploymentId} failed: ${String(poll.error).slice(0, 200)}`);
+    if (pollFailures >= 8) fail(`Lost contact with Hostless status for deployment ${deploymentId} (${pollFailures} consecutive failures). See the log snapshot artifact.`);
+    continue;
+  }
+  pollFailures = 0;
+  lastStatus = String(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown").toLowerCase();
+  if (SUCCESS.has(lastStatus)) break;
+  if (FAILURE.has(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${lastStatus}.`);
+}
+if (!SUCCESS.has(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 40 minutes (last status: ${lastStatus}).`);
+
+console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${lastStatus}.`);
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
