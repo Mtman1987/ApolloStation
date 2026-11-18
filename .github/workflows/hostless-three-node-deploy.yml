@@ -343,7 +343,7 @@ jobs:
           APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_URL: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE1_SPMT_RUNTIME_MODE: "production"
-          APOLLO_RUNTIME_NODE1_SPMT_APP_LAUNCH_BASE_URL: "https://apollo-node-1.hostless.app"
+          APOLLO_RUNTIME_NODE1_SPMT_APP_LAUNCH_BASE_URL: "https://spacemountain.live"
           APOLLO_RUNTIME_NODE1_STREAMWEAVER_WEB_ORIGIN: "https://apollo-node-2.hostless.app"
           APOLLO_RUNTIME_NODE1_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE1_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
