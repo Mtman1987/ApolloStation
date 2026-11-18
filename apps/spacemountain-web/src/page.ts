@@ -31,10 +31,10 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <form id="login-form" autocomplete="off">
         <span>APOLLO OWNER ACCESS</span>
         <h2>Claim my Apollo account</h2>
-        <p class="spmt-auth-help">Paste your SPMT session bridge JSON. Apollo validates its token directly with SPMT, then creates your Apollo browser session.</p>
-        <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="9" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='Paste the complete SPMT_SESSION_BRIDGE_JSON value here'></textarea></label>
-        <button type="submit">Verify SPMT session and sign in</button>
-        <p class="spmt-auth-help">The JSON is sent only to Apollo over HTTPS, never stored in browser storage, and never displayed back after submission.</p>
+        <p class="spmt-auth-help">Enter your developer Boss Key. Apollo checks it against the configured owner key, then uses the existing SPMT session bridge to identify you and create your browser session.</p>
+        <label>Boss Key<input name="bossKey" type="password" maxlength="512" autocomplete="current-password" autocapitalize="off" spellcheck="false" required placeholder="Enter your Boss Key"></label>
+        <button type="submit">Sign in to Apollo</button>
+        <p class="spmt-auth-help">Your Boss Key is sent to Apollo over HTTPS for verification and is never saved in browser storage.</p>
       </form>
 
     </section>
