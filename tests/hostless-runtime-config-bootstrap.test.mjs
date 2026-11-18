@@ -145,6 +145,6 @@ test("production SPMT app launch defaults to the canonical SpaceMountain domain"
   assert.ok(!browser.includes("beginSpmtSso"));
   assert.ok(!browser.includes("canonicalOAuthRedirectUri"));
   assert.ok(!browser.includes("spmt.live/api/session/bridge"));
-  assert.ok(!browser.includes("/v1/auth/session/bridge"));
+  assert.ok(browser.includes('"/v1/auth/session/bridge-login"'));
   assert.ok(!launcher.includes("apollo-node-1.hostless.app"));
 });
