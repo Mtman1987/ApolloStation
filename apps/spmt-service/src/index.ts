@@ -461,6 +461,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
         return json(response, 201, { profile, tenantId });
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/auth/session/check") {
+        const token = cookie(request, "spmt_token");
+        const authenticated = Boolean(token && auth.isBrowserSession(token));
+        return json(response, authenticated ? 200 : 401, { authenticated, cookiePresent: authenticated });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge-login") {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         const body = await readBody(request);
