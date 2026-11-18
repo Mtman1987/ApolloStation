@@ -323,7 +323,7 @@ if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} bu
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
 const SUCCESS = new Set(["ready", "live", "active", "succeeded", "success", "deployed", "completed", "deployment_successful", "deployment_success"]);
-const FAILURE = new Set(["failed", "error", "errored", "cancelled", "canceled", "rejected"]);
+const FAILURE = new Set(["failed", "error", "errored", "cancelled", "canceled", "rejected", "deployment_failed", "deployment_error"]);
 const deadline = Date.now() + 40 * 60 * 1000;
 let pollFailures = 0;
 let lastStatus = "unknown";
