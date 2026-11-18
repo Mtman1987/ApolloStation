@@ -60,7 +60,6 @@ jobs:
           if (!health.ok) throw new Error("Node 1 readiness check failed after deployment.");
 
           // A no-credential POST confirms that the intended endpoint is mounted.
-          // It must reject an empty body as a bridge-input error, never request a Boss Key.
           const login = await fetch(origin + "/v1/auth/session/bridge-login", {
             method: "POST",
             headers: { "content-type": "application/json", accept: "application/json" },
@@ -70,6 +69,6 @@ jobs:
           const body = await login.text();
           console.log("Bridge-login route:", login.status, body.slice(0, 500));
           if (login.status === 404 || login.status === 405 || /boss.?key/i.test(body)) {
-            throw new Error("The live Node 1 bridge-login route is missing or still returning a Boss Key gate.");
+            throw new Error("The live Node 1 bridge-login route is missing or rejecting the request unexpectedly.");
           }
           NODE
