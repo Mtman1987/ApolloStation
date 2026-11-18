@@ -82,7 +82,7 @@ async function boot() {
 
 async function restoreShell() {
   try {
-    await restoreSpmtCookieSession();
+    // The Boss Key claim endpoint is the only owner sign-in mechanism.
     await loadShell();
     sessionRecovery.authenticated();
     redirectToRequestedApp();
@@ -102,41 +102,6 @@ async function restoreShell() {
  * sends it directly to SPMT; SPMT returns a short-lived signed bridge token,
  * which Apollo verifies server-to-server before issuing its own session.
  */
-async function restoreSpmtCookieSession() {
-  setStatus("Checking your existing SPMT browser session…", "working");
-  let response: Response;
-  try {
-    response = await fetch("https://spmt.live/api/session/bridge", {
-      method: "GET",
-      credentials: "include",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
-    });
-  } catch (error) {
-    // A browser may block cross-site cookies or the origin may not yet be
-    // allowlisted by SPMT. Fall through to the established top-level SSO path.
-    if (error instanceof TypeError || (error instanceof DOMException && error.name === "AbortError")) return false;
-    throw error;
-  }
-  if (response.status === 401 || response.status === 403) return false;
-  if (!response.ok) throw new Error(`SPMT session check failed (${response.status}).`);
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  const token = typeof payload.token === "string" ? payload.token : "";
-  if (!token) throw new Error("SPMT recognized the request but did not return a session handoff.");
-  const handoff = await fetch("/v1/auth/session/bridge", {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ token }),
-    signal: AbortSignal.timeout(12000),
-  });
-  const handoffPayload = await handoff.json().catch(() => ({})) as Record<string, unknown>;
-  if (!handoff.ok) throw new Error(typeof handoffPayload.message === "string" ? handoffPayload.message : "Apollo could not verify your existing SPMT session.");
-  return true;
-}
-
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');

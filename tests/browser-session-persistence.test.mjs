@@ -66,44 +66,14 @@ test('browser login persists its HttpOnly cookie and logout revokes it through t
   }finally{if(web)await web.close();await spmt.close();rmSync(dir,{recursive:true,force:true});}
 });
 
-test('production donor browser-session bridge reuses the existing SPMT identity without a password',async()=>{
-  const dir=mkdtempSync(join(tmpdir(),'apollo-donor-bridge-'));
-  const donorFetch=async(input,init={})=>{
-    if(String(input)==='https://spmt.live/api/auth/me'){
-      assert.equal(new Headers(init.headers).get('authorization'),'Bearer donor-bridge-assertion');
-      return Response.json({user:{id:'donor-user-42',username:'owner-account'}});
-    }
-    throw new Error('Unexpected upstream request');
-  };
-  const spmt=createSpmtService({databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),host:'127.0.0.1',port:0,runtimeMode:'production',fetchImpl:donorFetch});
-  try{
-    spmt.authority.ensureUser('usr_owner-account');
-    spmt.control.registerTenant({tenantId:'tenant_owner-account',ownerUserId:'usr_owner-account',displayName:'Owner'});
-    spmt.authority.getOrCreateWorkspace('tenant_owner-account');
-    spmt.data.registerUser({userId:'usr_owner-account',username:'owner-account',displayName:'Owner',password:'unused-test-password',tenantIds:['tenant_owner-account']});
-    await spmt.listen();
-    const origin=`http://127.0.0.1:${spmt.server.address().port}`;
-    const exchange=await fetch(origin+'/v1/auth/session/bridge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'donor-bridge-assertion'})});
-    assert.equal(exchange.status,200);
-    const payload=await exchange.json();
-    assert.equal(payload.profile.username,'owner-account');
-    assert.deepEqual(payload.tenantIds,['tenant_owner-account']);
-    const cookie=exchange.headers.get('set-cookie').split(';')[0];
-    const session=await fetch(origin+'/v1/session',{headers:{cookie,'x-spmt-app':'spacemountain'}});
-    assert.equal(session.status,200);
-    assert.equal((await session.json()).actorId,'usr_owner-account');
-  }finally{await spmt.close();rmSync(dir,{recursive:true,force:true});}
-});
-
-
  
-test('SPMT session bridge rejects retired authorization-code callbacks',async()=>{
-  const dir=mkdtempSync(join(tmpdir(),'apollo-retired-oauth-'));
-  const spmt=createSpmtService({databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,8),host:'127.0.0.1',port:0,runtimeMode:'production',fetchImpl:async()=>{throw new Error('OAuth callback must not contact SPMT');}});
+test('retired SPMT browser-session bridge is no longer an authentication entrypoint',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'apollo-retired-session-bridge-'));
+  const spmt=createSpmtService({databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,8),host:'127.0.0.1',port:0,runtimeMode:'production',fetchImpl:async()=>{throw new Error('Retired bridge must not contact SPMT');}});
   try{
     await spmt.listen();
     const origin='http://127.0.0.1:'+spmt.server.address().port;
-    const response=await fetch(origin+'/v1/auth/session/bridge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:'retired-code',redirectUri:'https://spacemountain.live/auth/callback',codeVerifier:'v'.repeat(64)})});
-    assert.equal(response.status,400);
+    const response=await fetch(origin+'/v1/auth/session/bridge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'legacy-token'})});
+    assert.equal(response.status,404);
   }finally{await spmt.close();rmSync(dir,{recursive:true,force:true});}
 });

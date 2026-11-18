@@ -517,7 +517,7 @@ function browserProxyAllowed(method: string, pathname: string) {
   if (method === "POST" && (["/v1/commlink/mail", "/v1/commlink/shadow-messages", "/v1/commlink/read-all"].includes(pathname) || /^\/v1\/commlink\/conversations\/[^/]+\/read$/.test(pathname))) return true;
   if (method === "DELETE" && pathname === "/v1/simulation-rooms") return true;
   if (method === "DELETE" && (pathname === "/v1/stellar/me" || /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname))) return true;
-  if (method === "POST") return pathname === "/v1/auth/session/bridge" || pathname === "/v1/apps" || pathname === "/v1/simulation-rooms" || pathname === "/v1/simulation-rooms/events" || pathname === "/v1/simulation-rooms/input" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
+  if (method === "POST") return pathname === "/v1/apps" || pathname === "/v1/simulation-rooms" || pathname === "/v1/simulation-rooms/events" || pathname === "/v1/simulation-rooms/input" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
   return false;
 }
 
