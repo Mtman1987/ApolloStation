@@ -75,21 +75,21 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
-  // Node 1 remains the login destination. The owner claim flow is the only
-  // interactive sign-in path; never bounce to the retired SPMT OAuth client.
+  // Node 1 remains the login destination. Use the existing SPMT session bridge
+  // endpoint to verify identity and establish Apollo's browser session.
   await restoreShell();
 }
 
 async function restoreShell() {
   try {
-    // The Boss Key claim endpoint is the only owner sign-in mechanism.
+    // Restore an existing Apollo browser session before showing the bridge form.
     await loadShell();
     sessionRecovery.authenticated();
     redirectToRequestedApp();
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Enter your Boss Key to sign in to Apollo.");
+      showAuth("Paste your SPMT session bridge JSON to sign in to Apollo.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -97,29 +97,33 @@ async function restoreShell() {
 }
 
 /**
- * Developer owner sign-in: Boss Key is checked by Apollo's existing claim
- * endpoint, which uses the preconfigured SPMT_SESSION_BRIDGE_JSON server-side.
- * The bridge secret never enters the browser.
+ * Sign in with the user's existing SPMT session bridge. Apollo validates the
+ * bearer token against SPMT and returns its normal HttpOnly browser session.
  */
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
-  const bossKeyInput = loginForm.elements.namedItem("bossKey") as HTMLInputElement | null;
+  const bridgeInput = loginForm.elements.namedItem("bridgeJson") as HTMLTextAreaElement | null;
   try {
-    const bossKey = bossKeyInput?.value ?? "";
-    if (!bossKey.trim()) throw new Error("Enter your Boss Key.");
-    if (bossKey.length > 512) throw new Error("The Boss Key is too long.");
+    const bridgeJson = bridgeInput?.value.trim() ?? "";
+    if (!bridgeJson) throw new Error("Paste your complete SPMT session bridge JSON.");
+    if (bridgeJson.length > 30000) throw new Error("The SPMT session bridge JSON is too large.");
+    let parsed: unknown;
+    try { parsed = JSON.parse(bridgeJson); } catch { throw new Error("That is not valid JSON. Paste the complete SPMT session bridge response."); }
+    if (!parsed || typeof parsed !== "object" || typeof (parsed as Record<string, unknown>).token !== "string") {
+      throw new Error("The JSON must contain the SPMT token field.");
+    }
     if (button) button.disabled = true;
-    setStatus("Checking your Boss Key and establishing your Apollo owner session…", "working");
-    const response = await fetch("/v1/auth/session/claim", {
+    setStatus("Verifying your SPMT identity and opening your Apollo session…", "working");
+    const response = await fetch("/v1/auth/session/bridge-login", {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ bossKey }), signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ bridgeJson }), signal: AbortSignal.timeout(20000),
     });
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not complete owner sign-in.");
+    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not verify your SPMT session.");
     await loadShell();
-    if (bossKeyInput) bossKeyInput.value = "";
+    if (bridgeInput) bridgeInput.value = "";
     sessionRecovery.authenticated();
     redirectToRequestedApp();
   } catch (error) { setStatus(message(error), "error"); }
