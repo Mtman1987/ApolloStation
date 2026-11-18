@@ -1,3 +1,4 @@
+# Emergency owner-requested release path: commit message [skip-hostless-validation] skips the full test job; deployment preflight checks remain enabled.
 name: ApolloStation Hostless two-node release
 # Manual trigger fallback: a harmless commit to this workflow file starts the same validated Hostless release on main.
 # Recovery gate: deployment verifies the shared Turso staging table contains all 5,748 verified records.
