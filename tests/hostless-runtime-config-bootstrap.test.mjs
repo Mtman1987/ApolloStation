@@ -137,8 +137,8 @@ test("production SPMT app launch defaults to the canonical SpaceMountain domain"
   const launcher = readFileSync(new URL("../apps/spmt-service/src/provider-identity-start.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../apps/spmt-service/src/index.ts", import.meta.url), "utf8");
   const browser = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
-  assert.match(launcher, /SPMT_APP_LAUNCH_BASE_URL \\?\\? "https:\\/\\/spacemountain\\.live"/);
-  assert.match(service, /SPMT_APP_LAUNCH_BASE_URL \\?\\? "https:\\/\\/spacemountain\\.live"/);
-  assert.match(browser, /const canonicalOAuthRedirectUri = \`\\$\\{canonicalAppOrigin\\}\\/auth\\/callback\`/);
-  assert.doesNotMatch(launcher, /apollo-node-1\\.hostless\\.app/);
+  assert.ok(launcher.includes('SPMT_APP_LAUNCH_BASE_URL ?? "https://spacemountain.live"'));
+  assert.ok(service.includes('SPMT_APP_LAUNCH_BASE_URL ?? "https://spacemountain.live"'));
+  assert.ok(browser.includes('const canonicalOAuthRedirectUri = `${canonicalAppOrigin}/auth/callback`'));
+  assert.ok(!launcher.includes("apollo-node-1.hostless.app"));
 });
