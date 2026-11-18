@@ -1,0 +1,75 @@
+name: Apollo recovery deploy — Node 1 (owner access)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apollo-recovery-node1.yml"
+      - "apps/spmt-service/**"
+      - "apps/spacemountain-web/**"
+      - "apps/spacemountain/**"
+      - "apps/discord-stream-hub/**"
+      - "packages/**"
+      - "services/**"
+      - "scripts/hostless/**"
+      - "hostless.yaml"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-recovery-node1
+  cancel-in-progress: false
+
+jobs:
+  deploy-node1:
+    name: Deploy Node 1 without the full test / persistence gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Check out the exact recovery commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Deploy Node 1 using its existing Hostless environment
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APOLLO_NODE_ROLE: node1
+          APOLLO_SYNC_RUNTIME_SECRETS: "0"
+        run: |
+          node scripts/hostless/ensure-node-app.mjs node1 "${GITHUB_SHA}"
+      - name: Verify live Node 1 readiness and bridge-login route
+        run: |
+          node --input-type=module <<'NODE'
+          const origin = "https://spacemountain.live";
+          const health = await fetch(origin + "/health/ready", {
+            headers: { accept: "application/json" },
+            signal: AbortSignal.timeout(15000),
+          });
+          const healthText = await health.text();
+          console.log("Node 1 readiness:", health.status, healthText.slice(0, 500));
+          if (!health.ok) throw new Error("Node 1 readiness check failed after deployment.");
+
+          // A no-credential POST confirms that the intended endpoint is mounted.
+          // It must reject an empty body as a bridge-input error, never request a Boss Key.
+          const login = await fetch(origin + "/v1/auth/session/bridge-login", {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({ bridgeJson: "" }),
+            signal: AbortSignal.timeout(15000),
+          });
+          const body = await login.text();
+          console.log("Bridge-login route:", login.status, body.slice(0, 500));
+          if (login.status === 404 || login.status === 405 || /boss.?key/i.test(body)) {
+            throw new Error("The live Node 1 bridge-login route is missing or still returning a Boss Key gate.");
+          }
+          NODE
