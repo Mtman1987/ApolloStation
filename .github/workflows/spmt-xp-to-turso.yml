@@ -1,0 +1,59 @@
+name: SPMT XP and profile data to Turso
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write to Turso (off = dry run: export + counts only)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spmt-xp-to-turso
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Check secrets are present (names only)
+        run: |
+          test -n "$FLY_API_TOKEN" || { echo "::error::FLY_API_TOKEN secret missing in this repo"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "::error::NODE2_TURSO_AUTH_TOKEN missing"; exit 1; }
+      - name: Export only the chosen tables on the SPMT machine (read-only source)
+        run: |
+          set -uo pipefail
+          encoded="$(base64 -w0 scripts/spmt-export-remote.py)"
+          timeout 600s flyctl ssh console --app spmt-live --machine 8d0274ce21e918 \
+            --command "sh -c 'echo $encoded | base64 -d > /tmp/spmt-export.py && python3 /tmp/spmt-export.py'" --quiet </dev/null | tee export.out
+          grep -q EXPORT_BYTES export.out
+      - name: Copy the export file to the runner
+        run: |
+          timeout 900s flyctl ssh sftp get /tmp/spmt-xp-export.db ./spmt-xp-export.db --app spmt-live --machine 8d0274ce21e918
+          test -s spmt-xp-export.db
+          sha256sum spmt-xp-export.db
+      - name: Import to Turso (dry run unless apply is set)
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            node scripts/spmt-xp-to-turso.mjs --source ./spmt-xp-export.db --apply
+          else
+            node scripts/spmt-xp-to-turso.mjs --source ./spmt-xp-export.db
+          fi
+      - name: Remove the export file from the runner
+        if: always()
+        run: rm -f spmt-xp-export.db export.out
