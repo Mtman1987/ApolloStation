@@ -32,16 +32,23 @@ if (typeof startScript !== "string" || !startScript.trim()) {
   fail(`No package.json script hostless:${nodeKey} exists yet. This node's role-specific runtime entrypoint must be implemented and tested before Hostless can create or deploy its app. No Hostless resources were modified.`);
 }
 
-async function request(path) {
+async function request(path, { method = "GET", body: payload } = {}) {
   const response = await fetch(`${api}${path}`, {
-    headers: { Authorization: token, Accept: "application/json" },
+    method,
+    headers: {
+      Authorization: token,
+      Accept: "application/json",
+      ...(payload ? { "content-type": "application/json" } : {}),
+    },
+    ...(payload ? { body: JSON.stringify(payload) } : {}),
+    signal: AbortSignal.timeout(15_000),
   });
   const body = await response.text();
   let parsed;
   try { parsed = body ? JSON.parse(body) : {}; } catch { parsed = { raw: body.slice(0, 500) }; }
   if (!response.ok) {
     const detail = parsed?.message ?? parsed?.error ?? `HTTP ${response.status}`;
-    fail(`Hostless API ${path} failed: ${detail}. Check this node token's scopes and project membership.`);
+    fail(`Hostless API ${method} ${path} failed: ${detail}. Check this node token's scopes and project membership.`);
   }
   return parsed;
 }
@@ -87,7 +94,7 @@ function runCli(args, description) {
     encoding: "utf8",
     env: process.env,
     maxBuffer: 20 * 1024 * 1024,
-    timeout: 35 * 60 * 1000,
+    timeout: 5 * 60 * 1000,
     killSignal: "SIGTERM",
   });
   if (result.stdout) process.stdout.write(result.stdout);
@@ -233,7 +240,7 @@ if (matching.length > 1) fail(`Multiple apps named ${node.app} exist in project 
 if (matching.length === 0) {
   console.log(`App ${node.app} does not exist. Creating it; Hostless may start an initial deployment automatically.`);
   runCli(
-    ["create", "app", node.app, "--project", String(projectId), "--branch", process.env.GITHUB_REF_NAME ?? "main", "--yes", "--wait", "--json"],
+    ["create", "app", node.app, "--project", String(projectId), "--branch", process.env.GITHUB_REF_NAME ?? "main", "--yes", "--json"],
     `Create ${node.app}`,
   );
 }
@@ -264,11 +271,47 @@ if (nodeKey === "node2" && !process.env.SPMT_ORIGIN) {
     process.env.SPMT_ORIGIN = await resolveNode1Origin();
   }
 }
+async function deployAndTrack(appName, commitSha) {
+  const appPath = `/apps/${encodeURIComponent(appName)}`;
+  console.log(`Requesting Hostless deployment for ${appName} at ${commitSha}.`);
+  const accepted = await request(`${appPath}/deployments`, {
+    method: "POST",
+    body: { commit: commitSha },
+  });
+  const deployment = accepted?.deployment ?? accepted?.data?.deployment ?? accepted?.data ?? accepted;
+  const deploymentId = deployment?.id ?? deployment?._id ?? deployment?.deploymentId;
+  if (typeof deploymentId !== "string" || !deploymentId) {
+    fail(`Hostless accepted the deployment request but returned no deployment ID (outcome: ${accepted?.outcome ?? "unknown"}).`);
+  }
+  console.log(`Hostless deployment ${deploymentId} accepted (outcome: ${accepted?.outcome ?? "started"}; status: ${deployment?.status ?? "unknown"}).`);
+
+  const deadline = Date.now() + 20 * 60 * 1000;
+  let lastStatus = "";
+  while (Date.now() < deadline) {
+    const snapshot = await request(`${appPath}/deployments/${encodeURIComponent(deploymentId)}`);
+    const current = snapshot?.deployment ?? snapshot?.data?.deployment ?? snapshot?.data ?? snapshot;
+    const status = String(current?.status ?? current?.state ?? "UNKNOWN").toUpperCase();
+    if (status !== lastStatus) {
+      const stage = current?.stage ?? current?.phase ?? current?.currentStage;
+      console.log(`Hostless deployment ${deploymentId}: ${status}${stage ? ` (stage: ${stage})` : ""}.`);
+      lastStatus = status;
+    }
+
+    if (/SUCCESS|SUCCEEDED|DEPLOYED/.test(status)) {
+      console.log(`Hostless deployment ${deploymentId} completed successfully.`);
+      return;
+    }
+    if (/FAIL|CANCEL|SUPERSEDED|ERROR/.test(status)) {
+      const detail = current?.failureReason ?? current?.error ?? current?.message ?? "Hostless reported a terminal deployment failure.";
+      fail(`Hostless deployment ${deploymentId} ended as ${status}: ${detail}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 10_000));
+  }
+
+  fail(`Timed out tracking Hostless deployment ${deploymentId} after 20 minutes; last reported status: ${lastStatus}. The Hostless deployment may still be running. Re-running this commit is safe: Hostless returns the existing deployment instead of starting a duplicate.`);
+}
+
 await syncRuntimeSecrets(projectId, node.app);
-console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`);
-runCli(
-  ["deploy", "--wait", "--timeout", "1800", "--app", node.app, "--project", String(projectId), "--commit", commit],
-  `Deploy ${node.app}`,
-);
+await deployAndTrack(node.app, commit);
 
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
