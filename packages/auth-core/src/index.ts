@@ -251,20 +251,21 @@ export class AuthService {
   issueHumanSession(input: {
     userId: string;
     scopes: string[];
-    tenantIds: string[];
+    tenantIds?: string[];
+    tenantMode?: TenantModeV1;
     accessTtlSeconds?: number;
     refreshTtlSeconds?: number;
   }): IssuedAccessV1 {
     return this.store.transaction(() => {
       requireId(input.userId, "userId");
-      const scopes = normalizeScopes(input.scopes);
-      const tenantIds = normalizeTenants("allow-list", input.tenantIds);
+      const tenantMode = input.tenantMode ?? "allow-list";
+      const tenantIds = normalizeTenants(tenantMode, input.tenantIds ?? []);
       const familyId = this.tokenFactory("id");
       const access = this.issueAccess({
         actorType: "user",
         actorId: input.userId,
         scopes,
-        tenantMode: "allow-list",
+        tenantMode,
         tenantIds,
         ttlSeconds: clampTtl(input.accessTtlSeconds ?? 900, 60, 3600),
       });
