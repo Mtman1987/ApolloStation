@@ -29,12 +29,12 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
     <section class="auth-panels" aria-label="SpaceMountain account access">
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite" hidden></p>
       <form id="login-form" autocomplete="off">
-        <span>APOLLO OWNER ACCESS</span>
-        <h2>Claim my Apollo account</h2>
-        <p class="spmt-auth-help">Enter your developer Boss Key. Apollo checks it against the configured owner key, then uses the existing SPMT session bridge to identify you and create your browser session.</p>
-        <label>Boss Key<input name="bossKey" type="password" maxlength="512" autocomplete="current-password" autocapitalize="off" spellcheck="false" required placeholder="Enter your Boss Key"></label>
+        <span>SPMT SESSION ACCESS</span>
+        <h2>Continue as your SPMT account</h2>
+        <p class="spmt-auth-help">Paste the SPMT session bridge JSON you received from SpaceMountain. Apollo verifies the token with SPMT and opens your Apollo browser session.</p>
+        <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="7" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
         <button type="submit">Sign in to Apollo</button>
-        <p class="spmt-auth-help">Your Boss Key is sent to Apollo over HTTPS for verification and is never saved in browser storage.</p>
+        <p class="spmt-auth-help">The bridge is sent directly to Apollo over HTTPS for validation. It is not saved in browser storage.</p>
       </form>
 
     </section>
