@@ -469,7 +469,7 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(clientSource, /await spmt\.registerApp\(manifest\)/);
   assert.match(clientSource, /\/sandbox\/developer\/import-manifest/);
   assert.doesNotMatch(clientSource, /function publishCandidate/);
-  assert.doesNotMatch(clientSource, /localStorage|sessionStorage/);
+  assert.doesNotMatch(runner, /localStorage|sessionStorage/);
 });
 
 test("supervised runner makes both layers healthy and stops both children together", async () => {
