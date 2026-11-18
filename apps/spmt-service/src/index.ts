@@ -462,9 +462,25 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/session/check") {
-        const token = cookie(request, "spmt_token");
-        const authenticated = Boolean(token && auth.isBrowserSession(token));
-        return json(response, authenticated ? 200 : 401, { authenticated, cookiePresent: authenticated });
+        // Validate the original SPMT bearer session from its HttpOnly cookie.
+        // This deliberately bypasses Apollo profile and tenant lookups.
+        const donorToken = cookie(request, "spmt_donor_session");
+        if (!donorToken) return json(response, 401, { authenticated: false, cookiePresent: false });
+        try {
+          const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
+            headers: { accept: "application/json", authorization: `Bearer ${donorToken}` },
+            redirect: "manual", signal: AbortSignal.timeout(10000),
+          });
+          if (!donorMe.ok) return json(response, 401, { authenticated: false, cookiePresent: true, spmtValidated: false });
+          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
+          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
+          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
+          const donorUsername = typeof donorUser.username === "string" ? donorUser.username : "";
+          if (!donorId) return json(response, 401, { authenticated: false, cookiePresent: true, spmtValidated: false });
+          return json(response, 200, { authenticated: true, cookiePresent: true, spmtValidated: true, spmtIdentity: { id: donorId, username: donorUsername } });
+        } catch {
+          return json(response, 503, { authenticated: false, cookiePresent: true, spmtValidated: false, error: "spmt_unavailable" });
+        }
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge-login") {
@@ -497,7 +513,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             authenticated: true,
             spmtIdentity: { id: donorId, username: donorUsername },
             accessExpiresAt: issued.accessExpiresAt,
-          }, { "set-cookie": browserSessionCookie(browser.accessToken) });
+          }, { "set-cookie": [browserSessionCookie(browser.accessToken), donorSessionCookie(bridgeToken)] });
         } catch (error) {
           if (error instanceof SyntaxError) return json(response, 400, { error: "invalid_bridge_json", message: "The pasted value is not valid JSON. Paste the complete SPMT_SESSION_BRIDGE_JSON value." });
           return json(response, 503, { error: "identity_unavailable", message: "Apollo could not complete SPMT identity validation. Try again." });
@@ -1011,3 +1027,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 }
 
 function browserSessionCookie(token: string) { return `${sessionCookie(token)}; Max-Age=34560000`; }
+function donorSessionCookie(token: string) { return `spmt_donor_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`; }
