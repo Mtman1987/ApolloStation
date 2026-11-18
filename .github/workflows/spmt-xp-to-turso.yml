@@ -1,0 +1,52 @@
+name: SPMT XP and profile data to Turso
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Private release tag holding spmt-xp-export.db"
+        required: true
+        type: string
+      apply:
+        description: "Write to Turso (off = dry run: counts only)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spmt-xp-to-turso
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Turso token is present (name only)
+        run: test -n "$TURSO_AUTH_TOKEN" || { echo "::error::NODE2_TURSO_AUTH_TOKEN missing"; exit 1; }
+      - name: Download the private export release asset
+        run: |
+          mkdir -p export-input
+          gh release download "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" --pattern "spmt-xp-export.db" --dir export-input
+          echo "08aa9be1295c5a416b2f0ae046dab4352ffac60569e4f977398e545ab239a9d1  export-input/spmt-xp-export.db" | sha256sum -c -
+      - name: Import to Turso (dry run unless apply is set)
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            node scripts/spmt-xp-to-turso.mjs --source ./export-input/spmt-xp-export.db --apply
+          else
+            node scripts/spmt-xp-to-turso.mjs --source ./export-input/spmt-xp-export.db
+          fi
+      - name: Remove the export file from the runner
+        if: always()
+        run: rm -rf export-input
