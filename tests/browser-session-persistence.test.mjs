@@ -104,7 +104,8 @@ test('SPMT OAuth callback exchanges a one-time code and restores the existing Ap
       const body=JSON.parse(String(init.body));
       assert.equal(body.grant_type,'authorization_code');
       assert.equal(body.client_id,'spacemountain-live');
-      assert.equal(body.client_secret,'test-spacemountain-client-secret');
+      assert.equal(body.client_secret,undefined);
+      assert.equal(body.code_verifier,'apollo-test-pkce-verifier-012345678901234567890123');
       assert.equal(body.code,'one-time-spmt-code');
       assert.equal(body.redirect_uri,redirectUri);
       return Response.json({access_token:'verified-spmt-oauth-access-token',token_type:'Bearer'});
@@ -122,7 +123,6 @@ test('SPMT OAuth callback exchanges a one-time code and restores the existing Ap
     port:0,
     runtimeMode:'production',
     appLaunchBaseUrl:'https://apollo-node-1.hostless.app',
-    spacemountainClientSecret:'test-spacemountain-client-secret',
     fetchImpl:donorFetch,
   });
   try{
@@ -135,7 +135,7 @@ test('SPMT OAuth callback exchanges a one-time code and restores the existing Ap
     const exchange=await fetch(origin+'/v1/auth/session/bridge',{
       method:'POST',
       headers:{'content-type':'application/json'},
-      body:JSON.stringify({code:'one-time-spmt-code',redirectUri}),
+      body:JSON.stringify({code:'one-time-spmt-code',redirectUri,codeVerifier:'apollo-test-pkce-verifier-012345678901234567890123'}),
     });
     assert.equal(exchange.status,200);
     const payload=await exchange.json();
