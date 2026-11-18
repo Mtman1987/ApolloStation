@@ -141,8 +141,12 @@ function base64Url(bytes: Uint8Array) {
 }
 
 async function restoreShell() {
-  try { await loadShell(); sessionRecovery.authenticated(); redirectToRequestedApp(); }
-  catch (error) {
+  try {
+    await restoreSpmtCookieSession();
+    await loadShell();
+    sessionRecovery.authenticated();
+    redirectToRequestedApp();
+  } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
       await beginSpmtSso();
@@ -150,6 +154,39 @@ async function restoreShell() {
     }
     showSessionUnavailable(message(error));
   }
+}
+
+/**
+ * Reuse the browser's canonical SPMT login. The spmt_token cookie is HttpOnly
+ * and host-only to spmt.live, so Apollo never reads or copies it. The browser
+ * sends it directly to SPMT; SPMT returns a short-lived signed bridge token,
+ * which Apollo verifies server-to-server before issuing its own session.
+ */
+async function restoreSpmtCookieSession() {
+  setStatus("Checking your existing SPMT browser session…", "working");
+  const response = await fetch("https://spmt.live/api/session/bridge", {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json", "x-spmt-app": "spacemountain" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (response.status === 401 || response.status === 403) return false;
+  if (!response.ok) throw new Error(`SPMT session check failed (${response.status}).`);
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const token = typeof payload.token === "string" ? payload.token : "";
+  if (!token) throw new Error("SPMT recognized the request but did not return a session handoff.");
+  const handoff = await fetch("/v1/auth/session/bridge", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ token }),
+    signal: AbortSignal.timeout(12000),
+  });
+  const handoffPayload = await handoff.json().catch(() => ({})) as Record<string, unknown>;
+  if (!handoff.ok) throw new Error(typeof handoffPayload.message === "string" ? handoffPayload.message : "Apollo could not verify your existing SPMT session.");
+  return true;
 }
 
 async function submitLogin(event: SubmitEvent) {
