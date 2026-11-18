@@ -469,9 +469,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (!bridgeToken && typeof body.code === "string") {
           const code = body.code.trim();
           const redirectUri = str(body.redirectUri, "redirectUri");
+          const codeVerifier = str(body.codeVerifier, "codeVerifier");
           const expectedRedirectUri = `${appLaunchBaseUrl}/auth/callback`;
-          if (!code || code.length > 2048 || redirectUri !== expectedRedirectUri) return json(response, 400, { error: "invalid_request" });
-          if (!options.spacemountainClientSecret) return json(response, 503, { error: "sso_not_configured", message: "The existing SPMT OAuth client secret is not configured on this Apollo node." });
+          if (!code || code.length > 2048 || redirectUri !== expectedRedirectUri || !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)) return json(response, 400, { error: "invalid_request" });
           const tokenResponse = await fetchImpl("https://spmt.live/api/oauth/token", {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
@@ -479,7 +479,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
               grant_type: "authorization_code",
               code,
               client_id: "spacemountain-live",
-              client_secret: options.spacemountainClientSecret,
+              code_verifier: codeVerifier,
               redirect_uri: redirectUri,
             }),
             redirect: "manual",
