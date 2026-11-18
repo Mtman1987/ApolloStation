@@ -211,10 +211,26 @@ async function restoreSpmtCookieSession() {
 
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
+  const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+  const bossKeyInput = loginForm.elements.namedItem("bossKey") as HTMLInputElement | null;
   try {
-    const input = authInput(loginForm);
-    await authRequest("/auth/login", input, loginForm);
+    const bossKey = bossKeyInput?.value ?? "";
+    if (!bossKey) throw new Error("Enter your Boss Key.");
+    if (button) button.disabled = true;
+    setStatus("Verifying Boss Key and importing your SPMT identity…", "working");
+    const response = await fetch("/v1/auth/session/claim", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ bossKey }), signal: AbortSignal.timeout(15000),
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not verify the Boss Key or SPMT identity.");
+    if (bossKeyInput) bossKeyInput.value = "";
+    await loadShell();
+    sessionRecovery.authenticated();
+    redirectToRequestedApp();
   } catch (error) { setStatus(message(error), "error"); }
+  finally { if (button) button.disabled = false; }
 }
 
 async function authRequest(path: string, input: Record<string, string>, form: HTMLFormElement) {
