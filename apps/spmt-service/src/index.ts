@@ -2,7 +2,6 @@ import { HumanReferenceApi, HumanReferenceService } from "./human-reference-api.
 import {TwitchBotApi,parseTwitchBotRoles,type TwitchBotRole} from "./twitch-bot-api.js";
 import {normalizeTikTokLiveEvent} from "@spmt/commlink-core";
 import {PublicPersonaApi} from "./public-persona-api.js";
-import {createHash, timingSafeEqual} from "node:crypto";
 import {normalizeCommlinkProviderMutation,type CommlinkProviderMutationV1} from "@spmt/contracts";
 import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
 import {StellarPublicMemory} from "@spmt/stellar-core";
@@ -496,53 +495,6 @@ export function createSpmtService(options: SpmtServiceOptions) {
         } catch (error) {
           if (error instanceof SyntaxError) return json(response, 400, { error: "invalid_bridge_json", message: "The pasted value is not valid JSON. Paste the complete SPMT_SESSION_BRIDGE_JSON value." });
           return json(response, 503, { error: "identity_unavailable", message: "Apollo could not complete SPMT identity validation. Try again." });
-        }
-      }
-
-      if (request.method === "POST" && url.pathname === "/v1/auth/session/claim") {
-        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
-        const body = await readBody(request);
-        const suppliedBossKey = typeof body.bossKey === "string" ? body.bossKey : "";
-        const expectedBossKey = process.env.BOSS_KEY ?? "";
-        const bridgeJson = process.env.SPMT_SESSION_BRIDGE_JSON ?? "";
-        if (!expectedBossKey || !bridgeJson || !suppliedBossKey || suppliedBossKey.length > 512) {
-          return json(response, 503, { error: "claim_not_configured", message: "Owner claim is not configured on this Apollo deployment." });
-        }
-        const suppliedDigest = createHash("sha256").update(suppliedBossKey).digest();
-        const expectedDigest = createHash("sha256").update(expectedBossKey).digest();
-        if (!timingSafeEqual(suppliedDigest, expectedDigest)) return json(response, 401, { error: "invalid_boss_key", message: "That Boss Key is not correct." });
-        try {
-          const bridgePayload = JSON.parse(bridgeJson) as Record<string, unknown>;
-          const bridgeToken = typeof bridgePayload.token === "string" ? bridgePayload.token.trim() : "";
-          if (!bridgeToken || bridgeToken.length > 8192) return json(response, 503, { error: "invalid_bridge_secret", message: "The configured SPMT bridge secret is missing a valid token." });
-          const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
-            headers: { accept: "application/json", authorization: `Bearer ${bridgeToken}` },
-            redirect: "manual", signal: AbortSignal.timeout(8000),
-          });
-          if (!donorMe.ok) return json(response, donorMe.status === 401 || donorMe.status === 403 ? 401 : 503, { error: "identity_unavailable", message: "SPMT rejected the configured bridge token. Update the GitHub Actions secret with a fresh bridge response." });
-          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
-          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
-          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
-          const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim().toLowerCase() : "";
-          if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_donor_session" });
-          // Boss Key is a private developer bootstrap. The verified SPMT identity is
-          // the principal; do not require or create a legacy Apollo profile/workspace.
-          // Global scope is limited to this server-side, Boss-Key-protected claim path.
-          const issued = auth.issueHumanSession({
-            userId: donorId,
-            scopes: ["*"],
-            tenantMode: "any",
-            tenantIds: [],
-          });
-          const browser = auth.issueBrowserSession(issued.accessToken);
-          return json(response, 200, {
-            authenticated: true,
-            developer: true,
-            spmtIdentity: { id: donorId, username: donorUsername, user: donorUser },
-            accessExpiresAt: issued.accessExpiresAt,
-          }, { "set-cookie": browserSessionCookie(browser.accessToken) });
-        } catch {
-          return json(response, 503, { error: "identity_unavailable", message: "Apollo could not parse or verify the configured SPMT bridge identity." });
         }
       }
 
