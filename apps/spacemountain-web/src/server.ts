@@ -161,7 +161,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/apps/commlink") {
         await requireVerifiedCommlinkSession(request, spmtOrigin, fetchImpl);
       }
-      if (request.method === "GET" && url.pathname === "/auth/callback") return textResponse(response, 410, "This SPMT OAuth callback has been retired. Open Apollo and use the Boss Key claim screen.", "text/plain; charset=utf-8", "no-store");
+      if (request.method === "GET" && url.pathname === "/auth/callback") return textResponse(response, 410, "This SPMT OAuth callback has been retired. Sign in through the existing Apollo account flow.", "text/plain; charset=utf-8", "no-store");
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
         if (url.searchParams.get("surface") === "workspace-service") {
           response.removeHeader("x-frame-options");
