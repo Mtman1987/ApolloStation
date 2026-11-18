@@ -91,13 +91,14 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     const callbackClient = await client.text();
     assert.match(callbackClient, /completeSpmtOAuthCallback/);
     assert.match(callbackClient, /api\/oauth\/authorize/);
-    assert.match(callbackClient, /https:\/\/spacemountain\.live\/auth\/callback/);
+    assert.match(callbackClient, /canonicalAppOrigin = "https:\\/\\/spacemountain\\.live"/);
+    assert.match(callbackClient, /canonicalOAuthRedirectUri = `\\$\\{canonicalAppOrigin\\}\\/auth\\/callback`/);
     assert.doesNotMatch(callbackClient, /apollo-node-1\.hostless\.app\/auth\/callback/);
     assert.match(callbackClient, /spmt_oauth_state/);
     assert.match(callbackClient, /code_challenge_method/);
     assert.match(callbackClient, /spmt_oauth_code_verifier/);
     assert.match(callbackClient, /codeVerifier/);
-    assert.match(callbackClient, /https:\/\/spmt\.live\/api\/session\/bridge/);
+    assert.match(callbackClient, /\\/v1\\/auth\\/session\\/bridge/);
     assert.match(callbackClient, /credentials: "include"/);
     assert.match(callbackClient, /restoreSpmtCookieSession/);
     assert.match(callbackClient, /JSON\.stringify\(\{ token \}\)/);
