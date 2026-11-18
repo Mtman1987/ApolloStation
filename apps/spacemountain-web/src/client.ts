@@ -94,17 +94,19 @@ async function completeSpmtOAuthCallback() {
   const code = query.get("code") || "";
   const state = query.get("state") || "";
   const expectedState = window.sessionStorage.getItem("spmt_oauth_state") || "";
-  if (!code || !state || !expectedState || state !== expectedState) {
+  const codeVerifier = window.sessionStorage.getItem("spmt_oauth_code_verifier") || "";
+  if (!code || !state || !expectedState || state !== expectedState || !codeVerifier) {
     throw new Error("The SPMT sign-in handoff expired or could not be verified. Open SpaceMountain again from your SPMT session.");
   }
   window.sessionStorage.removeItem("spmt_oauth_state");
+  window.sessionStorage.removeItem("spmt_oauth_code_verifier");
   const redirectUri = `${window.location.origin}/auth/callback`;
   const response = await fetch("/v1/auth/session/bridge", {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ code, redirectUri }),
+    body: JSON.stringify({ code, redirectUri, codeVerifier }),
     signal: AbortSignal.timeout(12000),
   });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -114,15 +116,28 @@ async function completeSpmtOAuthCallback() {
   window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
 }
 
-function beginSpmtSso() {
+async function beginSpmtSso() {
   const state = crypto.randomUUID();
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  const codeVerifier = base64Url(random);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier));
+  const codeChallenge = base64Url(new Uint8Array(digest));
   window.sessionStorage.setItem("spmt_oauth_state", state);
+  window.sessionStorage.setItem("spmt_oauth_code_verifier", codeVerifier);
   const redirectUri = `${window.location.origin}/auth/callback`;
   const authorize = new URL("https://spmt.live/api/oauth/authorize");
   authorize.searchParams.set("client_id", "spacemountain-live");
   authorize.searchParams.set("redirect_uri", redirectUri);
   authorize.searchParams.set("state", state);
+  authorize.searchParams.set("code_challenge", codeChallenge);
+  authorize.searchParams.set("code_challenge_method", "S256");
   window.location.assign(authorize.toString());
+}
+
+function base64Url(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
 }
 
 async function restoreShell() {
@@ -130,7 +145,7 @@ async function restoreShell() {
   catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      beginSpmtSso();
+      await beginSpmtSso();
       return;
     }
     showSessionUnavailable(message(error));
