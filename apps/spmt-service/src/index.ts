@@ -470,7 +470,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const code = body.code.trim();
           const redirectUri = str(body.redirectUri, "redirectUri");
           const codeVerifier = str(body.codeVerifier, "codeVerifier");
-          const expectedRedirectUri = `${appLaunchBaseUrl}/auth/callback`;
+          // SPMT's existing spacemountain-live OAuth client is registered to this exact callback.
+          // Keep it independent of the app-launch URL, which may point at the Hostless node.
+          const expectedRedirectUri = "https://spacemountain.live/auth/callback";
           if (!code || code.length > 2048 || redirectUri !== expectedRedirectUri || !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)) return json(response, 400, { error: "invalid_request" });
           const tokenResponse = await fetchImpl("https://spmt.live/api/oauth/token", {
             method: "POST",
