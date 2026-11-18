@@ -121,8 +121,6 @@ jobs:
     if: >-
       ${{ !cancelled() &&
           github.ref == 'refs/heads/main' &&
-          ((matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
-           (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true')) &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
