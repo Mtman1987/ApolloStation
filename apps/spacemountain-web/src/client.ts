@@ -89,7 +89,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Paste your SPMT session bridge JSON to sign in to Apollo.");
+      showAuth("Enter your Boss Key to sign in to Apollo.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -97,30 +97,29 @@ async function restoreShell() {
 }
 
 /**
- * Reuse the browser's canonical SPMT login. The spmt_token cookie is HttpOnly
- * and host-only to spmt.live, so Apollo never reads or copies it. The browser
- * sends it directly to SPMT; SPMT returns a short-lived signed bridge token,
- * which Apollo verifies server-to-server before issuing its own session.
+ * Developer owner sign-in: Boss Key is checked by Apollo's existing claim
+ * endpoint, which uses the preconfigured SPMT_SESSION_BRIDGE_JSON server-side.
+ * The bridge secret never enters the browser.
  */
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
-  const bridgeInput = loginForm.elements.namedItem("bridgeJson") as HTMLTextAreaElement | null;
+  const bossKeyInput = loginForm.elements.namedItem("bossKey") as HTMLInputElement | null;
   try {
-    const bridgeJson = bridgeInput?.value.trim() ?? "";
-    if (!bridgeJson) throw new Error("Paste your SPMT session bridge JSON.");
-    if (bridgeJson.length > 30000) throw new Error("The SPMT session JSON is larger than the allowed 30 KB.");
+    const bossKey = bossKeyInput?.value ?? "";
+    if (!bossKey.trim()) throw new Error("Enter your Boss Key.");
+    if (bossKey.length > 512) throw new Error("The Boss Key is too long.");
     if (button) button.disabled = true;
-    setStatus("Validating your SPMT session and opening Apollo…", "working");
-    const response = await fetch("/v1/auth/session/bridge-login", {
+    setStatus("Checking your Boss Key and establishing your Apollo owner session…", "working");
+    const response = await fetch("/v1/auth/session/claim", {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ bridgeJson }), signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ bossKey }), signal: AbortSignal.timeout(20000),
     });
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not validate the supplied SPMT session.");
-    if (bridgeInput) bridgeInput.value = "";
+    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not complete owner sign-in.");
     await loadShell();
+    if (bossKeyInput) bossKeyInput.value = "";
     sessionRecovery.authenticated();
     redirectToRequestedApp();
   } catch (error) { setStatus(message(error), "error"); }
