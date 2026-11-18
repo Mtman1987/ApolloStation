@@ -462,6 +462,43 @@ export function createSpmtService(options: SpmtServiceOptions) {
         return json(response, 201, { profile, tenantId });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge-login") {
+        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
+        const body = await readBody(request);
+        const raw = typeof body.bridgeJson === "string" ? body.bridgeJson.trim() : "";
+        if (!raw || raw.length > 30000) return json(response, 400, { error: "invalid_bridge_json", message: "Paste the complete SPMT session bridge JSON (maximum 30 KB)." });
+        try {
+          const bridgePayload = JSON.parse(raw) as Record<string, unknown>;
+          const bridgeToken = typeof bridgePayload.token === "string" ? bridgePayload.token.trim() : "";
+          if (!bridgeToken || bridgeToken.length > 8192) return json(response, 400, { error: "missing_bridge_token", message: "The pasted JSON does not contain a valid token field." });
+          const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
+            headers: { accept: "application/json", authorization: `Bearer ${bridgeToken}` },
+            redirect: "manual", signal: AbortSignal.timeout(10000),
+          });
+          if (!donorMe.ok) return json(response, donorMe.status === 401 || donorMe.status === 403 ? 401 : 503, {
+            error: "spmt_token_rejected",
+            message: donorMe.status === 401 || donorMe.status === 403 ? "SPMT says this token is expired or invalid. Paste a current session bridge JSON." : `SPMT identity validation is temporarily unavailable (${donorMe.status}). Try again shortly.`,
+          });
+          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
+          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
+          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
+          const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
+          if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_spmt_identity", message: "SPMT validated the token but did not return a usable user identity." });
+          // A valid SPMT bearer token is the proof of identity for this temporary
+          // owner/developer entry path. Do not require a legacy Apollo mapping.
+          const issued = auth.issueHumanSession({ userId: donorId, scopes: ["*"], tenantMode: "any", tenantIds: [] });
+          const browser = auth.issueBrowserSession(issued.accessToken);
+          return json(response, 200, {
+            authenticated: true,
+            spmtIdentity: { id: donorId, username: donorUsername },
+            accessExpiresAt: issued.accessExpiresAt,
+          }, { "set-cookie": browserSessionCookie(browser.accessToken) });
+        } catch (error) {
+          if (error instanceof SyntaxError) return json(response, 400, { error: "invalid_bridge_json", message: "The pasted value is not valid JSON. Paste the complete SPMT_SESSION_BRIDGE_JSON value." });
+          return json(response, 503, { error: "identity_unavailable", message: "Apollo could not complete SPMT identity validation. Try again." });
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/session/claim") {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         const body = await readBody(request);
