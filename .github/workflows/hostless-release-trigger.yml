@@ -1,0 +1,35 @@
+name: Trigger Apollo Hostless release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/release-trigger/trigger-hostless-release.mjs"
+      - ".github/workflows/hostless-release-trigger.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: apollo-hostless-release-trigger
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch validated two-node Hostless release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release trigger
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dispatch the existing Hostless release workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: node scripts/release-trigger/trigger-hostless-release.mjs
