@@ -195,6 +195,10 @@ async function syncRuntimeSecrets(projectId, appName) {
     const variableRows = rows(currentVariables, ["variables", "environmentVariables", "items"]);
     if (!variableRows) fail("Hostless environment-variable listing returned an unexpected response shape; refusing to guess which sandbox settings exist.");
     const existingKeys = new Set(variableRows.map(item => item?.name ?? item?.key).filter(value => typeof value === "string"));
+    const suppliedSecretKeys = new Set(entries.map(([key]) => key));
+    if (!existingKeys.has("SPACEMOUNTAIN_CLIENT_SECRET") && !suppliedSecretKeys.has("SPACEMOUNTAIN_CLIENT_SECRET")) {
+      fail("SPACEMOUNTAIN_CLIENT_SECRET is missing from both the existing Hostless Node 1 environment and the optional Apollo Actions secret mapping. It must be provisioned from the existing SPMT spacemountain-live OAuth client secret; no new secret should be generated.");
+    }
     for (const key of ["APOLLO_PRIVATE_PREVIEW", "APOLLO_PREVIEW_PASSWORD", "SPMT_SANDBOX_OWNER_USERNAME", "SPMT_SANDBOX_APPS_JSON"]) {
       if (existingKeys.has(key)) runCli(["env", "unset", key, "--app", appName, "--project", String(projectId)], `Remove obsolete sandbox setting ${key}`);
     }
