@@ -121,6 +121,8 @@ jobs:
     if: >-
       ${{ !cancelled() &&
           github.ref == 'refs/heads/main' &&
+          ((matrix.node == 'node1' && needs.detect-deploy-targets.outputs.node1 == 'true') ||
+           (matrix.node == 'node2' && needs.detect-deploy-targets.outputs.node2 == 'true')) &&
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
@@ -161,68 +163,6 @@ jobs:
             console.error("Missing production launcher for " + role + "; refusing to create or modify a Hostless app.");
             process.exit(1);
           }
-          NODE
-      - name: Validate required runtime configuration before touching Hostless
-        env:
-          NODE_ROLE: ${{ matrix.node }}
-          SPMT_WEBHOOK_KEY: ${{ secrets.SPMT_WEBHOOK_KEY }}
-          CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
-          STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
-          NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
-          NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
-          NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
-          NEBULA_ARCADE_PUBLIC_ORIGIN: ${{ secrets.NEBULA_ARCADE_PUBLIC_ORIGIN }}
-          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
-          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
-          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-          SPMT_PROVIDER_CREDENTIAL_KEY: ${{ secrets.SPMT_PROVIDER_CREDENTIAL_KEY }}
-          SPACEMOUNTAIN_CLIENT_SECRET: ${{ secrets.SPACEMOUNTAIN_CLIENT_SECRET }}
-          MOSAIC_STREAMWEAVER_SERVICE_TOKEN: ${{ secrets.MOSAIC_STREAMWEAVER_SERVICE_TOKEN }}
-          DSH_RUNTIME_CONFIG_JSON: ${{ secrets.DSH_RUNTIME_CONFIG_JSON }}
-          NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
-          TWITCH_BOT_TOKEN: ${{ secrets.TWITCH_BOT_TOKEN }}
-        run: |
-          node --input-type=module - <<'NODE'
-          const role = process.env.NODE_ROLE;
-          const required = role === "node1"
-            ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
-            : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
-          // Existing Hostless app environment is authoritative for optional integrations.
-          // Only require the shared node-to-node credentials here. Optional OAuth, DSH,
-          // Mosaic, and Nebula settings are synchronized when supplied by Actions; empty
-          // Actions values are skipped by ensure-node-app.mjs and do not erase Hostless values.
-          const missing = required.filter((name) => !process.env[name]?.trim());
-          if (missing.length) {
-            console.error("Missing ApolloStation Actions secrets required by " + role + ": " + missing.join(", "));
-            process.exit(1);
-          }
-          for (const name of required.filter((name) => name.endsWith("_WORKER_CREDENTIAL"))) {
-            if ((process.env[name] ?? "").length < 32) {
-              console.error(name + " must be at least 32 characters.");
-              process.exit(1);
-            }
-          }
-          // TWITCH_BOT_TOKEN is already provisioned in the Hostless app environment.
-          // Do not require a duplicate GitHub Actions secret or overwrite the Hostless value.
-          const runtimeConfigName = role === "node1" ? "DSH_RUNTIME_CONFIG_JSON" : "NEBULA_ARCADE_RUNTIME_CONFIG_JSON";
-          if (process.env[runtimeConfigName]?.trim()) {
-            let config;
-            try { config = JSON.parse(process.env[runtimeConfigName]); } catch { console.error(runtimeConfigName + " must be valid JSON when supplied."); process.exit(1); }
-            if (config?.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
-              console.error(runtimeConfigName + " must be a version 1 config with a tenants array when supplied.");
-              process.exit(1);
-            }
-          }
-          if (process.env.SPMT_WEBHOOK_KEY?.trim() && role === "node1" && Buffer.from(process.env.SPMT_WEBHOOK_KEY, "base64url").byteLength !== 32) {
-            console.error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes when supplied.");
-            process.exit(1);
-          }
-          if (process.env.SPMT_PROVIDER_CREDENTIAL_KEY?.trim() && Buffer.from(process.env.SPMT_PROVIDER_CREDENTIAL_KEY, "base64url").byteLength !== 32) {
-            console.error("SPMT_PROVIDER_CREDENTIAL_KEY must be base64url for exactly 32 bytes when supplied.");
-            process.exit(1);
-          }
-          console.log("Required runtime configuration is present; values were not printed.");
           NODE
       - name: Verify both nodes target the same Turso database and inspect recovery staging
         env:
@@ -295,94 +235,13 @@ jobs:
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
-      - name: Deploy this node using its own Hostless token
+      - name: Deploy this node using its existing Hostless environment
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
-          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
-          APOLLO_RUNTIME_NODE1_SPMT_WEBHOOK_KEY: ${{ secrets.SPMT_WEBHOOK_KEY }}
-          APOLLO_RUNTIME_NODE1_SPMT_PROVIDER_CREDENTIAL_KEY: ${{ secrets.SPMT_PROVIDER_CREDENTIAL_KEY }}
-          APOLLO_RUNTIME_NODE1_TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
-          APOLLO_RUNTIME_NODE1_TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
-          APOLLO_RUNTIME_NODE1_DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-          APOLLO_RUNTIME_NODE1_DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-          APOLLO_RUNTIME_NODE1_DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_URL: "https://apollo-node-1.hostless.app"
-          APOLLO_RUNTIME_NODE1_SPMT_PUBLIC_ORIGIN: "https://apollo-node-1.hostless.app"
-          APOLLO_RUNTIME_NODE1_SPMT_RUNTIME_MODE: "production"
-          APOLLO_RUNTIME_NODE1_SPMT_APP_LAUNCH_BASE_URL: "https://spacemountain.live"
-          APOLLO_RUNTIME_NODE1_STREAMWEAVER_WEB_ORIGIN: "https://apollo-node-2.hostless.app"
-          APOLLO_RUNTIME_NODE1_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE1_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE1_NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE1_SPMT_CHAT_GATEWAY_ENABLED: "1"
-          APOLLO_RUNTIME_NODE1_SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
-          APOLLO_RUNTIME_NODE1_SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
-          APOLLO_RUNTIME_NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
-          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
-          APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE2_TWITCH_BOT_TOKEN: ${{ secrets.TWITCH_BOT_TOKEN }}
-          APOLLO_RUNTIME_NODE2_TWITCH_BOT_USERNAME: "spacemountainlive"
-          APOLLO_RUNTIME_NODE2_SPACEMOUNTAIN_TWITCH_CHANNEL: "mtman1987"
-          APOLLO_RUNTIME_NODE2_SPMT_RUNTIME_MODE: "production"
-          APOLLO_RUNTIME_NODE2_SPMT_OUTBOUND_MODE: "enabled"
-          APOLLO_RUNTIME_NODE2_SPMT_LIVE_INGRESS_MODE: "disabled"
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_URL: "https://apollo-node-2.hostless.app"
-          APOLLO_RUNTIME_NODE2_DISCORD_STREAM_HUB_URL: "https://apollo-node-1.hostless.app"
-          APOLLO_RUNTIME_NODE2_DSH_SERVICE_SECRET: ${{ secrets.DSH_SERVICE_SECRET }}
-          APOLLO_RUNTIME_NODE2_MOSAIC_STREAMWEAVER_SERVICE_TOKEN: ${{ secrets.MOSAIC_STREAMWEAVER_SERVICE_TOKEN }}
-          APOLLO_RUNTIME_NODE2_MOSAIC_IMAGE_PROVIDER: "pollinations"
-          APOLLO_RUNTIME_NODE2_MOSAIC_IMAGE_FALLBACK_PROVIDERS: "pollinations"
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TENANT_ID: ${{ secrets.NEBULA_ARCADE_TENANT_ID }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_CHANNEL_ID: ${{ secrets.NEBULA_ARCADE_CHANNEL_ID }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_JSON: ${{ secrets.NEBULA_ARCADE_RUNTIME_CONFIG_JSON }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_RUNTIME_CONFIG_PATH: "/tmp/apollo-nebula-runtime.json"
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TAG_STORE: "turso"
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_WORKER_CREDENTIAL: ${{ secrets.NEBULA_ARCADE_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_PUBLIC_ORIGIN: "https://apollo-node-2.hostless.app"
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_DATABASE_PATH: "/tmp/apollo-nebula-arcade.sqlite"
-          APOLLO_RUNTIME_NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_GAME_RUNTIME_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE2_STREAMWEAVER_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE1_DSH_WORKER_CREDENTIAL: ${{ secrets.DSH_WORKER_CREDENTIAL }}
-          APOLLO_RUNTIME_NODE1_DSH_RUNTIME_CONFIG_JSON: ${{ secrets.DSH_RUNTIME_CONFIG_JSON }}
-          APOLLO_RUNTIME_NODE1_DSH_RUNTIME_CONFIG_PATH: "/tmp/apollo-dsh-runtime.json"
-          APOLLO_RUNTIME_NODE1_DSH_DATABASE_PATH: "/tmp/apollo-dsh.sqlite"
-          APOLLO_RUNTIME_NODE1_DSH_DISCORD_PUBLIC_KEY: ${{ secrets.DSH_DISCORD_PUBLIC_KEY }}
-          APOLLO_RUNTIME_NODE1_DSH_DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-          APOLLO_RUNTIME_NODE1_SPMT_DSH_LIVE_RUNTIME_ENABLED: "1"
-          APOLLO_RUNTIME_NODE1_DSH_SERVICE_SECRET: ${{ secrets.DSH_SERVICE_SECRET }}
-          APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          APOLLO_RUNTIME_NODE1_BOSS_KEY: ${{ secrets.BOSS_KEY }}
-          APOLLO_RUNTIME_NODE1_SPMT_SESSION_BRIDGE_JSON: ${{ secrets.SPMT_SESSION_BRIDGE_JSON }}
-          APOLLO_RUNTIME_NODE1_DSH_RAID_PILE_STORE: ${{ secrets.DSH_RAID_PILE_STORE }}
-          APOLLO_RUNTIME_NODE1_DSH_MTFIXIT_STORE: ${{ secrets.DSH_MTFIXIT_STORE }}
+          APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ matrix.node == 'node2' && 'https://apollo-node-1.hostless.app' || '' }}
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
 
-  attach-spacemountain-domain:
-    name: Attach spacemountain.live to the Node 1 same-origin gateway
-    needs: [deploy-node]
-    if: >-
-      ${{ github.ref == 'refs/heads/main' &&
-          (github.event_name == 'push' ||
-           (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) &&
-          needs.deploy-node.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: production
-    steps:
       - name: Attach domain and verify Hostless read-back
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
