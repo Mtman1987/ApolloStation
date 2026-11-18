@@ -458,14 +458,14 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(runner, /offline-network-guard/);
   assert.match(runner, /NODE_OPTIONS: `--import=\$\{offlineNetworkGuardPath\}`/);
   assert.match(runner, /randomBytes\(32\)\.toString\("base64url"\)/);
-  const client = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
-  assert.match(client, /document\.visibilityState !== "visible"/);
-  assert.match(client, /await spmt\.listApps\(\)/);
-  assert.match(client, /next !== registryFingerprint/);
-  assert.match(client, /await spmt\.registerApp\(manifest\)/);
-  assert.match(client, /\/sandbox\/developer\/import-manifest/);
-  assert.doesNotMatch(client, /function publishCandidate/);
-  assert.doesNotMatch(client, /localStorage|sessionStorage/);
+  const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/clientSource.ts", import.meta.url), "utf8");
+  assert.match(clientSource, /document\.visibilityState !== "visible"/);
+  assert.match(clientSource, /await spmt\.listApps\(\)/);
+  assert.match(clientSource, /next !== registryFingerprint/);
+  assert.match(clientSource, /await spmt\.registerApp\(manifest\)/);
+  assert.match(clientSource, /\/sandbox\/developer\/import-manifest/);
+  assert.doesNotMatch(clientSource, /function publishCandidate/);
+  assert.doesNotMatch(clientSource, /localStorage|sessionStorage/);
 });
 
 test("supervised runner makes both layers healthy and stops both children together", async () => {
