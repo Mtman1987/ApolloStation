@@ -483,6 +483,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge") return json(response, 404, { error: "not_found" });
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge-login") {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         const body = await readBody(request);
@@ -505,15 +506,26 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
           const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
           if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_spmt_identity", message: "SPMT validated the token but did not return a usable user identity." });
-          // Map the validated SPMT identity to its existing Apollo profile and
-          // owned active tenants, mirroring the password login path.
-          const profile = data.getProfileByUsername(donorUsername.toLowerCase());
-          if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "This SPMT account has no existing Apollo workspace mapping." });
+          // SPMT already validated this identity. Reuse its Apollo profile and
+          // owned tenant when present; otherwise create them on first sign-in,
+          // using the same steps as /v1/auth/register. The profile gets a random
+          // password nobody holds, so password login stays closed for it.
+          let profile = data.getProfileByUsername(donorUsername.toLowerCase());
+          if (!profile) {
+            const userId = `usr_${donorId.replace(/[^a-zA-Z0-9]/g, "")}`;
+            const tenantId = `tenant_${userId}`;
+            authority.ensureUser(userId);
+            if (!store.getUser(userId)) throw new Error("Apollo user could not be created.");
+            control.registerTenant({ tenantId, ownerUserId: userId, displayName: donorUsername });
+            authority.getOrCreateWorkspace(tenantId);
+            profile = data.registerUser({ userId, username: donorUsername.toLowerCase(), displayName: donorUsername, password: randomBytes(32).toString("base64url"), tenantIds: [tenantId] });
+            installSandboxApps(control, tenantId, options.sandboxApps ?? []);
+          }
           const tenantIds = profile.tenantIds.filter((tenantId) => {
             try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
             catch { return false; }
           });
-          if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
+          if (!tenantIds.length) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
           const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           return json(response, 200, {
