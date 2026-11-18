@@ -28,13 +28,13 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
     </section>
     <section class="auth-panels" aria-label="SpaceMountain account access">
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite" hidden></p>
-      <form id="login-form" autocomplete="on">
-        <span>SPMT ACCOUNT · EXISTING IDENTITY</span>
-        <h2>Sign in to SPMT</h2>
-        <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
-        <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label>
-        <button type="submit">Sign in to SpaceMountain</button>
-        <p class="spmt-auth-help">Use your existing SPMT username and password. This opens your production SPMT account; no new account is created.</p>
+      <form id="login-form" autocomplete="off">
+        <span>APOLLO OWNER ACCESS</span>
+        <h2>Claim my Apollo account</h2>
+        <p class="spmt-auth-help">Enter your Boss Key. Apollo will securely verify and import the SPMT identity configured for this deployment.</p>
+        <label>Boss Key<input name="bossKey" type="password" autocomplete="current-password" maxlength="512" required></label>
+        <button type="submit">Verify and claim account</button>
+        <p class="spmt-auth-help">Your key and SPMT token are sent only to Apollo's server. They are never placed in browser storage.</p>
       </form>
 
     </section>
