@@ -161,7 +161,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      await beginSpmtSso();
+      showAuth("Your SPMT session needs to be connected. Open the SPMT token page, copy its complete JSON response, and paste it here.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -211,10 +211,31 @@ async function restoreSpmtCookieSession() {
 
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
+  const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+  const responseInput = loginForm.elements.namedItem("bridgeResponse") as HTMLTextAreaElement | null;
   try {
-    const input = authInput(loginForm);
-    await authRequest("/auth/login", input, loginForm);
+    const raw = responseInput?.value.trim() ?? "";
+    if (!raw) throw new Error("Paste the complete JSON response from the SPMT token page.");
+    let payload: Record<string, unknown>;
+    try { payload = JSON.parse(raw) as Record<string, unknown>; }
+    catch { throw new Error("That is not valid JSON. Copy the entire response from the SPMT page, including the opening and closing braces."); }
+    const token = typeof payload.token === "string" ? payload.token.trim() : "";
+    if (!token) throw new Error('The JSON does not contain a "token" value. Copy the complete SPMT response, not just the user details.');
+    if (button) button.disabled = true;
+    setStatus("Verifying your SPMT token with SPMT…", "working");
+    const response = await fetch("/v1/auth/session/bridge", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ token }), signal: AbortSignal.timeout(12000),
+    });
+    const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(typeof result.message === "string" ? result.message : typeof result.error === "string" ? result.error : `SPMT token verification failed (${response.status}).`);
+    if (responseInput) responseInput.value = "";
+    await loadShell();
+    sessionRecovery.authenticated();
+    redirectToRequestedApp();
   } catch (error) { setStatus(message(error), "error"); }
+  finally { if (button) button.disabled = false; }
 }
 
 async function authRequest(path: string, input: Record<string, string>, form: HTMLFormElement) {
