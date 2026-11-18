@@ -510,7 +510,24 @@ export function createSpmtService(options: SpmtServiceOptions) {
           // owned tenant when present; otherwise create them on first sign-in,
           // using the same steps as /v1/auth/register. The profile gets a random
           // password nobody holds, so password login stays closed for it.
-          let profile = data.getProfileByUsername(donorUsername.toLowerCase());
+          // Resolve the existing owner first through provider links (Discord, then
+          // Twitch), then by username. Never bootstrap an empty workspace unless the
+          // operator explicitly sets APOLLO_SPMT_BRIDGE_BOOTSTRAP=1.
+          const donorDiscordId = typeof donorUser.discordId === "string" ? donorUser.discordId.trim() : "";
+          const donorTwitchId = typeof donorUser.twitchId === "string" ? donorUser.twitchId.trim() : "";
+          const linkedUserId = ([["discord", donorDiscordId], ["twitch", donorTwitchId]] as const)
+            .map(([provider, providerUserId]) => {
+              if (!providerUserId) return undefined;
+              const link = store.getProviderLink(provider, providerUserId);
+              return link && !link.revokedAt ? link.userId : undefined;
+            })
+            .find((value): value is string => Boolean(value));
+          const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
+          let profile = linkedProfile;
+          if (!profile) profile = data.getProfileByUsername(donorUsername.toLowerCase());
+          if (!profile && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
+            return json(response, 403, { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." });
+          }
           if (!profile) {
             const userId = `usr_${donorId.replace(/[^a-zA-Z0-9]/g, "")}`;
             const tenantId = `tenant_${userId}`;

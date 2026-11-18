@@ -54,6 +54,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Release gate: every push to main (and every AI-triggered dispatch) must pass
+  # the typecheck before any Hostless deployment starts. The emergency
+  # [skip-hostless-validation] commit tag still bypasses this job, as before.
+  validate:
+    name: Typecheck release gate
+    if: ${{ !contains(github.event.head_commit.message || '', '[skip-hostless-validation]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
   detect-deploy-targets:
     name: Detect which Hostless nodes changed
     runs-on: ubuntu-latest
@@ -142,9 +160,10 @@ jobs:
 
   deploy-node:
     name: Deploy ${{ matrix.label }}
-    needs: [detect-deploy-targets]
+    needs: [detect-deploy-targets, validate]
     if: >-
       ${{ !cancelled() &&
+          (needs.validate.result == 'success' || needs.validate.result == 'skipped') &&
           github.ref == 'refs/heads/main' &&
           (needs.detect-deploy-targets.outputs.node1 == 'true' ||
            needs.detect-deploy-targets.outputs.node2 == 'true') &&
@@ -154,8 +173,9 @@ jobs:
     timeout-minutes: 120
     environment: production
     strategy:
+      # Node 1 and Node 2 deploy in parallel. The shared concurrency group above
+      # still serialises whole release runs, so two releases never overlap.
       fail-fast: false
-      max-parallel: 1
       matrix: ${{ fromJSON(needs.detect-deploy-targets.outputs.matrix) }}
     steps:
       - name: Check out the exact validated commit
@@ -167,6 +187,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: ${{ matrix.node == 'node2' && 'npm' || '' }}
+          cache-dependency-path: package-lock.json
       - name: Verify this node has a production launcher
         env:
           NODE_ROLE: ${{ matrix.node }}
@@ -233,14 +255,16 @@ jobs:
           }
           console.log(JSON.stringify({ sharedDatabaseEndpoint: true, nodes: results }));
           NODE
+      # Nebula import is gated behind the NEBULA_IMPORT_ENABLED repository variable
+      # (must be exactly "true"). Unset or any other value skips both steps.
       - name: Build the verified Nebula recovery importer
-        if: ${{ matrix.node == 'node2' }}
+        if: ${{ matrix.node == 'node2' && vars.NEBULA_IMPORT_ENABLED == 'true' }}
         run: |
           npm ci
           npm run build
           node --check scripts/import-staged-nebula-tag-to-turso.mjs
       - name: Import recovered legacy global Tag players into Nebula Turso
-        if: ${{ matrix.node == 'node2' }}
+        if: ${{ matrix.node == 'node2' && vars.NEBULA_IMPORT_ENABLED == 'true' }}
         env:
           NEBULA_ARCADE_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
           NEBULA_ARCADE_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
@@ -259,6 +283,9 @@ jobs:
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
 
       - name: Attach domain and verify Hostless read-back
+        # Only the SPMT authority (node1) owns this domain; running it for node2
+        # too would race two parallel attach calls against the same app.
+        if: ${{ matrix.node == 'node1' }}
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
         run: |
@@ -358,3 +385,47 @@ jobs:
             ? "[redacted]" : value, 2);
           console.log(safe);
           NODE
+
+  # Live log snapshot per node, uploaded as an Actions artifact after every
+  # release attempt (success or failure). Uses the existing Hostless node tokens.
+  log-snapshot:
+    name: Log snapshot ${{ matrix.node }}
+    needs: [detect-deploy-targets, deploy-node]
+    if: ${{ always() && github.ref == 'refs/heads/main' && needs.detect-deploy-targets.result == 'success' && needs.deploy-node.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: node1
+            app: apollo-node-1
+            hostless_secret: HOSTLESS_NODE1_TOKEN
+          - node: node2
+            app: apollo-node-2
+            hostless_secret: HOSTLESS_NODE2_TOKEN
+    steps:
+      - name: Install Hostless CLI
+        run: |
+          curl -fsSL https://hostless.cloud/install.sh | bash
+          hostless --version
+      - name: Snapshot the last 2 hours of runtime logs
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
+          APP: ${{ matrix.app }}
+          NODE_KEY: ${{ matrix.node }}
+        run: |
+          mkdir -p logs
+          if ! hostless logs --app "$APP" --since 2h --limit 5000 --json > "logs/$NODE_KEY.ndjson" 2> "logs/$NODE_KEY.stderr.txt"; then
+            echo "hostless logs failed for $APP; see stderr" >> "logs/$NODE_KEY.stderr.txt"
+          fi
+          wc -l "logs/$NODE_KEY.ndjson" || true
+      - name: Upload log snapshot artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostless-logs-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 14
