@@ -96,13 +96,6 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
-      const requestHost = String(request.headers["x-forwarded-host"] ?? request.headers.host ?? "").split(",")[0]!.trim().toLowerCase().replace(/:\d+$/, "");
-      if ((request.method === "GET" || request.method === "HEAD") && requestHost === "apollo-node-1.hostless.app" && String(request.headers.accept ?? "").includes("text/html")) {
-        const destination = new URL(`${url.pathname}${url.search}`, "https://spacemountain.live");
-        response.writeHead(308, { location: destination.toString(), "cache-control": "no-store" });
-        response.end();
-        return;
-      }
       overlayRequest = (request.method === "GET" || request.method === "HEAD") && overlayOutputPath(url.pathname) && !url.search;
       const companionDownloads: Record<string, string> = {
         "/downloads/companion": "https://github.com/Mtman1987/streamweaver/releases/latest/download/SpaceMountain-Companion-Setup.exe",
