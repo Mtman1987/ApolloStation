@@ -594,7 +594,7 @@ function credentialsFrom(body: Record<string, unknown>, enforceRegistrationPassw
 function requiredText(value: unknown, name: string, max: number, trim = true, minimum = 1) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (result.length < minimum) throw new WebHostError(400, "Use a password that meets the SPMT account policy"); return result; }
 function sessionHeaders(response: Response) { const cookies = getSetCookies(response.headers).filter((value) => value.startsWith("spmt_token=")); return cookies.length ? { "set-cookie": cookies } : {}; }
 function getSetCookies(headers: Headers) { const value = headers as Headers & { getSetCookie?: () => string[] }; const result = value.getSetCookie?.() ?? []; if (result.length) return result; const single = headers.get("set-cookie"); return single ? [single] : []; }
-function clearSessionCookie() { return "spmt_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"; }
+function clearSessionCookie() { return ["spmt_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0", "spmt_donor_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"]; }
 function parseJson(value: Buffer) { try { return JSON.parse(value.toString("utf8")) as unknown; } catch { return { error: "invalid_upstream_response" }; } }
 function record(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function html(response: ServerResponse, status: number, body: string) { return textResponse(response, status, body, "text/html; charset=utf-8", "no-store"); }
