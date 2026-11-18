@@ -96,7 +96,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
-      const requestHost = String(request.headers["x-forwarded-host"] ?? request.headers.host ?? "").split(",")[0]!.trim().toLowerCase().replace(/:\\d+$/, "");
+      const requestHost = String(request.headers["x-forwarded-host"] ?? request.headers.host ?? "").split(",")[0]!.trim().toLowerCase().replace(/:\d+$/, "");
       if ((request.method === "GET" || request.method === "HEAD") && requestHost === "apollo-node-1.hostless.app" && String(request.headers.accept ?? "").includes("text/html")) {
         const destination = new URL(`${url.pathname}${url.search}`, "https://spacemountain.live");
         response.writeHead(308, { location: destination.toString(), "cache-control": "no-store" });
