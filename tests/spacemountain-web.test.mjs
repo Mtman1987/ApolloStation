@@ -91,6 +91,10 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(callbackClient, /code_challenge_method/);
     assert.match(callbackClient, /spmt_oauth_code_verifier/);
     assert.match(callbackClient, /codeVerifier/);
+    assert.match(callbackClient, /https:\/\/spmt\.live\/api\/session\/bridge/);
+    assert.match(callbackClient, /credentials: "include"/);
+    assert.match(callbackClient, /restoreSpmtCookieSession/);
+    assert.match(callbackClient, /JSON\.stringify\(\{ token \}\)/);
     const html = await page.text();
     assert.doesNotMatch(html, /SPACEMOUNTAIN\.LIVE|sandbox-guardrail|sandbox-status|refresh-shell|id="logout"|Sandbox open/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
