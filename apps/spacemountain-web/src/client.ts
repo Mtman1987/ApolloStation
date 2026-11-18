@@ -77,25 +77,45 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
-  // OAuth state and PKCE verifier are origin-scoped sessionStorage values.
-  // Move Hostless entry traffic onto the already-registered canonical origin
-  // before creating them, so the callback returns to this same browser origin.
-  if (window.location.hostname === "apollo-node-1.hostless.app") {
-    window.location.replace(`${canonicalAppOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`);
-    return;
-  }
   if (window.location.pathname === "/auth/callback") {
     try {
-      await completeSpmtOAuthCallback();
-      await loadShell();
-      sessionRecovery.authenticated();
-      redirectToRequestedApp();
+      const profile = await completeSpmtOAuthCallback();
+      renderNodeOneReturnPage(profile);
     } catch (error) {
       showAuth(message(error) || "SPMT could not complete the sign-in handoff.");
     }
     return;
   }
+  // Node 1 stays the destination. If its SPMT session is not already bridged,
+  // the approved canonical callback presents a verified one-click return.
   await restoreShell();
+}
+
+function renderNodeOneReturnPage(profile: unknown) {
+  const identity = profile && typeof profile === "object" ? profile as Record<string, unknown> : {};
+  const username = [identity.displayName, identity.username]
+    .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+  const shownName = username?.trim() || "your SPMT account";
+  const section = document.createElement("section");
+  section.className = "auth-panels";
+  section.setAttribute("aria-label", "Return to Apollo");
+  const card = document.createElement("div");
+  card.style.cssText = "grid-column:1/-1;display:grid;gap:18px;padding:28px;border:1px solid #f9731655;border-radius:20px;background:#0b1228e8";
+  const heading = document.createElement("h2");
+  heading.textContent = "You're signed in as " + shownName;
+  const description = document.createElement("p");
+  description.textContent = "Your SPMT identity is verified. Return to ApolloStation on Node 1 to continue.";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Return to Apollo as " + shownName;
+  button.addEventListener("click", () => {
+    window.location.assign("https://apollo-node-1.hostless.app/?spmt_return=1");
+  });
+  card.append(heading, description, button);
+  section.append(card);
+  authView.replaceChildren(section);
+  authView.hidden = false;
+  shellView.hidden = true;
 }
 
 async function completeSpmtOAuthCallback() {
@@ -123,6 +143,7 @@ async function completeSpmtOAuthCallback() {
   query.delete("code");
   query.delete("state");
   window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
+  return payload.profile;
 }
 
 async function beginSpmtSso() {
