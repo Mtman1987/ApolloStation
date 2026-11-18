@@ -186,14 +186,14 @@ async function hasSavedSessionCookie(): Promise<boolean> {
   if (response.status === 401) return false;
   if (!response.ok) throw new Error("Apollo could not verify the saved browser session cookie.");
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  return payload.authenticated === true && payload.cookiePresent === true;
+  return payload.authenticated === true && payload.cookiePresent === true && payload.spmtValidated === true;
 }
 
 function showSavedSession() {
   shellView.hidden = true;
   authView.hidden = false;
   loginForm.hidden = true;
-  setStatus("SPMT identity validated. Apollo saved the browser session cookie and successfully read it back. Your SPMT session is now retained in this browser.", "working");
+  setStatus("SPMT validated your identity, and Apollo saved your SPMT session in a secure browser cookie. Apollo read the cookie back and SPMT confirmed it is still valid. You should not need to paste the JSON again.", "working");
 }
 
 async function loadShell() {
