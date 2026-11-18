@@ -47,7 +47,7 @@ if (dshConfigRequested) {
     console.warn("DSH live worker deferred: valid owner-only runtime config has no provisioned tenants or provider connections.");
   } else {
     node1.push(["apps/discord-stream-hub/dist/live-worker-start.js", {
-      SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+      SPMT_ORIGIN: "http://127.0.0.1:3000",
       DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite",
       DSH_RUNTIME_CONFIG_PATH: dshConfig.configPath,
     }]);
@@ -56,13 +56,13 @@ if (dshConfigRequested) {
 node1.push(
   ["apps/discord-stream-hub/dist/web-server.js", {
     PORT: process.env.DSH_WEB_PORT ?? "3201",
-    SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
     DSH_DATABASE_PATH: process.env.DSH_DATABASE_PATH ?? "/tmp/apollo-dsh.sqlite",
     ...(dshConfig ? { DSH_RUNTIME_CONFIG_PATH: dshConfig.configPath } : {}),
   }],
   ["apps/spacemountain-web/dist/integrated-server.js", {
     PORT: process.env.PORT ?? "8080",
-    SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "http://127.0.0.1:3000",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
     DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201",
   }],
 );
