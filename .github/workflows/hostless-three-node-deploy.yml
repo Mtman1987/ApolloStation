@@ -219,7 +219,7 @@ jobs:
           node --input-type=module - <<'NODE'
           const role = process.env.NODE_ROLE;
           const required = role === "node1"
-            ? ["SPMT_WEBHOOK_KEY", "SPACEMOUNTAIN_CLIENT_SECRET", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
+            ? ["SPMT_WEBHOOK_KEY", "CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL", "NEBULA_ARCADE_WORKER_CREDENTIAL"]
             : ["CHAT_GATEWAY_WORKER_CREDENTIAL", "STREAMWEAVER_WORKER_CREDENTIAL"];
           // Existing Hostless app environment is authoritative for optional integrations.
           // Only require the shared node-to-node credentials here. Optional OAuth, DSH,
