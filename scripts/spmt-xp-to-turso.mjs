@@ -41,6 +41,7 @@ for (const table of TABLES) {
     const chunk = rows.slice(i, i + BATCH);
     const statements = chunk.map((row) => ({ sql: `INSERT INTO ${q(target)} (${colSql}) VALUES ${ph}`, args: cols.map((c) => row[c]) }));
     await adapter.pipeline(statements);
+    console.log(`${table}: ${Math.min(i + BATCH, rows.length)}/${rows.length} rows written (${new Date().toISOString()})`);
   }
   const remote = await adapter.execute(`SELECT COUNT(*) AS n FROM ${q(target)}`, [], true);
   const remoteCount = Number(remote.rows[0][0]);
