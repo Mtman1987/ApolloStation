@@ -8,6 +8,8 @@ import { createBrowserEcosystemEggCompletionQueue, EcosystemEggRetryCoordinator,
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 
+const canonicalAppOrigin = "https://spacemountain.live";
+const canonicalOAuthRedirectUri = `${canonicalAppOrigin}/auth/callback`;
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
@@ -75,6 +77,13 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
+  // OAuth state and PKCE verifier are origin-scoped sessionStorage values.
+  // Move Hostless entry traffic onto the already-registered canonical origin
+  // before creating them, so the callback returns to this same browser origin.
+  if (window.location.hostname === "apollo-node-1.hostless.app") {
+    window.location.replace(`${canonicalAppOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`);
+    return;
+  }
   if (window.location.pathname === "/auth/callback") {
     try {
       await completeSpmtOAuthCallback();
@@ -100,7 +109,7 @@ async function completeSpmtOAuthCallback() {
   }
   window.sessionStorage.removeItem("spmt_oauth_state");
   window.sessionStorage.removeItem("spmt_oauth_code_verifier");
-  const redirectUri = `${window.location.origin}/auth/callback`;
+  const redirectUri = canonicalOAuthRedirectUri;
   const response = await fetch("/v1/auth/session/bridge", {
     method: "POST",
     credentials: "same-origin",
@@ -124,7 +133,7 @@ async function beginSpmtSso() {
   const codeChallenge = base64Url(new Uint8Array(digest));
   window.sessionStorage.setItem("spmt_oauth_state", state);
   window.sessionStorage.setItem("spmt_oauth_code_verifier", codeVerifier);
-  const redirectUri = `${window.location.origin}/auth/callback`;
+  const redirectUri = canonicalOAuthRedirectUri;
   const authorize = new URL("https://spmt.live/api/oauth/authorize");
   authorize.searchParams.set("client_id", "spacemountain-live");
   authorize.searchParams.set("redirect_uri", redirectUri);
