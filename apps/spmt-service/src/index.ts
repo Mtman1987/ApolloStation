@@ -505,13 +505,22 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
           const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
           if (!donorId || !donorUsername) return json(response, 401, { error: "invalid_spmt_identity", message: "SPMT validated the token but did not return a usable user identity." });
-          // A valid SPMT bearer token is the proof of identity for this temporary
-          // owner/developer entry path. Do not require a legacy Apollo mapping.
-          const issued = auth.issueHumanSession({ userId: donorId, scopes: ["*"], tenantMode: "any", tenantIds: [] });
+          // Map the validated SPMT identity to its existing Apollo profile and
+          // owned active tenants, mirroring the password login path.
+          const profile = data.getProfileByUsername(donorUsername.toLowerCase());
+          if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "This SPMT account has no existing Apollo workspace mapping." });
+          const tenantIds = profile.tenantIds.filter((tenantId) => {
+            try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
+            catch { return false; }
+          });
+          if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
+          const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           return json(response, 200, {
             authenticated: true,
             spmtIdentity: { id: donorId, username: donorUsername },
+            profile,
+            tenantIds,
             accessExpiresAt: issued.accessExpiresAt,
           }, { "set-cookie": [browserSessionCookie(browser.accessToken), donorSessionCookie(bridgeToken)] });
         } catch (error) {
@@ -898,7 +907,7 @@ async function exchangeProviderIdentity(provider: "twitch" | "discord", code: st
   return { id: identity.id, username: typeof identity.login === "string" ? identity.login : typeof identity.username === "string" ? identity.username : undefined };
 }
 function isIdentity(value: unknown): value is { id: string; username?: string } { return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as { id?: unknown }).id === "string"); }
-function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded), ...headers }); response.end(encoded); }
+function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded), ...headers }); response.end(encoded); }
 function redirectSetupError(response: ServerResponse, base: string, message: string) { const target = new URL("/first-time-setup", base); target.searchParams.set("setupError", message); response.writeHead(302, { location: target.toString(), "cache-control": "no-store" }); response.end(); }
 function redirectProviderLinkError(response: ServerResponse, base: string, message: string) { const target = new URL("/", base); target.searchParams.set("view", "account"); target.searchParams.set("providerLinkError", message.slice(0, 300)); response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_provider_link") }); response.end(); }
 function decodeKey(value: string) { const key = Buffer.from(value, "base64url"); if (key.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes"); return key; }

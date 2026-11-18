@@ -84,10 +84,6 @@ async function restoreShell() {
   try {
     // First prove the browser retained the HttpOnly session cookie. This check
     // deliberately does not require an Apollo profile or tenant to exist.
-    if (await hasSavedSessionCookie()) {
-      showSavedSession();
-      return;
-    }
     // Restore an existing full Apollo workspace session when one is available.
     await loadShell();
     sessionRecovery.authenticated();
@@ -131,8 +127,9 @@ async function submitLogin(event: SubmitEvent) {
     // Confirm the browser received the HttpOnly cookie and sends it back.
     if (!(await hasSavedSessionCookie())) throw new Error("SPMT validated your identity, but Apollo could not read the saved browser session cookie. Your JSON was not retained; retry the handoff.");
     if (bridgeInput) bridgeInput.value = "";
+    await loadShell();
     sessionRecovery.authenticated();
-    showSavedSession();
+    redirectToRequestedApp();
   } catch (error) { setStatus(message(error), "error"); }
   finally { if (button) button.disabled = false; }
 }
