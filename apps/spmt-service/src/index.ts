@@ -16,7 +16,7 @@ import { SpmtAssistantApi } from "./assistant-api.js";
 import { StellarAssistantStore, StellarPrivateAssistant } from "@spmt/stellar-core";
 import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
