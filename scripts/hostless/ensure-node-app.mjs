@@ -297,11 +297,11 @@ async function deployAndTrack(appName, commitSha) {
       lastStatus = status;
     }
 
-    if (/SUCCESS|SUCCEEDED|DEPLOYED/.test(status)) {
+    if (["DEPLOYMENT_SUCCESSFUL", "SUCCESS", "SUCCEEDED", "DEPLOYED"].includes(status)) {
       console.log(`Hostless deployment ${deploymentId} completed successfully.`);
       return;
     }
-    if (/FAIL|CANCEL|SUPERSEDED|ERROR/.test(status)) {
+    if (["DEPLOYMENT_FAILED", "DEPLOYMENT_CANCELLED", "DEPLOYMENT_CANCELED", "DEPLOYMENT_SUPERSEDED", "FAILED", "CANCELLED", "CANCELED", "SUPERSEDED"].includes(status)) {
       const detail = current?.failureReason ?? current?.error ?? current?.message ?? "Hostless reported a terminal deployment failure.";
       fail(`Hostless deployment ${deploymentId} ended as ${status}: ${detail}`);
     }
