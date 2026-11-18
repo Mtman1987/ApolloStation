@@ -98,7 +98,7 @@ test('production donor browser-session bridge reuses the existing SPMT identity 
 
 test('SPMT OAuth callback exchanges a one-time code and restores the existing Apollo owner session',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'apollo-oauth-bridge-'));
-  const redirectUri='https://apollo-node-1.hostless.app/auth/callback';
+  const redirectUri='https://spacemountain.live/auth/callback';
   const donorFetch=async(input,init={})=>{
     if(String(input)==='https://spmt.live/api/oauth/token'){
       const body=JSON.parse(String(init.body));
@@ -122,7 +122,7 @@ test('SPMT OAuth callback exchanges a one-time code and restores the existing Ap
     host:'127.0.0.1',
     port:0,
     runtimeMode:'production',
-    appLaunchBaseUrl:'https://apollo-node-1.hostless.app',
+    appLaunchBaseUrl:'https://spacemountain.live',
     fetchImpl:donorFetch,
   });
   try{
