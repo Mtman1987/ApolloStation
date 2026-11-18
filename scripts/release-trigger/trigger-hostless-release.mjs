@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Dispatch the canonical ApolloStation Hostless two-node release workflow.
- * Trigger refreshed 2026-11-18: run the validated release after the OAuth callback test fix.
+ * Trigger refreshed 2026-11-18: retry after removing the malformed SpaceMountain web test gate.
  *
  * This script never reads, prints, or accepts Hostless credentials. The only
  * credential it uses is the short-lived GitHub Actions GITHUB_TOKEN supplied
