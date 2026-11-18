@@ -71,7 +71,7 @@ test("production SPMT startup seeds the first-party Shipyard catalog idempotentl
 
 test("private SpaceMountain host serves explicit browser modules with restrictive security headers", async () => {
   await withSandbox(async ({ base }) => {
-    const legacyHostEntry = await fetch(base, { headers: { host: "apollo-node-1.hostless.app", accept: "text/html" }, redirect: "manual" });
+    const legacyHostEntry = await fetch(base, { headers: { "x-forwarded-host": "apollo-node-1.hostless.app", accept: "text/html" }, redirect: "manual" });
     assert.equal(legacyHostEntry.status, 308, "Hostless browser entry must redirect before stale JavaScript can start OAuth");
     assert.equal(legacyHostEntry.headers.get("location"), "https://spacemountain.live/");
     assert.equal(legacyHostEntry.headers.get("cache-control"), "no-store");
