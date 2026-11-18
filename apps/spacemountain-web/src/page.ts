@@ -34,15 +34,16 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite">Reading your SPMT session…</p>
       <div class="gate-forms">
         <div class="gate-tabs" role="tablist">
-          <button type="button" role="tab" data-tab="spmt" aria-selected="true">SPMT token</button>
-          <button type="button" role="tab" data-tab="apollo" aria-selected="false">Apollo login</button>
+          <button type="button" role="tab" data-tab="apollo" aria-selected="true">Apollo login</button>
+          <button type="button" role="tab" data-tab="spmt" aria-selected="false">SPMT bridge</button>
         </div>
-        <form id="login-form" autocomplete="off">
+        <form id="login-form" autocomplete="off" hidden>
           <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="5" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
+          <button type="button" id="open-spmt" class="secondary-button">Open SPMT to copy bridge JSON</button>
           <button type="submit">Sign in with SPMT</button>
           <p class="spmt-auth-help">Sent straight to Apollo over HTTPS to verify. Not saved in browser storage.</p>
         </form>
-        <form id="apollo-login-form" autocomplete="on" hidden>
+        <form id="apollo-login-form" autocomplete="on">
           <label>Apollo username<input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
           <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
           <button type="submit">Sign in to Apollo</button>
