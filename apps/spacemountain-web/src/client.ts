@@ -82,7 +82,13 @@ async function boot() {
 
 async function restoreShell() {
   try {
-    // Restore an existing Apollo browser session before showing the bridge form.
+    // First prove the browser retained the HttpOnly session cookie. This check
+    // deliberately does not require an Apollo profile or tenant to exist.
+    if (await hasSavedSessionCookie()) {
+      showSavedSession();
+      return;
+    }
+    // Restore an existing full Apollo workspace session when one is available.
     await loadShell();
     sessionRecovery.authenticated();
     redirectToRequestedApp();
@@ -122,10 +128,11 @@ async function submitLogin(event: SubmitEvent) {
     });
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not verify your SPMT session.");
-    await loadShell();
+    // Confirm the browser received the HttpOnly cookie and sends it back.
+    if (!(await hasSavedSessionCookie())) throw new Error("SPMT validated your identity, but Apollo could not read the saved browser session cookie. Your JSON was not retained; retry the handoff.");
     if (bridgeInput) bridgeInput.value = "";
     sessionRecovery.authenticated();
-    redirectToRequestedApp();
+    showSavedSession();
   } catch (error) { setStatus(message(error), "error"); }
   finally { if (button) button.disabled = false; }
 }
@@ -169,6 +176,24 @@ async function spmtAuthRequest(path: string, input: Record<string, string>, retr
     await delay(750);
   }
   throw new Error("SPMT did not answer. Tap Enter SpaceMountain to try again.");
+}
+
+async function hasSavedSessionCookie(): Promise<boolean> {
+  const response = await fetch("/v1/auth/session/check", {
+    method: "GET", credentials: "same-origin", cache: "no-store",
+    headers: { accept: "application/json" }, signal: AbortSignal.timeout(10000),
+  });
+  if (response.status === 401) return false;
+  if (!response.ok) throw new Error("Apollo could not verify the saved browser session cookie.");
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  return payload.authenticated === true && payload.cookiePresent === true;
+}
+
+function showSavedSession() {
+  shellView.hidden = true;
+  authView.hidden = false;
+  loginForm.hidden = true;
+  setStatus("SPMT identity validated. Apollo saved the browser session cookie and successfully read it back. Your SPMT session is now retained in this browser.", "working");
 }
 
 async function loadShell() {
