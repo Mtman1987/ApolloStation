@@ -89,7 +89,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Enter your Boss Key to claim your existing Apollo owner account.");
+      showAuth("Paste your SPMT session bridge JSON to sign in to Apollo.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -105,20 +105,21 @@ async function restoreShell() {
 async function submitLogin(event: SubmitEvent) {
   event.preventDefault();
   const button = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
-  const bossKeyInput = loginForm.elements.namedItem("bossKey") as HTMLInputElement | null;
+  const bridgeInput = loginForm.elements.namedItem("bridgeJson") as HTMLTextAreaElement | null;
   try {
-    const bossKey = bossKeyInput?.value ?? "";
-    if (!bossKey) throw new Error("Enter your Boss Key.");
+    const bridgeJson = bridgeInput?.value.trim() ?? "";
+    if (!bridgeJson) throw new Error("Paste your SPMT session bridge JSON.");
+    if (bridgeJson.length > 30000) throw new Error("The SPMT session JSON is larger than the allowed 30 KB.");
     if (button) button.disabled = true;
-    setStatus("Verifying Boss Key and importing your SPMT identity…", "working");
-    const response = await fetch("/v1/auth/session/claim", {
+    setStatus("Validating your SPMT session and opening Apollo…", "working");
+    const response = await fetch("/v1/auth/session/bridge-login", {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ bossKey }), signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ bridgeJson }), signal: AbortSignal.timeout(20000),
     });
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not verify the Boss Key or SPMT identity.");
-    if (bossKeyInput) bossKeyInput.value = "";
+    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not validate the supplied SPMT session.");
+    if (bridgeInput) bridgeInput.value = "";
     await loadShell();
     sessionRecovery.authenticated();
     redirectToRequestedApp();
