@@ -9,6 +9,7 @@ import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS, SANDBOX_POLISH_CSS } from "./page.js";
+import { SPLASH_GATE_CSS } from "./splash-gate.js";
 import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
 import { BOUNDED_APP_PATHS, renderBoundedAppPage } from "./bounded-app-pages.js";
 import { assertAppCatalogRegistrationV1, type AppCatalogRegistrationV1 } from "@spmt/contracts";
@@ -169,7 +170,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         }
         return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       }
-      if (request.method === "GET" && ["/assets/web/sandbox.css", "/assets/web/spmt-auth.css"].includes(url.pathname)) return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && ["/assets/web/sandbox.css", "/assets/web/spmt-auth.css"].includes(url.pathname)) return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS + SPLASH_GATE_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if(request.method==="GET"&&["/docs","/docs/streamweaver","/docs/developers/streamweaver","/docs/streamweaver/parity"].includes(url.pathname))return html(response,200,renderEcosystemDocs(url.pathname,buildSha)!);
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));

@@ -25,6 +25,7 @@ const acknowledgement = element<HTMLInputElement>("developer-acknowledgement");
 const resetDeveloperButton = element<HTMLButtonElement>("reset-developer-form");
 const registerDeveloperButton = element<HTMLButtonElement>("register-developer-app");
 const loginForm = element<HTMLFormElement>("login-form");
+const apolloLoginForm = element<HTMLFormElement>("apollo-login-form");
 const dialog = element<HTMLDialogElement>("record-dialog");
 const dialogTitle = element<HTMLElement>("record-dialog-title");
 const dialogBody = element<HTMLElement>("record-dialog-body");
@@ -45,6 +46,9 @@ const eggCompletions = createBrowserEcosystemEggCompletionQueue();
 const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
+apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
+document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
+selectTab("spmt");
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
@@ -87,7 +91,7 @@ async function restoreShell() {
     // Restore an existing full Apollo workspace session when one is available.
     await loadShell();
     sessionRecovery.authenticated();
-    redirectToRequestedApp();
+    refreshOnceSignedIn();
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
@@ -129,7 +133,7 @@ async function submitLogin(event: SubmitEvent) {
     if (bridgeInput) bridgeInput.value = "";
     await loadShell();
     sessionRecovery.authenticated();
-    redirectToRequestedApp();
+    refreshOnceSignedIn();
   } catch (error) { setStatus(message(error), "error"); }
   finally { if (button) button.disabled = false; }
 }
@@ -145,7 +149,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
     // Keep credentials in the form until the browser session and shell are both usable.
     // A successful /auth response alone does not prove that the browser received a usable cookie.
     await loadShell();
-    redirectToRequestedApp();
+    refreshOnceSignedIn();
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     sessionRecovery.authenticated();
   } catch (error) {
@@ -773,6 +777,7 @@ async function watchRegistry() {
 function showAuth(detail: string) {
   shellView.hidden = true;
   authView.hidden = false;
+  authView.dataset.mode = "signin";
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
 }
 
@@ -789,13 +794,38 @@ function parsePrincipal(value: Record<string, unknown>): Principal {
   return { actorId, tenantIds, scopes };
 }
 
-function redirectToRequestedApp() {
+function redirectToRequestedApp(): boolean {
   const raw = new URLSearchParams(window.location.search).get("return");
-  if (!raw) return;
+  if (!raw) return false;
   let target: URL;
-  try { target = new URL(raw, window.location.origin); } catch { return; }
-  if (target.origin !== window.location.origin || !/^\/apps\/(?:streamweaver|discord-stream-hub|hearmeout)(?:\/|$)/.test(target.pathname)) return;
+  try { target = new URL(raw, window.location.origin); } catch { return false; }
+  if (target.origin !== window.location.origin || !/^\/apps\/(?:streamweaver|discord-stream-hub|hearmeout)(?:\/|$)/.test(target.pathname)) return false;
   window.location.replace(`${target.pathname}${target.search}${target.hash}`);
+  return true;
+}
+
+// Once signed in, refresh the page one time so it boots from the new cookie, then
+// the gate disappears on the next load. The flag stops a reload loop.
+const GATE_HANDOFF_KEY = "spmt-gate-handoff";
+function refreshOnceSignedIn() {
+  if (redirectToRequestedApp()) return;
+  if (sessionStorage.getItem(GATE_HANDOFF_KEY)) { sessionStorage.removeItem(GATE_HANDOFF_KEY); return; }
+  sessionStorage.setItem(GATE_HANDOFF_KEY, "1");
+  authView.hidden = false;
+  authView.dataset.mode = "working";
+  setStatus("Signed in · refreshing your ecosystem…", "working");
+  window.setTimeout(() => window.location.reload(), 500);
+}
+
+async function submitApolloLogin() {
+  try { await authRequest("/sandbox/auth/login", authInput(apolloLoginForm), apolloLoginForm); }
+  catch (error) { setStatus(message(error), "error"); }
+}
+
+function selectTab(name: "spmt" | "apollo") {
+  document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === name)));
+  loginForm.hidden = name !== "spmt";
+  apolloLoginForm.hidden = name !== "apollo";
 }
 function authInput(form: HTMLFormElement) {
   const data = new FormData(form);

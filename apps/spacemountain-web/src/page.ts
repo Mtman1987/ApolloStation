@@ -14,29 +14,40 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
 <body>
-  <main id="auth-view" class="auth-view">
-    <section class="auth-intro">
-      <img class="auth-product-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
-      <span>THE UNIVERSE ONLINE · SPMT ECOSYSTEM</span>
-      <p>Welcome to the SpaceMountain ecosystem. Your apps, workspace, community tools, and live services are connected through SPMT.</p>
-      <ul>
-        <li>Stellar Core provides persona-neutral shared AI.</li>
-        <li>Stella is the app-neutral Community Assistant.</li>
-        <li>Tenant personas remain in the separate apps that use these developer contracts.</li>
-        <li>Shipyard apps come from the SPMT registry.</li>
-      </ul>
-    </section>
-    <section class="auth-panels" aria-label="SpaceMountain account access">
-      <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite" hidden></p>
-      <form id="login-form" autocomplete="off">
-        <span>SPMT SESSION ACCESS</span>
-        <h2>Continue as your SPMT account</h2>
-        <p class="spmt-auth-help">Paste the SPMT session bridge JSON you received from SpaceMountain. Apollo verifies the token with SPMT and opens your Apollo browser session.</p>
-        <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="7" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
-        <button type="submit">Sign in to Apollo</button>
-        <p class="spmt-auth-help">The bridge is sent directly to Apollo over HTTPS for validation. It is not saved in browser storage.</p>
-      </form>
-
+  <main id="auth-view" class="auth-view" data-mode="checking">
+    <div class="auth-backdrop" aria-hidden="true" inert>
+      <section class="auth-intro">
+        <img class="auth-product-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="">
+        <span>THE UNIVERSE ONLINE · SPMT ECOSYSTEM</span>
+        <p>Welcome to the SpaceMountain ecosystem. Your apps, workspace, community tools, and live services are connected through SPMT.</p>
+        <ul>
+          <li>Stellar Core provides persona-neutral shared AI.</li>
+          <li>Stella is the app-neutral Community Assistant.</li>
+          <li>Tenant personas remain in the separate apps that use these developer contracts.</li>
+          <li>Shipyard apps come from the SPMT registry.</li>
+        </ul>
+      </section>
+    </div>
+    <div class="auth-scrim" aria-hidden="true"></div>
+    <section class="gate-card" aria-label="SpaceMountain sign in">
+      <img class="gate-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
+      <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite">Reading your SPMT session…</p>
+      <div class="gate-forms">
+        <div class="gate-tabs" role="tablist">
+          <button type="button" role="tab" data-tab="spmt" aria-selected="true">SPMT token</button>
+          <button type="button" role="tab" data-tab="apollo" aria-selected="false">Apollo login</button>
+        </div>
+        <form id="login-form" autocomplete="off">
+          <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="5" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
+          <button type="submit">Sign in with SPMT</button>
+          <p class="spmt-auth-help">Sent straight to Apollo over HTTPS to verify. Not saved in browser storage.</p>
+        </form>
+        <form id="apollo-login-form" autocomplete="on" hidden>
+          <label>Apollo username<input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Sign in to Apollo</button>
+        </form>
+      </div>
     </section>
   </main>
   <main id="shell-view" hidden><div id="spacemountain-root"></div></main>
