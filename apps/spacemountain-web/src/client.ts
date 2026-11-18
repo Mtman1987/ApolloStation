@@ -164,13 +164,21 @@ async function restoreShell() {
  */
 async function restoreSpmtCookieSession() {
   setStatus("Checking your existing SPMT browser session…", "working");
-  const response = await fetch("https://spmt.live/api/session/bridge", {
-    method: "GET",
-    credentials: "include",
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(8000),
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://spmt.live/api/session/bridge", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (error) {
+    // A browser may block cross-site cookies or the origin may not yet be
+    // allowlisted by SPMT. Fall through to the established top-level SSO path.
+    if (error instanceof TypeError || (error instanceof DOMException && error.name === "AbortError")) return false;
+    throw error;
+  }
   if (response.status === 401 || response.status === 403) return false;
   if (!response.ok) throw new Error(`SPMT session check failed (${response.status}).`);
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
