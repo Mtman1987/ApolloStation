@@ -40,3 +40,45 @@ Archive first; permanent deletion requires a verified copy in the owner's storag
 | Original path | Archive path | Reason |
 |---|---|---|
 | docs/archive/evidence/ (295 files, 678,887 bytes) | mt-delete-me-archive/legacy-docs/docs/archive/evidence/ | Complete captured donor documentation/specification snapshot tree. Retained as historical provenance; not governing product documentation. Directory structure and blob contents were preserved. |
+
+## Historical parity, deployment and issue reports moved
+
+| Original path | Archive path | Reason |
+|---|---|---|
+| docs/DSH_LIVE_PARITY_REVIEW_2026-09-05.md | mt-delete-me-archive/legacy-docs/docs/DSH_LIVE_PARITY_REVIEW_2026-09-05.md | Dated Discord Stream Hub parity review. |
+| docs/EXTERNAL_RUNTIME_REFERENCE_AUDIT_2026-08-24.md | mt-delete-me-archive/legacy-docs/docs/EXTERNAL_RUNTIME_REFERENCE_AUDIT_2026-08-24.md | Historical external-runtime audit and CPU trial plan. |
+| docs/NEBULA_RELEASE.md | mt-delete-me-archive/legacy-docs/docs/NEBULA_RELEASE.md | Dated September 2026 Nebula release snapshot. |
+| docs/PRODUCTION_RECOVERY_BASELINE_2026-08-30.md | mt-delete-me-archive/legacy-docs/docs/PRODUCTION_RECOVERY_BASELINE_2026-08-30.md | Historical production recovery baseline. |
+| docs/SPRITES_SANDBOX_HANDOFF.md | mt-delete-me-archive/legacy-docs/docs/SPRITES_SANDBOX_HANDOFF.md | Retired Sprite sandbox handoff; not an active Apollo runtime guide. |
+| docs/STREAMWEAVER_LIVE_PARITY_REVIEW_2026-09-05.md | mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_LIVE_PARITY_REVIEW_2026-09-05.md | Dated StreamWeaver live parity review. |
+| docs/STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md | mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md | Dated StreamWeaver parity checkpoint. |
+| docs/STREAMWEAVER_PARITY_IMPLEMENTATION.md | mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_PARITY_IMPLEMENTATION.md | Historical StreamWeaver parity implementation report. |
+| docs/donor-audits/CHAT_TAG_ORIGINAL_GAME_8170c51.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/CHAT_TAG_ORIGINAL_GAME_8170c51.md | Historical Chat Tag donor audit. |
+| docs/donor-audits/DSH_LIVE_AUDIT_2026-09-07.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/DSH_LIVE_AUDIT_2026-09-07.md | Dated DSH donor/live audit. |
+| docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md | Historical feature parity review. |
+| docs/donor-audits/FINAL_LIVE_DONOR_CATCHUP_2026-08-29.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/FINAL_LIVE_DONOR_CATCHUP_2026-08-29.md | Historical donor catch-up report. |
+| docs/donor-audits/LIVE_SOURCE_CATCHUP_2026-08-30.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/LIVE_SOURCE_CATCHUP_2026-08-30.md | Historical live-source catch-up report. |
+| docs/donor-audits/LIVE_SOURCE_CATCHUP_2026-09-03.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/LIVE_SOURCE_CATCHUP_2026-09-03.md | Historical live-source catch-up report. |
+| docs/donor-audits/PRODUCTION_REPO_BASELINES_2026-08-23.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/PRODUCTION_REPO_BASELINES_2026-08-23.md | Historical production repository baseline inventory. |
+| docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md | Historical SPMT donor deep audit. |
+| docs/donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md | mt-delete-me-archive/legacy-docs/docs/donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md | Dated StreamWeaver live audit. |
+| docs/donor-audits/app-code-parity.v1.json | mt-delete-me-archive/legacy-docs/docs/donor-audits/app-code-parity.v1.json | Historical duplicate parity manifest; current config lives under config/. |
+| docs/donor-parity/HANDOFF.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HANDOFF.md | Superseded donor parity handoff. |
+| docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md | Historical HearMeOut parity ledger. |
+| docs/donor-parity/HEARMEOUT_PARITY_MATRIX.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_PARITY_MATRIX.md | Historical HearMeOut parity matrix. |
+| docs/donor-parity/HEARMEOUT_ROUTE_COVERAGE.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_ROUTE_COVERAGE.md | Historical HearMeOut route coverage report. |
+| docs/donor-parity/HEARMEOUT_SCOPE.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_SCOPE.md | Historical HearMeOut parity scope. |
+| docs/donor-parity/HEARMEOUT_WORKER_COVERAGE.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_WORKER_COVERAGE.md | Historical HearMeOut worker coverage report. |
+| docs/donor-parity/HMO-009-WATCH-STATE-GAP.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HMO-009-WATCH-STATE-GAP.md | Issue-specific watch-state gap report. |
+| docs/donor-parity/HMO_011_ROOM_CONTROLS.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HMO_011_ROOM_CONTROLS.md | Issue-specific room-controls gap report. |
+| docs/donor-parity/HMO_011_UI_CONTRACTS.md | mt-delete-me-archive/legacy-docs/docs/donor-parity/HMO_011_UI_CONTRACTS.md | Issue-specific HearMeOut UI contract report. |
+| docs/operations/PRODUCTION_STORAGE_INVENTORY_2026-08-30.md | mt-delete-me-archive/legacy-docs/docs/operations/PRODUCTION_STORAGE_INVENTORY_2026-08-30.md | Historical production storage inventory. |
+| docs/deployment/EXTERNAL_DATABASE_STRATEGY.md | mt-delete-me-archive/legacy-docs/docs/deployment/EXTERNAL_DATABASE_STRATEGY.md | Superseded external database strategy with retired hosting assumptions. |
+| docs/deployment/HOSTLESS_RUNTIME_SERVICE_INVENTORY.md | mt-delete-me-archive/legacy-docs/docs/deployment/HOSTLESS_RUNTIME_SERVICE_INVENTORY.md | Initial Hostless service inventory superseded by the two-node runtime guide. |
+| docs/deployment/HOSTLESS_THREE_NODE_PORT_PLAN.md | mt-delete-me-archive/legacy-docs/docs/deployment/HOSTLESS_THREE_NODE_PORT_PLAN.md | Retired three-node port plan. |
+| docs/deployment/PRODUCTION_PERSISTENCE_RECOVERY_AND_CROSS_NODE_MAP.md | mt-delete-me-archive/legacy-docs/docs/deployment/PRODUCTION_PERSISTENCE_RECOVERY_AND_CROSS_NODE_MAP.md | Historical three-node persistence/recovery map. |
+| docs/deployment/RECOVERED_DATA_RECONCILIATION_AUDIT.md | mt-delete-me-archive/legacy-docs/docs/deployment/RECOVERED_DATA_RECONCILIATION_AUDIT.md | Historical recovered-data reconciliation report. |
+| docs/deployment/RECOVERED_FLY_VOLUME_DATA_INVENTORY.md | mt-delete-me-archive/legacy-docs/docs/deployment/RECOVERED_FLY_VOLUME_DATA_INVENTORY.md | Historical Fly volume inventory; not a production target. |
+| docs/architecture/SPMT_AND_SPACEMOUNTAIN_PARITY_REVIEW.md | mt-delete-me-archive/legacy-docs/docs/architecture/SPMT_AND_SPACEMOUNTAIN_PARITY_REVIEW.md | Historical SPMT/SpaceMountain parity review. |
+| docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md | mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md | Historical multi-app parity review. |
+| docs/ops/SECRET_RECOVERY_INVENTORY.md | mt-delete-me-archive/legacy-docs/docs/ops/SECRET_RECOVERY_INVENTORY.md | Historical secret recovery inventory; current secret names/presence are governed by workflow configuration. |
