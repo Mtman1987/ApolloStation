@@ -211,7 +211,7 @@ export class OverlayBayParityController {
         `Build: ${String(record(healthRecord?.web)?.buildSha ?? record(healthRecord?.spmt)?.buildSha ?? "not reported")}`,
         `Recent operational logs: ${entries.length}`,
         "─".repeat(54),
-        ...entries.map((raw) => { const item = record(raw); return `${String(item?.occurredAt ?? item?.createdAt ?? "")} [${String(item?.level ?? "info").toUpperCase()}] ${String(item?.sourceAppId ?? "system")} · ${String(item?.kind ?? "event")} — ${String(item?.summary ?? "")}`; }),
+        ...entries.map((raw) => { const item = record(raw); return `${String(item?.occurredAt ?? item?.recordedAt ?? "")} [${String(item?.level ?? "info").toUpperCase()}] ${String(item?.sourceAppId ?? "system")} · ${String(item?.kind ?? "event")}`; }),
       ];
       this.terminalOutput.set(sourceId, lines.join("\n"));
       if (state) state.textContent = `Updated ${new Date().toLocaleTimeString()} · ${entries.length} log entries`;
