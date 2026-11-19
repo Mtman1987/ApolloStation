@@ -1,0 +1,38 @@
+APOLLOSTATION OPEN PULL REQUEST REVIEW
+Captured: 2026-11-19
+Repository: https://github.com/Mtman1987/ApolloStation
+
+PR #518 — Hostless control-plane foundation
+URL: https://github.com/Mtman1987/ApolloStation/pull/518
+Disposition: PRESERVE; DO NOT MERGE YET.
+Validation failures observed in the 2026-11-19 workflow. Security redaction work is worth retaining. Fix failures and rerun checks before merge.
+
+PR #520 — Final foundation donor sweep
+URL: https://github.com/Mtman1987/ApolloStation/pull/520
+Disposition: PRESERVE FOR REVIEW.
+Documentation/parity findings may be useful. Branch is behind main and GitHub reported it was not mergeable at inspection. Rebase/review before merge.
+
+PR #527 — Repository hygiene
+URL: https://github.com/Mtman1987/ApolloStation/pull/527
+Disposition: PRESERVE; DO NOT MERGE YET.
+394 changed files. Validation/typecheck/Discord parity checks failed. TypeScript reported invalid characters in apps/companion/src/diagnostics.ts. Narrow and repair the cleanup before merge.
+
+PR #528 — Owner-only Apollo diagnostic terminal
+URL: https://github.com/Mtman1987/ApolloStation/pull/528
+Disposition: PRESERVE; DO NOT MERGE YET.
+Terminal browser request still uses the legacy x-spmt-tenant header, which conflicts with the agreed session-based approach. Correct authentication and validate before merge.
+
+BRANCHES RECOMMENDED FOR FOCUSED REVIEW
+feat/nebula-game-runtime-turso-store
+feature/turso-live-runtime-smoke
+feat/stellar-kokoro-self-hosted-tts
+feat/hmo-xtream-watch-catalog
+feat/dsh-mtfixit-intake-turso-followup
+port/streamweaver-restream-golive-parity
+feat/recovered-json-manifest-verification
+feat/oracle-core-runtime-image
+
+These are review candidates only. This file does not assert that their work is absent from main.
+
+SAFETY
+No PR was merged and no branch was deleted during this audit. Branch deletion requires a verified source backup and comparison against main.
