@@ -24,13 +24,14 @@ Do not interpret a green build as proof of production behavior. Keep code change
 
 **Commits:** recovery workflow `d18385a55d62d8761ed433594cf7bd7417d9f76a`; manual-only branch cleanup `8be04030358ba750fe03fb556f3d199329d66218`; retired Sprite/Fly workflow archive `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`.
 
-### 2. PR #527 repository hygiene — compile fix pushed; validation pending
+### 2. PR #527 repository hygiene — merged after green validation
 
 - [x] Kept the broad hygiene/docs work on `chore/repo-hygiene-docs-audit-2026-11-19`.
 - [x] Repaired `apps/companion/src/diagnostics.ts`: the snapshot interface had literal escaped newline characters embedded in the TypeScript source.
-- [x] Pushed two corrective commits: `8d2b82ad518d0160bde994d54f6ea79a7bb55cbf` and `5cfe22d035c00ca798247636cfeee720a210a589`. The first repaired the interface but left escaped newline sequences elsewhere; the second normalized the entire source file after CI exposed the remaining line-12 parse error.
-- [ ] Wait for the complete PR validation suite. On the latest repair head, Hostless two-node release, Discord parity, Nebula parity, and Restream validation have passed; the full offline regression suite is still running.
-- [ ] Merge only when all required checks are green and the PR diff has been reviewed against current main.
+- [x] Pushed the Companion diagnostics source repairs and restored the active app-code parity manifest after CI caught it had been moved into the historical archive.
+- [x] Updated the parity capability registry so historical donor reports resolve from `mt-delete-me-archive/legacy-docs/`.
+- [x] All five required checks passed on the rebased PR head: main validation, Hostless release validation, Discord parity, Nebula parity, and Restream validation.
+- [x] Merged #527 as `ec06baa46bca01539c6820a64b59dbdfc00b80bf`.
 
 **Rule:** if any required validation remains red, keep #527 open and do not merge.
 
@@ -44,15 +45,17 @@ Do not interpret a green build as proof of production behavior. Keep code change
 - [x] Closed #518 because its sanitizer implementation duplicates the now-merged #525 implementation and is older/weaker.
 - [ ] Reopen a narrowly scoped follow-up only if a concrete missing sanitizer case is found in current main.
 
-### 4. Owner diagnostic terminal — #528 remains draft
+### 4. Owner diagnostic terminal — #528 implementation ready; remains draft for browser acceptance
 
 - [x] Terminal source is proposed as a read-only Overlay Bay source.
-- [ ] Remove the obsolete client-side tenant-header dependency by changing the server/API contract to derive the active tenant from the validated Apollo session/shell.
-- [ ] Keep access owner-only, read-only, bounded to health and operational logs, and free of arbitrary shell commands, environment dumps, secrets, or app-user data.
-- [ ] Add tests proving session identity, owner authorization, tenant selection, bounded output, and denial for non-owner sessions.
-- [ ] Re-run full validation; retain draft status until those tests and the user-facing browser path are ready.
+- [x] Removed `x-spmt-tenant` from the terminal request; the terminal uses the existing same-origin signed Apollo session.
+- [x] Added `/v1/operations/logs/owner`, deriving allowed tenant scope from the signed session's owner roles and `operations:logs:read` scope.
+- [x] Only the canonical SPMT owner identity receives the diagnostics scopes during the existing bridge/callback session issuance.
+- [x] The endpoint returns an allow-listed metadata projection only; no summaries, details, labels, reporter IDs, or app payloads are returned.
+- [x] Added tests for header-free owner access, member denial, service-identity denial, and metadata-only output. All checks passed on the pre-rebase head; validation is rerunning after latest-main rebase.
+- [ ] Verify the browser path on Node 1, then remove draft status only when the owner is satisfied.
 
-**Important architecture note:** current `PlatformApiAdapter` reads `x-spmt-tenant` as a tenant selector and then authorizes the bearer session against that tenant. The header is not itself an authentication secret. Do not merely remove it from the browser request: first move tenant selection to the validated session/shell boundary and prove the server-side behavior. No new token or parallel login should be introduced.
+**Important architecture note:** `x-spmt-tenant` remains a workspace selector for other application API routes; it is not an authentication secret. The terminal path no longer uses it. No new credential, parallel login, shell command execution, or app-user data access is introduced.
 
 ### 5. Donor parity sweep — reviewed and refreshed for current main
 
@@ -65,7 +68,7 @@ The audit distinguishes code-level equivalents from live acceptance. The key rem
 
 ### 6. Branch archive and cleanup — inventory refreshed; destructive work not performed
 
-- [x] Refreshed the visible branch inventory: 50 branches were returned, including main.
+- [x] Refreshed the visible branch inventory: 52 branches were returned, including main.
 - [x] Preserved the eight named recovery candidates for explicit review:
   - `feat/nebula-game-runtime-turso-store`
   - `feature/turso-live-runtime-smoke`
@@ -75,7 +78,7 @@ The audit distinguishes code-level equivalents from live acceptance. The key rem
   - `port/streamweaver-restream-golive-parity`
   - `feat/recovered-json-manifest-verification`
   - `feat/oracle-core-runtime-image`
-- [x] Changed `.github/workflows/cleanup-merged-branches.yml` to manual dispatch only, with dry-run enabled by default; pushes to main can no longer delete branch refs automatically.
+- [x] Changed `.github/workflows/cleanup-merged-branches.yml` and `.github/workflows/consolidate-reviewed-branches.yml` to manual dispatch only, with dry-run enabled by default; pushes to main can no longer delete branch refs automatically.
 - [x] Archived the retired Sprite/Fly authenticated terminal workflow under `.github/archived-workflows/` and removed it from active workflows.
 - [x] Confirmed the prior cleanup run reported `Deleted: 0`; no branches were removed by that run.
 - [ ] Create and verify a Git bundle or equivalent full-history archive before deleting any branch.
@@ -84,12 +87,13 @@ The audit distinguishes code-level equivalents from live acceptance. The key rem
 
 No branch has been deleted in this cleanup. The connected GitHub actions available in this session expose branch search/create/update, but not branch deletion, tag creation, or a workflow-dispatch action; the Rotator CLI/MCP tools described in its documentation are not connected in this session. The GitHub read API also cannot create a Git bundle. Do not substitute an inventory text file for a source archive, and do not claim archive/delete completion until verified.
 
-### 7. Final green audit — pending
+### 7. Final green audit — partially complete; production read-back pending
 
-- [ ] No open red PRs intended to be kept.
-- [ ] Recovery workflow remains manual-only and dry-run by default.
-- [ ] Latest main validation, Hostless release, diagnostics, Discord, Nebula, and Restream checks are green.
-- [ ] Confirm Node 1 and Node 2 deployment commits and health; Node 3 is retired.
+- [x] No open red PRs intended to be kept: #527 is merged green; #528 and the handoff PR remain drafts.
+- [x] Recovery workflow remains manual-only and dry-run by default.
+- [x] Hostless release workflow now requires typecheck success, isolates PR concurrency from main releases, and cannot be skipped by a commit-message marker.
+- [x] Both Node 1 and Node 2 preflight checks confirmed the same Turso endpoint and all 5,748 staged records (16 Nebula + 5,732 StreamWeaver).
+- [ ] Confirm Node 1 and Node 2 deployment completion and domain/read-back health; the first GitHub release run was cancelled before read-back.
 - [ ] Verify sign-in in normal and incognito browser sessions, reload, sign-out, and bridge recovery.
 - [ ] Verify Turso connectivity and durable data ownership on both production nodes.
 - [ ] Produce a concise deployment-readiness report with exact commit SHAs and evidence links.
@@ -137,5 +141,5 @@ After acceptance, profile the build and runtime, remove redundant work, optimize
 - Retired Sprite/Fly workflow archive: `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`
 - Merged sanitizer PR: [#525](https://github.com/Mtman1987/ApolloStation/pull/525)
 - Merged sign-in bridge-gate PR: [#526](https://github.com/Mtman1987/ApolloStation/pull/526)
-- Hygiene PR: [#527](https://github.com/Mtman1987/ApolloStation/pull/527)
+- Hygiene PR: [#527](https://github.com/Mtman1987/ApolloStation/pull/527) (merged green)
 - Owner terminal draft: [#528](https://github.com/Mtman1987/ApolloStation/pull/528)
