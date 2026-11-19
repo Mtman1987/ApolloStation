@@ -120,7 +120,7 @@ jobs:
           # from bodies so 4xx/5xx responses remain useful evidence rather than vanishing.
           : > hostless-diagnostics/http-probes.txt
           if [ -n "$APP_URL" ]; then
-            for route in / /health/live /health/ready /login /api/health; do
+            for route in / /health/live /health/ready /login /api/health /v1/session /v1/auth/session/check; do
               safe_name="$(printf '%s' "$route" | tr '/-' '__')"
               code="$(curl -sS --max-time 20 -o "hostless-diagnostics/http-${safe_name}.body" -w '%{http_code}' "$APP_URL$route" 2>"hostless-diagnostics/http-${safe_name}.stderr" || true)"
               timing="$(curl -sS --max-time 20 -o /dev/null -w 'total=%{time_total}s connect=%{time_connect}s ttfb=%{time_starttransfer}s bytes=%{size_download}' "$APP_URL$route" 2>/dev/null || true)"
