@@ -66,10 +66,10 @@ Use `npm run parity:donor-inventory -- --root <path> --repository <owner/name>
 --ref <ref> --output <file>` to generate an inventory locally. The output
 records the exact source commit when `DONOR_COMMIT_SHA` is provided.
 
-Nebula Arcade is intentionally not selectable yet: the connected repository
-inventory did not identify a separate donor repository. The registry records
-that unresolved mapping rather than guessing that another Nebula-named
-repository is the donor.
+Nebula Arcade uses the owner-confirmed `Mtman1987/chat-tag` donor. The donor
+is inspected read-only and mapped to Apollo's `apps/nebula-arcade`; `ChatTag`
+is provenance only, not a second Apollo app identity or service namespace.
+The registry and manual/nightly workflows include this confirmed mapping.
 
 
 ## Donor-to-Apollo evidence bundle
