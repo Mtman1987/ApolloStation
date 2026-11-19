@@ -1,9 +1,11 @@
 name: ApolloStation Oracle release validation
 
 on:
-  push:
-    branches:
-      - main
+  # The complete four-shard regression suite is intentionally not a per-push gate.
+  # Focused app/contract workflows validate changes; this suite runs nightly and
+  # remains available on demand before a major release.
+  schedule:
+    - cron: "17 8 * * *"
   workflow_dispatch:
 
 permissions:
