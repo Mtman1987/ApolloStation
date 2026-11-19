@@ -1,0 +1,82 @@
+# Apollo handoff — 2026-11-19
+
+Status snapshot for the next agent. Supersedes the working notes in chat. Facts are marked with what was actually verified.
+
+## Product intent (decided)
+
+- Single sign-on across the whole ecosystem. Sign-in is required; it is the point. One login through SPMT should open every Shipyard app without re-login.
+- The bar is "streamers can use it without know-how." Sign-in must not block the apps once a user is signed in.
+
+## 1. SPMT XP → Turso import
+
+Target: shared Turso DB, tables `spmt_*`. Scope: owner data only. Excluded: `aetherra` (Nebula), `mika-bot`, rotator cache, media files. Keep SPMT backups.
+
+Verified:
+- Export (`fly-machine-rotator` `edaa4c6`, run `44414720211`), artifact `spmt-xp-export`. SHA256 `08aa9be1…239a9d1`, `quick_check` ok.
+- Source counts: `xp_ledger` 182,648; `users` 653; `workspace_profiles` 32; `user_settings` 0; `app_state_records` 56.
+- Dry run `44415725035` matched the export exactly (PR #508).
+- Private release `spmt-xp-export-2026-11-18` (id `450654585`) still holds the export. Delete after a verified import.
+
+Failed / unknown:
+- Apply `44416096223` cancelled at the 30-minute timeout during `xp_ledger`.
+- Apply `44421403740` (started 23:31 UTC, 90-minute timeout) was still in the import step at 00:31 UTC. Expected to time out about 01:01 UTC. Turso state is unknown and partial. The script clears and reloads each table, so a rerun is safe.
+
+Root cause (likely): one INSERT per row in 500-statement pipelines is too slow for 182k rows.
+
+Fix, on branch `spmt-xp-import-batching` (commit on that branch, not pushed):
+- 100 rows per multi-row INSERT, 20 INSERTs per HTTP request.
+- Log line per request with elapsed seconds.
+- Syntax checked only. Not run against Turso.
+
+Next:
+1. Confirm run `44421403740` ended (timeout or failure). Read its logs.
+2. Merge `spmt-xp-import-batching` to `main`. The workflow runs from `main`.
+3. Rerun with `apply=true`. Compare `spmt_*` counts to the table above.
+4. Delete release `450654585`.
+5. Revoke the leaked GitHub tokens `ghp_CCxq…` and `ghp_EP99…`. Rotate the token in `~/.github-token.env`.
+
+## 2. Shipyard app launch ("image instead of app", then "unauthorized")
+
+Verified:
+- Shell root `/` is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` (`applySecurityHeaders`, `apps/spacemountain-web/src/server.ts`). Any app whose `launchUrl` is the root, opened as `?surface=shell` inside the shell iframe, is blocked. That matches the broken image.
+- `/apps/hearmeout?surface=shell` already sends `frame-ancestors 'self'` and no `DENY`. Apps under `/apps/…` should frame correctly.
+- Anonymous `/v1/session` returns 403. That is the intended SSO gate.
+- Apollo node-1 and node-2 share the `hostless.app` site. The SameSite=Lax session cookie should reach app frames. Cookies are not the likely cause.
+- The "unauthorized" text comes from app APIs (`spmt-service` returns `401 {"error":"unauthorized"}` when no bearer token is sent). Likely a second issue once the frame loads.
+
+Branch `shell-app-frame-fix` (from `main`, not pushed):
+- `isShellAppFrameRequest(url)`: true when path is `/` and `surface=shell`.
+- For those requests only: `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`. Everything else keeps `DENY` / `'none'`.
+- `tsc -p apps/spacemountain-web --noEmit` passes. Not yet run in a browser and not deployed.
+
+Not verified:
+- The real `launchUrl` for each of the five apps (StreamWeaver, HearMeOut, Discord Stream Hub, Stellar Core, Nebula Arcade). `/v1/apps` requires a signed-in token. The manifests come from the SPMT registry.
+- Whether each app honours the session after the frame loads.
+
+Next:
+1. Read each app's `launchUrl` from the registry while signed in. Move any root-pointing app under `/apps/<id>` if that is cleaner.
+2. Deploy the branch to node-1 only with owner approval. Then sign in and open each app from Shipyard.
+3. If an app still says "unauthorized" inside the frame, trace how its API receives the session. The likely fix is a shell-issued short-lived token passed to the frame, not a cookie change.
+4. The sign-in gate stays. Don't weaken it to fix the frame.
+
+Also noted:
+- The `/v1/session` 403 for anonymous users vs the client's `401` check in `apps/spacemountain-web/src/client.ts` (~line 188). Harmless today, but the client expects 401.
+
+## 3–5. Not started
+
+- AI and TTS fallbacks (work item 3). Scope not defined.
+- Bots missing from the mtman1987 chat, and StreamWeaver OAuth reachability (work item 2). Depends on the launch fix.
+- UI tweaks (work item 4). No specifics yet.
+- Persistence: `scripts/hostless/start-node.mjs` sets `DATABASE_PATH` under `/tmp`. Needs write-through to Turso and restore on boot.
+- Refresh loop: `watchWorkspace` in `client.ts` polls every 5 s. Needs live logs.
+
+## Branches (local, not pushed)
+
+- `spmt-xp-import-batching`: importer batching and progress logging.
+- `shell-app-frame-fix`: shell frame headers for `surface=shell`.
+
+## Files
+
+- ApolloStation `main` includes PR #508 (XP importer, export-only workflow) and #509 (timeout and progress).
+- `/home/user/work/xp/`: export DB, SHA256SUMS, run zips.
+- `~/.github-token.env`: sandbox GitHub token. Never print it.
