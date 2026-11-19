@@ -23,8 +23,6 @@ jobs:
             secret: HOSTLESS_NODE1_TOKEN
           - node: Node 2
             secret: HOSTLESS_NODE2_TOKEN
-          - node: Node 3
-            secret: HOSTLESS_NODE3_TOKEN
     steps:
       - name: Inspect billing entitlement and app inventory (read only)
         env:
