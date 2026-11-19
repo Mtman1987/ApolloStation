@@ -36,6 +36,9 @@ jobs:
             app: apollo-node-2
             secret: HOSTLESS_NODE2_TOKEN
     steps:
+      - name: Check out diagnostic sanitizer
+        uses: actions/checkout@v4
+
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
@@ -55,10 +58,22 @@ jobs:
           grep -iE "$PATTERN" "logs/$APP-all.log" > "logs/$APP-auth-lines.log" || true
           echo "total lines: $(wc -l < "logs/$APP-all.log")"
           echo "auth lines: $(wc -l < "logs/$APP-auth-lines.log")"
-          echo "--- auth lines (last 200) ---"
-          tail -n 200 "logs/$APP-auth-lines.log"
+          # Do not print raw auth logs into the Actions console. The sanitized artifact is the review surface.
+          echo "Raw log contents withheld from the Actions console; sanitized artifact will be uploaded."
+
+      - name: Sanitize auth logs before upload
+        id: sanitize
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d logs ]; then
+            node scripts/sanitize-diagnostics.mjs logs
+          else
+            echo "No log directory was created."
+          fi
 
       - name: Upload logs
+        if: ${{ always() && steps.sanitize.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: apollo-${{ matrix.app }}-auth-logs-${{ github.run_id }}
