@@ -9,16 +9,6 @@ const HEADER_SECRET_PATTERN = /(\b(?:authorization|x-api-key|api-key)\s*[:=]\s*)
 const JSON_SECRET_PATTERN = /(["']?(?:access_token|refresh_token|id_token|api_key|apikey|client_secret|password|authorization)["']?\s*[:=]\s*["'])([^"']+)(["'])/gi;
 const PLAIN_SECRET_PATTERN = /(\b(?:access_token|refresh_token|id_token|api[_-]?key|apikey|client_secret|password|token|secret|authorization)\b\s*[:=]\s*)([^\s,;}\]]{4,})/gi;
 
-export interface CompanionFlySnapshotV1 {
-  schemaVersion: 1;
-  snapshotId: string;
-  source: "fly-machine-rotator";
-  mode: "debug" | "verbose";
-  capturedAt: string;
-  states: Record<string, unknown>;
-  logs: unknown[];
-}
-
 export function redactCompanionText(value: unknown): string {
   return String(value ?? "")
     .replace(QUERY_SECRET_PATTERN, "$1[REDACTED]")
