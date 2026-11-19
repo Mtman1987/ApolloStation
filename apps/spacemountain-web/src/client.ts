@@ -18,9 +18,11 @@ function scrubBrowserDiagnostic(value: unknown): string {
     .replace(/eyJ[a-zA-Z0-9_-]{10,}\\.[a-zA-Z0-9_-]{10,}(?:\\.[a-zA-Z0-9_-]{10,})?/g, "[JWT_REDACTED]")
     .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [REDACTED]");
 }
-function browserStorageKeyNames(storage: Storage): string[] {
-  try { return Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => Boolean(key)).slice(0, 80); }
-  catch { return ["[storage-unavailable]"]; }
+function browserStorageKeyNames(kind: "local" | "session"): string[] {
+  try {
+    const storage = kind === "local" ? window.localStorage : window.sessionStorage;
+    return Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => Boolean(key)).slice(0, 80);
+  } catch { return ["[storage-unavailable]"]; }
 }
 function reportBrowserDiagnostic(type: string, detail: Record<string, unknown> = {}) {
   try {
@@ -69,6 +71,27 @@ const originalConsoleError = console.error.bind(console);
 console.error = (...args: unknown[]) => {
   originalConsoleError(...args);
   reportBrowserDiagnostic("console-error", { message: args.map((arg) => arg instanceof Error ? arg.stack || arg.message : typeof arg === "string" ? arg : Object.prototype.toString.call(arg)).join(" ").slice(0, 3000) });
+};
+const nativeBrowserFetch = window.fetch.bind(window);
+window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  let requestUrl: URL | undefined;
+  let method = init?.method ?? "GET";
+  try {
+    requestUrl = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.href);
+    if (input instanceof Request && !init?.method) method = input.method;
+  } catch { /* Keep the original fetch behavior for unusual request inputs. */ }
+  try {
+    const response = await nativeBrowserFetch(input, init);
+    if (requestUrl?.origin === window.location.origin && requestUrl.pathname !== "/sandbox/diagnostics/client" && response.status >= 400) {
+      reportBrowserDiagnostic("http-response-error", { method, path: requestUrl.pathname, status: response.status });
+    }
+    return response;
+  } catch (error) {
+    if (requestUrl?.origin === window.location.origin && requestUrl.pathname !== "/sandbox/diagnostics/client") {
+      reportBrowserDiagnostic("network-request-failure", { method, path: requestUrl.pathname, message: error instanceof Error ? error.message : String(error) });
+    }
+    throw error;
+  }
 };
 reportBrowserDiagnostic("client-start", { readyState: document.readyState });
 
