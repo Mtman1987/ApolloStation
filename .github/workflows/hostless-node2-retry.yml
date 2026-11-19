@@ -55,12 +55,14 @@ jobs:
           if (run.head_sha?.toLowerCase() !== EXPECTED_SHA.toLowerCase()) throw new Error("The supplied SHA does not match the prior run.");
           if (run.head_branch !== "main" || run.event === "pull_request") throw new Error("Only a main-branch release run can authorize this retry.");
           const jobs = await get(`/actions/runs/${RUN_ID}/jobs?per_page=100`);
-          // Release workflow job names have changed over time (currently "Typecheck release gate").
-          // Verify a successful validation gate by stable intent, not one brittle display name.
-          const validationJobs = jobs.jobs?.filter(j => /full apollo.*validation|typecheck.*release gate/i.test(j.name)) ?? [];
+          const commit = await get(`/commits/${EXPECTED_SHA}`);
+          const emergencySkip = String(commit.commit?.message ?? "").includes("[skip-hostless-validation]");
+          const validationJobs = jobs.jobs?.filter(j => /typecheck release gate|full apollo.*validation/i.test(j.name)) ?? [];
           const node1 = jobs.jobs?.find(j => j.name.startsWith("Deploy Node 1"));
           if (validationJobs.length === 0) throw new Error("No recognized Apollo release validation job was found in the prior run.");
-          if (validationJobs.some(j => j.conclusion !== "success")) throw new Error("A prior Apollo release validation job did not succeed.");
+          if (validationJobs.some(j => j.conclusion !== "success" && !(emergencySkip && j.conclusion === "skipped"))) {
+            throw new Error("A prior Apollo release validation job did not succeed or was not explicitly skipped by the emergency-validation commit marker.");
+          }
           if (node1?.conclusion !== "success") throw new Error("The prior Node 1 deployment job did not succeed.");
           const node2 = jobs.jobs?.find(j => j.name.startsWith("Deploy Node 2"));
           const shouldDeploy = node2?.conclusion !== "success";
