@@ -141,7 +141,7 @@ The following source references remain and are not safe to delete as if they wer
 - SpaceMountain Web's Companion and MountainView download routes still point to historical installer/APK assets in StreamWeaver and Rotator donor releases. Move the signed artifacts and release workflow into Apollo-owned storage before changing the URLs.
 - Stellar Core and other worker paths still accept legacy sprite/fly execution-target values; some startup defaults still choose sprite. Hostless must explicitly select the supported hosted target until the shared enum/default migration is completed.
 - HearMeOut's legacy-worker adapter is still imported by the current web host for voice bridge/persona audio. It is a bounded migration dependency, not dead code. Remove it only after the bridge and persona audio worker are native to Apollo and bidirectional audio acceptance passes.
-- The unused CompanionFlySnapshotV1 type was removed after repository-wide reference search found no consumers.
+- The Fly-specific Companion diagnostics snapshot contract and file naming were replaced with an Apollo-owned generic snapshot contract; the active diagnostics handler and redaction behavior were preserved.
 
 - Restream Control Service code exists and StreamWeaver has a client contract, but the service is not currently started by the Hostless Node 2 process map. Its previous Node 3/Oracle deployment guide has been replaced; Node 2 integration and owner rehearsal remain pending.
 
