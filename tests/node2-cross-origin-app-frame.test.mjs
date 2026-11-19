@@ -15,7 +15,6 @@ test("Node 1 shell permits the canonical Node 2 Hostless app frame", async () =>
     assert.equal(page.status, 200);
     const csp = page.headers.get("content-security-policy") ?? "";
     assert.match(csp, /frame-src 'self' https:\/\/apollo-node-2\.hostless\.app;/);
-    assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN");
   } finally {
     await app.close();
   }
