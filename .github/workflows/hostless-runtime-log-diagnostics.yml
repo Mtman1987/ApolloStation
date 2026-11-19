@@ -59,6 +59,9 @@ jobs:
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
     steps:
+      - name: Check out diagnostic sanitizer
+        uses: actions/checkout@v4
+
       - name: Resolve exact Node 2 deployment from the triggering run
         id: deployment
         if: github.event_name == 'workflow_run'
@@ -176,8 +179,19 @@ jobs:
           fi
           exit 0
 
-      - name: Publish sanitized agent-readable summary
+      - name: Sanitize diagnostic files before any publication
+        id: sanitize
         if: always()
+        run: |
+          set -euo pipefail
+          if [ -d hostless-diagnostics ]; then
+            node scripts/sanitize-diagnostics.mjs hostless-diagnostics
+          else
+            echo "No diagnostic directory was created."
+          fi
+
+      - name: Publish sanitized agent-readable summary
+        if: ${{ always() && steps.sanitize.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -208,7 +222,7 @@ jobs:
           gh issue comment 517 --repo "$REPOSITORY" --body-file agent-summary.md
 
       - name: Upload diagnostic logs
-        if: always()
+        if: ${{ always() && steps.sanitize.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: hostless-${{ matrix.node }}-diagnostics-${{ github.run_id }}
