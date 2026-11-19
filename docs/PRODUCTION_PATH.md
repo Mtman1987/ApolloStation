@@ -16,7 +16,7 @@ This is the current migration and rollout plan. It replaces the original phase-n
 
 ## Where we are now
 
-The latest source continuation is recorded in [the September 12 handoff](production/APOLLO_CUTOVER_CONTINUATION_2026-09-12.md). The older counts below describe the August baseline. Current operational state is recorded once in `config/production-rollout.v1.json`; source inventory is not an independent production authority.
+The older counts below describe the August baseline. Current operational state is recorded in `docs/CURRENT_STATE.md` and the machine-checked `config/production-rollout.v1.json`; source inventory is not an independent production authority. Dated continuation handoffs are preserved in the repository quarantine archive and must not be treated as current status.
 
 Completed:
 
