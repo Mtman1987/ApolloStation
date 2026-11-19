@@ -154,7 +154,7 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
 
 test('saved widget sources keep a transparent canvas without loosening scripts or painting upstream errors',async()=>{
  const inner=createServer((_req,res)=>res.end()),principal={grantId:'grant-a',tenantId:'tenant-a',appId:'renderer',widgetId:'widget'};
- let result={status:200,body:'<!doctype html><html><head><style nonce="original">body{background:white}</style></head><body>Actual overlay artwork</body></html>',type:'text/html',csp:"default-src 'none'; script-src 'nonce-original'; style-src 'nonce-original'; connect-src 'self'; frame-ancestors 'self'"};
+ let result={status:200,body:'<!doctype html><html><head><style nonce="original">body{background:white}</style></head><body>Actual overlay artwork</body></html>',type:'text/html',csp:"default-src 'none'; script-src 'nonce-original'; style-src 'nonce-original'; connect-src 'self'"};
  const gateway=createSpmtOutputGateway({server:inner,control:{resolveOverlayOutputToken(){return{principal,rendererUrl:'https://renderer.example/overlay'}}},async close(){await close(inner)}},{port:0,host:'127.0.0.1',fetchImpl:async()=>new Response(result.body,{status:result.status,headers:{'content-type':result.type,'content-security-policy':result.csp}})});
  try{
   await gateway.listen();const url=origin(gateway.server)+'/o/abcdefghijklmnop';
