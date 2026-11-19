@@ -19,10 +19,10 @@
       "status": "partial",
       "priority": "P0",
       "sourceDocs": [
-        "docs/donor-parity/HANDOFF.md",
-        "docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md",
-        "docs/donor-parity/HEARMEOUT_ROUTE_COVERAGE.md",
-        "docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
+        "mt-delete-me-archive/legacy-docs/docs/donor-parity/HANDOFF.md",
+        "mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md",
+        "mt-delete-me-archive/legacy-docs/docs/donor-parity/HEARMEOUT_ROUTE_COVERAGE.md",
+        "mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
       ],
       "evidence": [
         "tests/hearmeout-movie-provider.test.mjs",
@@ -44,10 +44,10 @@
       "status": "partial",
       "priority": "P0",
       "sourceDocs": [
-        "docs/STREAMWEAVER_LIVE_PARITY_REVIEW_2026-09-05.md",
-        "docs/STREAMWEAVER_PARITY_IMPLEMENTATION.md",
-        "docs/STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md",
-        "docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
+        "mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_LIVE_PARITY_REVIEW_2026-09-05.md",
+        "mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_PARITY_IMPLEMENTATION.md",
+        "mt-delete-me-archive/legacy-docs/docs/STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md",
+        "mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
       ],
       "evidence": [
         "tests/streamweaver-tts-text.test.mjs",
@@ -68,8 +68,8 @@
       "priority": "P1",
       "sourceDocs": [
         "config/apollo-parity-tracker.v1.json",
-        "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
-        "docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
+        "mt-delete-me-archive/legacy-docs/docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
+        "mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
       ],
       "evidence": [
         "tests/nebula-spmt-commands.test.mjs",
@@ -91,9 +91,9 @@
       "status": "partial",
       "priority": "P1",
       "sourceDocs": [
-        "docs/DSH_LIVE_PARITY_REVIEW_2026-09-05.md",
-        "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
-        "docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
+        "mt-delete-me-archive/legacy-docs/docs/DSH_LIVE_PARITY_REVIEW_2026-09-05.md",
+        "mt-delete-me-archive/legacy-docs/docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
+        "mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
       ],
       "evidence": [
         "tests/dsh-live-monitor.test.mjs",
@@ -116,7 +116,7 @@
       "sourceDocs": [
         "docs/PARITY_LEDGER.md",
         "config/apollo-parity-tracker.v1.json",
-        "docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
+        "mt-delete-me-archive/legacy-docs/docs/architecture/STREAMWEAVER_HEARMEOUT_NEBULAARCADE_DISCORDSTREAMHUB_PARITY_REVIEW.md"
       ],
       "evidence": [
         "tests/live-counterpart-catchup.test.mjs",
