@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-08-30
+Updated: 2026-11-19
 
 This file records what is implemented and what has actually been proven. It does not restate the architecture or historical debate.
 
@@ -11,6 +11,12 @@ This file records what is implemented and what has actually been proven. It does
 - The runtime/source tree promoted for the first protected production rehearsal was commit `c21f42d922cf552c3aade2c9d2f059122a2907fd`, which is source-tree-identical to the tested catalog-portability implementation commit `6184f6785f0e55ddc6e832ce14c079aaea4f3782`.
 - The 2026-08-30 architecture reset that followed changes documentation only; it does not invalidate the runtime evidence below. Future code/runtime changes require new acceptance evidence rather than editing this file to chase the latest branch SHA.
 - Review and Release Sprite deployment paths remain private and checkpointed.
+
+## Apollo sign-in (2026-11-19)
+
+- Working: SPMT bridge JSON sign-in on `apollo-node-1`. Browser sessions are HMAC-signed and survive restarts and deploys.
+- Not working yet: automatic "Sign in with SPMT" (PKCE). Live spmt.live does not run the code that knows the `apollo-node-1` client, and the spmt-live Fly deploy is blocked by billing.
+- Full handoff: [APOLLO_AUTH_HANDOFF_2026-11-19](production/APOLLO_AUTH_HANDOFF_2026-11-19.md).
 
 ## Offline acceptance
 
