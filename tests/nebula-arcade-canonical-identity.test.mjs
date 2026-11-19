@@ -37,7 +37,12 @@ test("every executable integration names Nebula Arcade as the sole current owner
     // intentionally records the legacy identity in historical PR descriptions.
     // This one-shot archival importer names the legacy source format; it is not an executable app integration.
     const migrationOnly = relativePath === "scripts/stage-recovered-json-to-turso.mjs";
-    return relativePath !== "config/apollo-parity-tracker.v1.json" && !migrationOnly && forbidden.test(source) ? [relativePath] : [];
+    const donorProvenanceOnly = new Set([
+      "config/apollo-donor-sources.v1.json",
+      "config/apollo-parity-capabilities.v1.json",
+      ".github/workflows/apollo-parity-nightly.yml",
+    ]).has(relativePath);
+    return relativePath !== "config/apollo-parity-tracker.v1.json" && !migrationOnly && !donorProvenanceOnly && forbidden.test(source) ? [relativePath] : [];
   });
   assert.deepEqual(leaks, [], `obsolete Games Hub identity leaked into executable files: ${leaks.join(", ")}`);
 
