@@ -27,7 +27,7 @@ test('personal selection and display persist together without changing public ou
  assert.throws(()=>authority.updateWorkspace('a',2,{personalOverlayEnabled:true}),/revision conflict/);
 });
 
-test('workspace embeds are frameable only by this ecosystem and devices use authenticated overlay hosting', async () => {
+test('workspace embeds load and devices use authenticated overlay hosting', async () => {
  const host=createSpaceMountainWebHost({spmtOrigin:'http://127.0.0.1:1',port:0,host:'127.0.0.1',fetchImpl:async()=>new Response('{}',{status:401})});
  await host.listen();
  try {
