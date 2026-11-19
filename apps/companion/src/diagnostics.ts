@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
+export interface CompanionDiagnosticsSnapshotV1 {\n  schemaVersion: 1;\n  snapshotId: string;\n  source: "apollo-companion";\n  mode: "debug" | "verbose";\n  capturedAt: string;\n  states: Record<string, unknown>;\n  logs: unknown[];\n}\n\nconst SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
 const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 const QUERY_SECRET_PATTERN = /([?&](?:access_token|refresh_token|id_token|token|api_key|apikey|key|signature|jwt)=)[^&\s"'<>]+/gi;
 const BEARER_PATTERN = /(\bBearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi;
@@ -48,17 +48,17 @@ export class CompanionDiagnosticsStore {
     this.prune("companion-", ".log", this.options.maxLogDays ?? 30);
   }
 
-  writeSnapshot(input: Partial<CompanionFlySnapshotV1> & { states?: Record<string, unknown>; logs?: unknown[] }) {
+  writeSnapshot(input: Partial<CompanionDiagnosticsSnapshotV1> & { states?: Record<string, unknown>; logs?: unknown[] }) {
     const capturedAt = normalizeTimestamp(input.capturedAt, this.now());
     const snapshot = sanitizeCompanionValue({
       schemaVersion: 1,
       snapshotId: String(input.snapshotId ?? "").slice(0, 120),
-      source: "fly-machine-rotator",
+      source: "apollo-companion",
       mode: input.mode === "debug" ? "debug" : "verbose",
       capturedAt,
       states: input.states && typeof input.states === "object" ? input.states : {},
       logs: Array.isArray(input.logs) ? input.logs.slice(-500) : [],
-    }) as CompanionFlySnapshotV1;
+    }) as CompanionDiagnosticsSnapshotV1;
 
     let serialized = JSON.stringify(snapshot, null, 2);
     const maxBytes = this.options.maxSnapshotBytes ?? 400_000;
@@ -69,21 +69,21 @@ export class CompanionDiagnosticsStore {
     if (Buffer.byteLength(serialized, "utf8") > maxBytes) throw new Error("Sanitized diagnostics snapshot is too large");
 
     const suffix = String(snapshot.snapshotId || safeTimestamp(snapshot.capturedAt)).replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 120) || "snapshot";
-    const filename = `fly-snapshot-${safeTimestamp(snapshot.capturedAt)}-${suffix}.json`;
+    const filename = `companion-snapshot-${safeTimestamp(snapshot.capturedAt)}-${suffix}.json`;
     const destination = join(this.directory, filename);
     const temporary = `${destination}.tmp`;
     writeFileSync(temporary, `${serialized}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, destination);
-    writeFileSync(join(this.directory, "latest-fly-snapshot.json"), `${serialized}\n`, { encoding: "utf8", mode: 0o600 });
-    this.prune("fly-snapshot-", ".json", this.options.maxSnapshots ?? 30);
+    writeFileSync(join(this.directory, "latest-companion-snapshot.json"), `${serialized}\n`, { encoding: "utf8", mode: 0o600 });
+    this.prune("companion-snapshot-", ".json", this.options.maxSnapshots ?? 30);
     return { filename, path: destination, bytes: Buffer.byteLength(serialized, "utf8"), logCount: snapshot.logs.length, capturedAt: snapshot.capturedAt };
   }
 
   snapshot() {
-    const latestPath = join(this.directory, "latest-fly-snapshot.json");
+    const latestPath = join(this.directory, "latest-companion-snapshot.json");
     if (!existsSync(latestPath)) return { directory: this.directory, latest: null as null | { capturedAt: string | null; logCount: number } };
     try {
-      const parsed = JSON.parse(readFileSync(latestPath, "utf8")) as Partial<CompanionFlySnapshotV1>;
+      const parsed = JSON.parse(readFileSync(latestPath, "utf8")) as Partial<CompanionDiagnosticsSnapshotV1>;
       return { directory: this.directory, latest: { capturedAt: parsed.capturedAt ?? null, logCount: Array.isArray(parsed.logs) ? parsed.logs.length : 0 } };
     } catch {
       return { directory: this.directory, latest: null };
