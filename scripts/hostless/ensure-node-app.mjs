@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
 
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
@@ -322,8 +323,6 @@ const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?
 if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
-const SUCCESS = new Set(["ready", "live", "active", "succeeded", "success", "deployed", "completed", "deployment_successful", "deployment_success"]);
-const FAILURE = new Set(["failed", "error", "errored", "cancelled", "canceled", "rejected", "deployment_failed", "deployment_error", "validate_hostless_file_failed"]);
 const deadline = Date.now() + 40 * 60 * 1000;
 let pollFailures = 0;
 let lastStatus = "unknown";
@@ -337,11 +336,15 @@ while (Date.now() < deadline) {
     continue;
   }
   pollFailures = 0;
-  lastStatus = String(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown").toLowerCase();
-  if (SUCCESS.has(lastStatus)) break;
-  if (FAILURE.has(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${lastStatus}.`);
+  lastStatus = normalizeHostlessDeploymentStatus(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown");
+  if (isHostlessDeploymentSuccessful(lastStatus)) break;
+  if (isHostlessDeploymentFailure(lastStatus)) {
+    const reason = poll.value?.failReason ?? poll.value?.deployment?.failReason ?? poll.value?.message ?? poll.value?.error;
+    const detail = reason ? ` (reason: ${String(reason).slice(0, 160)})` : "";
+    fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${lastStatus}${detail}.`);
+  }
 }
-if (!SUCCESS.has(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 40 minutes (last status: ${lastStatus}).`);
+if (!isHostlessDeploymentSuccessful(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 40 minutes (last status: ${lastStatus}).`);
 
 console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${lastStatus}.`);
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);

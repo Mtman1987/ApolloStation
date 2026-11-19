@@ -426,6 +426,7 @@ export function validateSpmtServiceOrigin(value: string) {
   return url.origin;
 }
 
+// Keep shared product responses limited to ordinary transport metadata.
 export function headers(response: ServerResponse) {
   response.setHeader("referrer-policy", "no-referrer");
 }
