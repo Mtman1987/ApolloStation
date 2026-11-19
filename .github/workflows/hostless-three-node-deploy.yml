@@ -406,6 +406,8 @@ jobs:
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
     steps:
+      - name: Check out diagnostic redaction helper
+        uses: actions/checkout@v4
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
@@ -421,6 +423,9 @@ jobs:
             echo "hostless logs failed for $APP; see stderr" >> "logs/$NODE_KEY.stderr.txt"
           fi
           wc -l "logs/$NODE_KEY.ndjson" || true
+      - name: Redact runtime log artifacts before upload
+        if: ${{ always() }}
+        run: node scripts/sanitize-diagnostics.mjs logs
       - name: Upload log snapshot artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
