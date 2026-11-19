@@ -1,8 +1,6 @@
 name: Clean merged Apollo branches
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -25,7 +23,7 @@ jobs:
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      DRY_RUN: ${{ inputs.dry_run != false }}
     steps:
       - name: Check out complete history
         uses: actions/checkout@v4
