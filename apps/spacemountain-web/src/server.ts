@@ -536,7 +536,8 @@ function isShellAppFrameRequest(rawUrl: string | undefined) {
 
 function applySecurityHeaders(response: ServerResponse, nonce: string, shellFrame = false) {
   const frameAncestors = shellFrame ? "'self'" : "'none'";
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${frameAncestors}; object-src 'none'`);
+  // The SpaceMountain shell embeds first-party apps hosted on Node 2.
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self' https://apollo-node-2.hostless.app; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${frameAncestors}; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
   response.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
