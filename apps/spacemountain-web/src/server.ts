@@ -95,7 +95,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
-    applySecurityHeaders(response, nonce, isShellAppFrameRequest(request.url));
+    applySecurityHeaders(response, nonce);
     let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
@@ -135,7 +135,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         }
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms/streamweaver") {
-        response.removeHeader("x-frame-options"); response.setHeader("content-security-policy",STREAMWEAVER_WIDGET_CSP.replace(" *"," 'self'"));
+        response.setHeader("content-security-policy", STREAMWEAVER_WIDGET_CSP);
         return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
@@ -469,7 +469,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   if (overlay) {
 
     responseHeaders["content-security-policy"] = upstream.headers.get("content-security-policy") ?? "default-src 'none'; style-src 'unsafe-inline'";
-    for (const name of ["x-frame-options", "referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
+    for (const name of ["referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders[name] = value;
     }
@@ -550,22 +550,8 @@ function browserProxyAllowed(method: string, pathname: string) {
   return false;
 }
 
-// Shipyard launches apps into the shell's own iframe as `<launchUrl>?surface=shell`.
-// When an app's launchUrl is the shell root, that response must be frameable by this
-// same origin, or the iframe is blocked and shows a broken image.
-function isShellAppFrameRequest(rawUrl: string | undefined) {
-  try {
-    const url = new URL(rawUrl ?? "/", "http://spacemountain.local");
-    return (url.pathname === "/" || SHELL_APP_PATHS.has(url.pathname)) && url.searchParams.get("surface") === "shell";
-  } catch {
-    return false;
-  }
-}
-
-function applySecurityHeaders(response: ServerResponse, nonce: string, shellFrame = false) {
-  const frameAncestors = shellFrame ? "'self'" : "'none'";
-  // The SpaceMountain shell embeds first-party apps hosted on Node 2.
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self' https://apollo-node-2.hostless.app; font-src 'self'; base-uri 'none'; form-action 'self';  ${frameAncestors}; object-src 'none'`);
+function applySecurityHeaders(response: ServerResponse, nonce: string) {
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self' https://apollo-node-2.hostless.app; font-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
   response.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
