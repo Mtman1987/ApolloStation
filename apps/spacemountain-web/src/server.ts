@@ -19,6 +19,8 @@ const REPOSITORY_ROOT = resolve(HERE, "../../..");
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 128 * 1024;
+const CLIENT_DIAGNOSTIC_LIMIT = 24;
+const clientDiagnosticBuckets = new Map<string, { start: number; count: number }>();
 const SHELL_APP_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control"]);
 const PROVIDER_ENV_NAMES = Object.freeze([
   "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN",
@@ -177,6 +179,33 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/docs/examples/app-manifest.json") return json(response, 200, DEVELOPER_MANIFEST_EXAMPLE);
       if (request.method === "GET" && url.pathname === "/sandbox/beacon") return html(response, 200, SANDBOX_BEACON_HTML);
       if (request.method === "GET" && ASSETS.has(url.pathname)) return serveAsset(response, ASSETS.get(url.pathname)!);
+      if (request.method === "POST" && url.pathname === "/sandbox/diagnostics/client") {
+        requireSameOrigin(request);
+        const now = Date.now();
+        const remote = request.socket.remoteAddress ?? "unknown";
+        const bucket = clientDiagnosticBuckets.get(remote);
+        if (!bucket || now - bucket.start >= 60_000) clientDiagnosticBuckets.set(remote, { start: now, count: 1 });
+        else if (bucket.count >= CLIENT_DIAGNOSTIC_LIMIT) return json(response, 429, { accepted: false, reason: "rate_limited" });
+        else bucket.count += 1;
+        const raw = await readBody(request, 32 * 1024);
+        let payload: unknown;
+        try { payload = JSON.parse(raw.toString("utf8")); } catch { throw new WebHostError(400, "Invalid diagnostic JSON"); }
+        const events = payload && typeof payload === "object" && Array.isArray((payload as { events?: unknown }).events) ? (payload as { events: unknown[] }).events.slice(0, 20) : [];
+        for (const item of events) {
+          if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+          const value = item as Record<string, unknown>;
+          const safe: Record<string, unknown> = {};
+          for (const key of ["type", "timestamp", "page", "build", "userAgent", "message", "stack", "source", "line", "column", "tag", "readyState", "localStorageKeys", "sessionStorageKeys"]) {
+            const field = value[key];
+            if (typeof field === "string") safe[key] = field.slice(0, key === "stack" || key === "message" ? 3000 : 500);
+            else if (typeof field === "number" || typeof field === "boolean") safe[key] = field;
+            else if (Array.isArray(field) && (key === "localStorageKeys" || key === "sessionStorageKeys")) safe[key] = field.filter((entry): entry is string => typeof entry === "string").slice(0, 80).map((entry) => entry.slice(0, 100));
+          }
+          // Emit into Hostless runtime logs so the existing diagnostics workflow can retrieve it.
+          console.error("[browser-client-diagnostic]", JSON.stringify({ node: process.env.APOLLO_NODE_ROLE ?? "node1", remote, ...safe }));
+        }
+        return json(response, 202, { accepted: events.length });
+      }
       if (request.method === "GET" && url.pathname === "/sandbox/health") return sandboxHealth(response, spmtOrigin, fetchImpl, buildSha);
       if (request.method === "GET" && url.pathname === "/sandbox/candidate-app" && options.candidateManifest) return json(response, 200, options.candidateManifest);
       if (request.method === "POST" && url.pathname === "/sandbox/developer/import-manifest") {
