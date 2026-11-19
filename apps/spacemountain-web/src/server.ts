@@ -112,7 +112,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       // Stable deep link for the production account and provider-linking screen.
       if (request.method === "GET" && url.pathname === "/account") { response.writeHead(302, { location: `/?view=account${url.search}`, "cache-control": "no-store" }); response.end(); return; }
-      if (request.method === "GET" && url.pathname === "/apps/mission-control") { response.writeHead(302, { location: "/?app=stellar-core&panel=mission-control", "cache-control": "no-store" }); response.end(); return; }
+      if (request.method === "GET" && url.pathname === "/apps/mission-control") { const target = new URLSearchParams(url.searchParams); target.set("app", "stellar-core"); target.set("panel", "mission-control"); response.writeHead(302, { location: `/?${target}`, "cache-control": "no-store" }); response.end(); return; }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.setHeader("cross-origin-resource-policy","cross-origin"); response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && (url.pathname === "/simulation-rooms/arcade" || url.pathname === "/assets/nebula-arcade/widget-stage.js" || url.pathname.startsWith("/assets/nebula-arcade/widgets/"))) {
         if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
@@ -528,7 +528,7 @@ function browserProxyAllowed(method: string, pathname: string) {
 function isShellAppFrameRequest(rawUrl: string | undefined) {
   try {
     const url = new URL(rawUrl ?? "/", "http://spacemountain.local");
-    return (url.pathname === "/" || url.pathname === "") && url.searchParams.get("surface") === "shell";
+    return (url.pathname === "/" || SHELL_APP_PATHS.has(url.pathname)) && url.searchParams.get("surface") === "shell";
   } catch {
     return false;
   }
