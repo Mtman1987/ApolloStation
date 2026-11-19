@@ -158,7 +158,7 @@ jobs:
           import re, pathlib
           files = [pathlib.Path('hostless-diagnostics/summary.txt'), pathlib.Path('hostless-diagnostics/recent-errors.log')]
           def redact(s):
-            patterns = [(r'(?i)(authorization\\s*[:=]\\s*bearer\\s+)\\S+', r'\\1[REDACTED]'), (r'(?i)(bearer\\s+)\\S+', r'\\1[REDACTED]'), (r'(?i)(cookie|set-cookie)\\s*[:=]\\s*[^\\r\\n]+', r'\\1: [REDACTED]'), (r'(?i)(token|secret|password|passwd|api[_-]?key|session[_-]?key)\\s*[:=]\\s*[^\\s,;]+', r'\\1=[REDACTED]'), (r'(?i)(sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})', '[REDACTED]')]
+            patterns = [(r'(?i)(authorization\s*[:=]\s*bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(cookie|set-cookie)\s*[:=]\s*[^\r\n]+', r'\1: [REDACTED]'), (r'(?i)(token|secret|password|passwd|api[_-]?key|session[_-]?key)\s*[:=]\s*[^\s,;]+', r'\1=[REDACTED]'), (r'(?i)(sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})', '[REDACTED]')]
             for p, repl in patterns: s = re.sub(p, repl, s)
             return s
           out = ['## '+NODE+' diagnostics — run '+RUN_ID, '']
