@@ -38,6 +38,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
           <button type="button" role="tab" data-tab="spmt" aria-selected="false">SPMT bridge</button>
         </div>
         <form id="login-form" autocomplete="off" hidden>
+          <a class="secondary-button spmt-start" href="/v1/auth/spmt/start">Sign in with SPMT (automatic)</a>
           <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="5" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
           <button type="button" id="open-spmt" class="secondary-button">Open SPMT bridge JSON (copy it)</button>
           <button type="submit">Sign in with SPMT</button>

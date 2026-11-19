@@ -29,3 +29,17 @@ test("bridge-login bootstraps the owner workspace on first sign-in and reuses it
 test("the retired /v1/auth/session/bridge path answers 404", () => {
   assert.match(service, /url\.pathname === "\/v1\/auth\/session\/bridge"\) return json\(response, 404/);
 });
+
+test("SPMT sign-in starts and completes through a PKCE public client with no client secret", () => {
+  const start = service.indexOf('url.pathname === "/v1/auth/spmt/start"');
+  const callback = service.indexOf('url.pathname === "/v1/auth/spmt/callback"');
+  assert.ok(start > 0 && callback > start, "start and callback routes exist in order");
+  const flow = service.slice(start, service.indexOf('url.pathname === "/v1/auth/login"', callback));
+  assert.match(flow, /client_id: SPMT_APOLLO_CLIENT_ID/);
+  assert.match(flow, /code_challenge_method", "S256"/);
+  assert.match(flow, /code_verifier: pending\.verifier/);
+  assert.doesNotMatch(flow, /client_secret/i);
+  assert.match(flow, /resolveDonorWorkspace\(\{ id: donorId/);
+  assert.match(flow, /issueBrowserSession\(issued\.accessToken\)/);
+  assert.match(flow, /timingSafeEqual\(Buffer\.from\(state\)/);
+});

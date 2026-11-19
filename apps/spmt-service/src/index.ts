@@ -16,7 +16,7 @@ import { SpmtAssistantApi } from "./assistant-api.js";
 import { StellarAssistantStore, StellarPrivateAssistant } from "@spmt/stellar-core";
 import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
@@ -597,6 +597,72 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/auth/spmt/start") {
+        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
+        const verifier = randomBytes(32).toString("base64url");
+        const state = randomBytes(24).toString("base64url");
+        const authorize = new URL(`${SPMT_ORIGIN}/api/oauth/authorize`);
+        authorize.searchParams.set("client_id", SPMT_APOLLO_CLIENT_ID);
+        authorize.searchParams.set("redirect_uri", `${publicBaseUrl}/v1/auth/spmt/callback`);
+        authorize.searchParams.set("state", state);
+        authorize.searchParams.set("code_challenge", createHash("sha256").update(verifier).digest("base64url"));
+        authorize.searchParams.set("code_challenge_method", "S256");
+        response.writeHead(302, { location: authorize.toString(), "cache-control": "no-store", "set-cookie": spmtPendingCookie(Buffer.from(JSON.stringify({ state, verifier })).toString("base64url")) });
+        response.end();
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/auth/spmt/callback") {
+        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
+        const pending = parseSpmtPending(cookie(request, SPMT_PENDING_COOKIE));
+        const failed = (reason: string) => {
+          const home = new URL("/", publicBaseUrl);
+          home.searchParams.set("spmtError", reason);
+          response.writeHead(302, { location: home.toString(), "cache-control": "no-store", "set-cookie": spmtPendingCookie("", 0) });
+          response.end();
+        };
+        const code = url.searchParams.get("code") ?? "";
+        const state = url.searchParams.get("state") ?? "";
+        if (url.searchParams.get("error")) return failed("spmt_denied");
+        if (!pending || !code || code.length > 512 || state.length !== pending.state.length || !timingSafeEqual(Buffer.from(state), Buffer.from(pending.state))) return failed("spmt_state_mismatch");
+        try {
+          // Public PKCE client: no client secret. The verifier proves this browser started the flow.
+          const tokenResponse = await fetchImpl(`${SPMT_ORIGIN}/api/oauth/token`, {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ grant_type: "authorization_code", code, client_id: SPMT_APOLLO_CLIENT_ID, redirect_uri: `${publicBaseUrl}/v1/auth/spmt/callback`, code_verifier: pending.verifier }),
+            redirect: "manual", signal: AbortSignal.timeout(10000),
+          });
+          if (!tokenResponse.ok) return failed("spmt_token_rejected");
+          const tokenPayload = await tokenResponse.json().catch(() => ({})) as Record<string, unknown>;
+          const accessToken = typeof tokenPayload.access_token === "string" ? tokenPayload.access_token : "";
+          if (!accessToken) return failed("spmt_token_rejected");
+          const donorMe = await fetchImpl(`${SPMT_ORIGIN}/api/auth/me`, {
+            headers: { accept: "application/json", authorization: `Bearer ${accessToken}` },
+            redirect: "manual", signal: AbortSignal.timeout(10000),
+          });
+          if (!donorMe.ok) return failed("spmt_identity_unavailable");
+          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
+          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
+          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
+          const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
+          if (!donorId || !donorUsername) return failed("spmt_identity_unavailable");
+          const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
+          if (!resolved.ok) return failed(resolved.status === 403 ? "workspace_not_linked" : "identity_unavailable");
+          const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
+          const browser = auth.issueBrowserSession(issued.accessToken);
+          response.writeHead(302, {
+            location: new URL("/", publicBaseUrl).toString(),
+            "cache-control": "no-store",
+            "set-cookie": [browserSessionCookie(browser.accessToken), donorSessionCookie(accessToken), spmtPendingCookie("", 0)],
+          });
+          response.end();
+          return;
+        } catch {
+          return failed("identity_unavailable");
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
         const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
@@ -1112,5 +1178,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   await service.listen();
 }
 
+const SPMT_ORIGIN = "https://spmt.live";
+const SPMT_APOLLO_CLIENT_ID = "apollo-node-1";
+const SPMT_PENDING_COOKIE = "spmt_oauth_pending";
+function spmtPendingCookie(value: string, maxAge = 600) { return `${SPMT_PENDING_COOKIE}=${value}; Path=/v1/auth/spmt; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`; }
+function parseSpmtPending(raw: string | undefined): { state: string; verifier: string } | undefined {
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Record<string, unknown>;
+    if (typeof value.state === "string" && typeof value.verifier === "string" && /^[A-Za-z0-9._~-]{43,128}$/.test(value.verifier)) return { state: value.state, verifier: value.verifier };
+  } catch { /* malformed cookie: treated as missing */ }
+  return undefined;
+}
 function browserSessionCookie(token: string) { return `${sessionCookie(token)}; Max-Age=34560000`; }
 function donorSessionCookie(token: string) { return `spmt_donor_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`; }
