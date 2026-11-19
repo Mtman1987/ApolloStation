@@ -44,7 +44,7 @@ export class NebulaTagOverlayHttpAdapter {
     if (request.method !== "GET") return response(405, "text/plain; charset=utf-8", "Method not allowed", { allow: "GET" });
     if (request.path === ROOT) {
       return response(200, "text/html; charset=utf-8", renderNebulaTagOverlayHtml(), {
-        "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; base-uri 'none'",
+        
       });
     }
     if (request.path === ROOT + "/client.js") return response(200, "text/javascript; charset=utf-8", NEBULA_TAG_OVERLAY_CLIENT_JS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
