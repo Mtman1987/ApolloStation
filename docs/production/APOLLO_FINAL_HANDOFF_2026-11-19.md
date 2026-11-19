@@ -108,6 +108,7 @@ No branch has been deleted in this cleanup. The connected GitHub actions availab
 8. **Security:** never expose secrets in logs, browser bundles, source, PR text, diagnostic artifacts, or chat. Keep the terminal diagnostic-only, not an app execution surface.
 9. **Dependency audit:** the PR validation install reported two high-severity npm advisories. Capture the full `npm audit --json` details and update only affected direct/transitive dependencies with compatibility tests; do not use `npm audit fix --force` as a blanket cleanup.
 10. **Retired infrastructure:** the only active workflow found that explicitly woke a Sprite and verified Fly CLI/auth was archived, not executed. The remaining `FLY_API_TOKEN` references in sandbox code are denylist guards that reject infrastructure credentials; they are not live Fly API calls and should stay until sandbox policy is deliberately redesigned.
+11. **Donor-origin fallbacks:** the owner added `docs/production/DONOR_ORIGIN_OVERRIDES.md`. Set the documented Hostless overrides for Mosaic, HearMeOut, and Spotlight before deleting source-level Fly fallbacks; verify each target is healthy on its exact route first.
 
 ### Acceptance before optimization
 
@@ -130,6 +131,8 @@ After acceptance, profile the build and runtime, remove redundant work, optimize
 - [ ] Only then start measured optimization.
 
 ## Evidence references
+
+- Owner-authored Hostless donor-origin overrides: [DONOR_ORIGIN_OVERRIDES.md](DONOR_ORIGIN_OVERRIDES.md)
 
 - Recovery workflow commit: `d18385a55d62d8761ed433594cf7bd7417d9f76a`
 - Companion diagnostics source repair: `5cfe22d035c00ca798247636cfeee720a210a589`
