@@ -4,6 +4,10 @@ All architecture, contracts, development notes, audit evidence and production ru
 
 ## Start here
 
+- [Development and operator tooling](development/README.md) — canonical commands, audit families, migrations, and release tooling.
+- [SpaceMountain Web](../apps/spacemountain-web/README.md) — shell, workspace, sign-in, integrated gateway, and browser runtime.
+
+
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
 - [StreamWeaver developer integration reference](architecture/STREAMWEAVER_ECOSYSTEM_INTEGRATION.md) — `/docs/developers/streamweaver`.
 - [Current StreamWeaver parity checklist](STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md) — `/docs/streamweaver/parity`.
