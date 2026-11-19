@@ -1,4 +1,4 @@
-# Rotator capability lifeboat — ApolloStation port plan
+# Apollo operator capabilities and terminal integration
 
 Status: inventory and placement baseline; implementation is staged.
 Donor: `Mtman1987/fly-machine-rotator`.

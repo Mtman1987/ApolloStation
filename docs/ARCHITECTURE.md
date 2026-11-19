@@ -1,283 +1,225 @@
-# Current ApolloStation Architecture
+# ApolloStation architecture
 
-Updated: 2026-08-30
+Updated: 2026-11-19  
+Scope: the architecture implemented in this monorepo and the intended two-node Hostless runtime. For current deployment evidence, see CURRENT_STATE.md. This document describes boundaries and responsibilities; it is not a claim that every product integration has passed live acceptance.
 
-This document replaces the original proposal-era blueprint and decision ledger as the governing architecture. It describes the system ApolloStation became after implementation, donor-parity work, application consolidation, Sprites adoption, functional wiring, live-runtime design, cost failures, and production rehearsal.
+## 1. Architecture in one view
 
-## 1. What survived from the original plan
+ApolloStation is the implementation monorepo for the SPMT Ecosystem. It combines one shared platform authority, a public SpaceMountain shell, first-party product applications, supporting workers, shared packages, and operator/developer interfaces.
 
-The original project got several principles right and they remain non-negotiable:
+The primary rule is: **shared facts have one authority; product-specific behavior and data stay with the product that owns them.**
 
-- one SPMT human identity and policy authority;
-- one canonical authority for every shared fact;
-- no direct cross-app database shortcuts;
-- scoped service identities instead of universal internal keys;
-- provider credentials remain provider credentials and are brokered only to authorized services;
-- idempotent jobs/events, replay protection, fenced leases, durable retry/outbox behavior, and honest degraded states;
-- product runtimes can be stopped or scaled when their workload permits it;
-- expensive/high-risk work is isolated when necessary rather than giving every brand a dedicated always-on server;
-- old production stays available until replacement and rollback are proven;
-- first-party apps should prove the same public platform third-party apps receive.
+Logical request flow:
 
-Those principles produced useful architecture. We keep them.
+    Browser / companion / approved tool
+                 |
+          SpaceMountain shell
+                 |
+        SPMT SDK and contracts
+                 |
+          SPMT Service
+          /     |      \
+   authority  jobs/events  provider grants
+      |          |             |
+ shared facts  workers      providers
+      |
+ first-party applications and their private stores
 
-## 2. What changed materially
+Applications may communicate through documented SPMT APIs, SDK methods, events, jobs, provider grants, and registered app routes. They must not reach into another application's database or private filesystem.
 
-### ApolloStation became the implementation, not just the blueprint
+## 2. Platform layers
 
-The repository started as documentation-first design work. It became the actual monorepo containing shared contracts, SPMT authority, SpaceMountain, apps, workers, CLI/MCP, migration tools, tests, sandbox/release tooling, and production-rehearsal code. Repository layout is therefore settled: one source monorepo may produce many runtime boundaries.
+### SPMT authority
 
-### Sprites became an important release/runtime tool
+SPMT Service is the trusted platform boundary for:
 
-The original plan was Fly-centric. During implementation, Review and Release Sprites became the safest place to install and exercise the complete codebase, run Qwen, checkpoint releases, verify exact SHAs, and rehearse the shared platform without contacting production providers.
+- user identity, sessions, tenant membership, and account recovery;
+- app registration, catalog, install state, scopes, and grants;
+- shared workspace/profile/theme facts and shared XP/reward facts;
+- provider links, OAuth state, encrypted credential authority, and short-lived provider grants;
+- shared jobs, leases, retries, events, outbox delivery, and audit evidence;
+- usage, entitlements, plan policy, and metering;
+- shared Commlink messaging/notifications and platform operations APIs.
 
-Sprites are not declared the universal production substrate. They are a current execution option. Fly remains useful for workloads that need Fly Machines lifecycle/autoscaling, direct custom-domain support, persistent provider sockets, or independently scaled worker pools. Companion remains the execution target for local device/OBS/media/AI work. Future hosting providers may replace any of these without changing product contracts.
+SPMT owns cross-app facts. It does not own every app's private product database.
 
-### Brand boundaries and runtime boundaries diverged
+### SpaceMountain
 
-A branded app is a product/permission/state owner, not necessarily one machine, one service, one database, or one deployment. Compatible low-risk modules may run together. Persistent sockets, media jobs, room sessions, Xbox sessions, AI workers, and other special workloads may get separate process or machine boundaries.
+SpaceMountain is the public ecosystem entry point and authenticated application host. It provides the shell, navigation, workspace, app catalog, launch/frames, universal appearance settings, and OverlayBay.
 
-Scaling policy therefore attaches to **workloads**, not logos.
+SpaceMountain Web is the integrated HTTP host and same-origin gateway. The shared SpaceMountain package owns reusable shell and workspace behavior. Do not duplicate shell UI or identity/session logic inside every product app.
 
-### “One database” became “one shared-fact authority plus bounded app-private authorities”
+### Product applications
 
-SPMT owns ecosystem facts shared across products. Apps may own genuinely private durable state.
+- Commlink — personal and community communications, mail/history, notifications, and live chat presentation.
+- Companion — paired local device and OBS execution with explicit local permissions.
+- Discord Stream Hub — Discord community features, publishing, spotlight and supervised worker workflows.
+- HearMeOut — synchronized media/watch rooms, playback, voice and media jobs.
+- Mission Control — owner/operator evidence and workload/usage projections; Apollo-native terminal integration is a separate implementation requirement.
+- MountainView — companion/device-facing experience.
+- Nebula Arcade — games, Chat Tag, Quackverse, game widgets, art and provider events.
+- Stellar Core — persona-neutral AI execution, memory/privacy and speech; Stella is the default community assistant persona.
+- StreamWeaver — streaming automation, chat commands, personas, rewards, avatar/media tools and provider workflows.
 
-Examples:
+### Supporting services
 
-- SPMT: users, tenants, provider links, app registry/installs, scopes, plans, usage, XP/shared rewards, workspace/theme, shared overlay metadata/grants, shared Commlink account data, provider credential authority, common job/event/audit facts.
-- HearMeOut: room membership, room/session playback state, invitations, product-private presence and queue state.
-- Nebula Arcade: game-round/session state, game-private inventory/progress where no other product is authoritative.
-- StreamWeaver: tenant persona configuration, product-local currency, command/runtime state, private conversation memory according to retention settings.
-- workers: cache, scratch, staging and bounded outbox/retry state only as required.
+- Chat Gateway — provider-neutral Twitch, Discord, Kick, YouTube and TikTok ingestion/connection supervision, normalization, deduplication, reconnect/cursor handling and delivery to registered consumers.
+- Restream control service — isolated browser-control receiver for approved Restream workflows; it is not a general-purpose remote browser or shell.
 
-Every local dataset must be classified as `private-authority`, `cache`, `staging`, `outbox`, or scratch/temporary. A local copy of a shared fact never becomes canonical merely because it is durable.
+### Shared packages
 
-### First-party versus third-party app plumbing was removed
+Shared packages provide versioned contracts, auth, authority, account recovery, data adapters, execution jobs, outbox, provider grants, runtime health, monetization, platform operations, SDK, UI, CLI and MCP.
 
-SpaceMountain-owned apps now use the same catalog registration and launch contract as external apps. A publisher supplies a complete HTTPS `launchUrl`. The registry does not reconstruct it from a special SpaceMountain host convention.
+A shared capability should have one owning package. Apps consume the package through its public export rather than copying implementation.
 
-Publisher identity, review status and scopes determine trust. Hostname does not.
+## 3. Identity, trust and app lifecycle
 
-### Permanent owned domains replaced infrastructure URLs as product identity
+1. The user signs in through the supported SPMT identity/session path.
+2. SpaceMountain obtains the authenticated session and tenant context.
+3. The app catalog provides a registered launch URL and app metadata.
+4. SPMT grants only the scopes/capabilities required for the caller, tenant, and action.
+5. The app calls SPMT through the SDK or a documented API boundary.
+6. Background work is accepted as a durable job/event and executed by a supervised worker.
+7. Results and operational evidence are returned through the owning contract.
 
-Public first-party product URLs live on domains SpaceMountain controls. Infrastructure addresses such as `*.fly.dev` and `*.sprites.app` are deployment details. External developers may use any safe approved HTTPS origin they control.
+App registration is not authorization by itself. A launch URL is not a credential. An iframe is not a security boundary. Worker credentials are service identities and must be unique, scoped, and server-side.
 
-DNS/custom-domain routing is deliberately separate from app authorization.
+The signed-out shell must visibly present the SPMT bridge recovery gate. A 401/403 from an anonymous session check is expected; a blank page is not an acceptable recovery experience. Never bypass the gate to hide a session propagation defect.
 
-### Cutover became risk-ordered rather than phase-number-ordered
+## 4. Runtime topology
 
-The original operations plan used large sequential phases and a mandatory “complete integrated Fly sandbox” before any real app canary. That was useful while the system was imaginary, but it is now too rigid.
+The active target is Hostless Node 1 and Node 2.
 
-The current rule is evidence-based progression:
+| Node | Primary responsibilities |
+|---|---|
+| Node 1 | SPMT authority and SpaceMountain integrated web host/workspace |
+| Node 2 | Chat Gateway plus the co-located StreamWeaver and Nebula provider-runtime chain |
 
-1. shared platform/core proof;
-2. infrastructure/storage/recovery proof required by the specific capability being moved;
-3. shadow/read-only/live-provider rehearsal where possible;
-4. the lowest-blast-radius real canary;
-5. rollback proof;
-6. progressively riskier apps and cohorts.
+Node 3 is retired from the active topology. Its dedicated app-creation workflow, bootstrap script, and npm command were removed during repository hygiene. Workloads formerly assigned to Node 3 must be placed on Node 1 or Node 2 with explicit capacity and isolation.
 
-A capability does not wait for unrelated hardware work, but it also cannot bypass a dependency it genuinely needs.
+Fly.io, Sprites, and the donor Rotator application are not Apollo production dependencies. The codebase still contains legacy execution-target identifiers and some donor-origin defaults; these are known cleanup/migration debt, not permission to deploy or call those retired services. They must be removed or replaced in coordinated, tested changes.
 
-## 3. Logical platform
+The Hostless release workflow retains a historical three-node filename because dispatchers, tests, and path filters reference it. Its current deployment matrix is Node 1 and Node 2. Do not rename it until every reference is updated in one change.
 
-```text
-Users / Developers
-        |
-        +--> spacemountain.live  (public shell / workspace / app host)
-        |
-        +--> permanent app URLs  (*.spacemountain.live)
-        |
-        +--> spmt.live            (account / developer / platform authority)
-                         |
-                         v
-                  SPMT contracts
-       identity / auth / registry / scopes
-       shared facts / jobs / events / usage
-       provider grants / audit / runtime truth
-                         |
-          +--------------+---------------+
-          |              |               |
-       Product        Shared          Operator
-       private        services        control
-       state          & workers       plane
-          |              |               |
-     HearMeOut       Chat Gateway     Mission Control
-     Nebula          Stellar Core     Rotator
-     StreamWeaver    shared jobs      recovery tooling
-     DSH, etc.       provider I/O
-```
+## 5. Persistence and ownership
 
-The important boundary is contractual ownership, not physical co-location.
+### Shared authority
 
-## 4. Runtime placement
-
-Runtime placement is configuration backed by measurement.
-
-### Sprites are appropriate for
-
-- Review/Release environments;
-- complete-codebase integration and supervised processes;
-- CPU-local Qwen or similar bounded workloads when measured cost/performance is favorable;
-- workloads where checkpoint/release semantics are useful;
-- controlled sandbox execution.
-
-### Fly/Machines are appropriate for
-
-- independently scalable workers;
-- provider sockets/bots requiring explicit unique-consumer lifecycle;
-- room/session workers;
-- burst media jobs;
-- workloads where start/create/drain/stop/destroy policy matters;
-- always-available ingress/API components when Fly is the selected provider;
-- recovery/storage boundaries when that design is selected.
-
-### Companion is appropriate for
-
-- local OBS/device actions;
-- local FFmpeg/media processing;
-- approved local AI;
-- private/local hardware interaction.
-
-No app is entitled to infrastructure credentials. Apps report health/demand and request work through public scoped contracts. The private operations controller applies provider-specific actions.
-
-## 5. Storage rules
-
-### Shared facts
-
-SPMT is the only supported authority boundary for shared ecosystem facts. The physical backing store is replaceable. SQLite, PostgreSQL, object storage, a network store, or another provider may be chosen behind the contract as requirements change.
+SPMT owns identities, tenant/membership/role facts, app registry and grants, shared workspace/profile settings, shared XP/rewards, provider-link/grant state, platform jobs/events, usage/entitlements, and shared communications.
 
 ### App-private state
 
-A product may keep a small bounded durable store when the data is genuinely private to that product and durability simplifies correctness. This store has an owner, migrations, integrity checks, backup/restore policy, size ceiling and retention policy.
+Each product may own bounded private durable records: for example game state, watch rooms, provider channel configuration, app-specific queues, avatar records, or community settings. The product's owning service and schema are responsible for migration, backup, retention and restore.
 
-### Media
+### Caches and derived state
 
-Metadata ownership follows the product/shared-fact rule. Large durable media bytes should not live indefinitely on worker scratch disks. Use object/media storage or another explicitly owned durable location. Worker caches are replaceable.
+Caches, staging files, media transcodes, search projections, retry/outbox queues, and scratch data must be explicitly classified. They must not silently become canonical authorities for shared facts.
 
-### Recovery
+### Database reality
 
-Recovery is an **outcome requirement**, not a mandatory product topology.
+Several domain stores still use synchronous Node SQLite adapters. The repository also contains asynchronous record-store/Turso HTTP components and migration tooling. A Turso database existing or a migration script passing does not prove every production store uses it.
 
-Before authoritative production data moves, we require:
+The actual service runtime adapter and effective database path must be verified. A local /tmp SQLite path is ephemeral and is not durable production storage. Do not silently fall back to it when remote persistence is required.
 
-- independent recovery points outside the active writer failure boundary;
-- integrity/checksum/schema/count verification;
-- restore into an isolated target;
-- a documented and rehearsed writer-fencing/promotion process where the store requires it;
-- rollback/failback appropriate to the chosen storage technology;
-- an additional protected copy outside a single provider/account failure boundary for critical shared authority.
+Before changing a durable store: identify its owner, schema, writer set, migration, backup, integrity, restore, retention, and rollback. Do not dual-write shared facts without an explicit reconciliation contract.
 
-The old provisional name `spmt-vault`, fixed Fly placement, and exact backup implementation are not architectural requirements. If the selected storage technology provides a safer/simpler equivalent, use it. What cannot be removed is tested recoverability.
+## 6. Jobs, events and provider integrations
 
-## 6. Application platform and trust
+Long-running or externally visible work should use durable jobs/outbox/event contracts rather than unbounded in-request execution.
 
-Every app uses one platform model:
+- Jobs require an owning app, capability, tenant, idempotency key, execution target, lease, fencing, heartbeat, bounded retry and terminal result.
+- Provider credentials remain in SPMT. Workers receive short-lived scoped grants, not refresh tokens or copied secrets.
+- Provider connection supervisors own reconnect, backoff, cursor, lease and reauthorization state.
+- Consumers must be unique/fenced so restart or scale-out cannot create duplicate bots, awards, messages, or scheduled actions.
+- Live provider acceptance is separate from mocked tests and offline suite results.
 
-```text
-publisher -> manifest/catalog registration -> review/approval -> install -> grants/scopes -> launch -> runtime
-```
+The Chat Gateway is a shared ingress/connection layer, not the owner of each app's business rules. It normalizes events and delivers them to registered consumers; StreamWeaver, Nebula Arcade, Discord Stream Hub, HearMeOut, and Commlink retain their product logic.
 
-SpaceMountain apps go through that model too.
+## 7. Operator experience and terminal
 
-Trust derives from:
+Mission Control is Apollo's owner/operator product surface. Its current package exports a manifest and pure workload/monetization projections; it does not yet provide a full terminal UI or server.
 
-- authenticated publisher identity;
-- review/approval status;
-- installed version;
-- tenant/user authorization;
-- granted scopes;
-- runtime/service identity;
-- high-risk approval rules.
+The terminal must be Apollo-owned and use the same SPMT identity, scopes, workspace, logs, diagnostics, and audit contracts as other operator controls. OverlayBay can host it as a frame/panel using the existing move, resize, stack, lock, hide, mute, duplicate, close, reopen, and save behavior.
 
-Trust does **not** derive from:
+A terminal panel must not imply unrestricted shell access. The backend must define allowlisted commands/actions, owner authorization, explicit confirmation for writes, idempotency, audit events, output redaction, byte/time limits, cancellation, and rollback. No host filesystem traversal, environment dumps, secret retrieval, arbitrary process execution, or separate Rotator control plane.
 
-- being hosted on `spacemountain.live`;
-- being in the monorepo;
-- being written by a first-party developer;
-- sharing infrastructure with SPMT.
+## 8. Security boundaries
 
-## 7. URL and domain architecture
+- Validate tenant, actor, caller app, scope, capability, and correlation context at every service boundary.
+- Use SPMT sessions for people and distinct service identities for workers.
+- Keep provider secrets and infrastructure credentials server-side.
+- Apply same-origin/CSRF protections to browser state changes.
+- Keep iframe framing policy explicit; never rely on frames as authorization.
+- Bound request bodies, proxy responses, logs, pagination, caches, retries, and worker concurrency.
+- Redact credentials before logs, artifacts, diagnostics, model context, or UI.
+- Do not allow arbitrary proxy destinations or arbitrary URL/file selection.
+- Keep app-private data isolated and shared facts canonical.
+- Mutating infrastructure actions require explicit owner approval, audit and rollback evidence.
 
-Permanent first-party names currently reserved:
+## 9. Performance principles
 
-- `commlink.spacemountain.live`
-- `companion.spacemountain.live`
-- `discordstreamhub.spacemountain.live`
-- `hearmeout.spacemountain.live`
-- `missioncontrol.spacemountain.live`
-- `mountainview.spacemountain.live`
-- `nebula.spacemountain.live`
-- `stellar.spacemountain.live`
-- `streamweaver.spacemountain.live`
+The monorepo should remain modular without loading every app's full runtime into every request.
 
-`spmt.live` remains the platform/core identity and `spacemountain.live` remains the public ecosystem front door.
+- Keep SpaceMountain Web a thin composition/gateway layer.
+- Lazy-load app-specific browser code when opened; do not bundle every product UI into the global shell.
+- Share SDK, contracts, UI and domain logic instead of duplicating them.
+- Keep synchronous database/file work off request hot paths where practical.
+- Avoid redundant polling, repeated initialization, duplicate refresh loops and unbounded in-memory maps.
+- Bound media dimensions, upload sizes, output sizes and concurrency.
+- Serve compressed/appropriately sized media and cache immutable static assets.
+- Retain only assets that are referenced by product routes or documented source workflows.
+- Measure cold start, memory, bundle size, request latency, database query count and provider reconnect churn before optimizing.
 
-The DNS target behind any name can change without changing the app registration or user-visible URL. OAuth callbacks, OBS sources and durable external links should prefer owned product names once production routing is established.
+## 10. Validation and release evidence
 
-Third-party apps may use arbitrary safe HTTPS URLs. Their hosting choice is not our portability problem.
+From repository root:
 
-## 8. Product-specific runtime principles
+    npm ci
+    npm run build
+    npm run typecheck
+    npm test
+    npm run test:offline
 
-### Chat Gateway
+Focused audits:
 
-Owns provider connections, normalization, cursors/reconnect and provider-neutral egress. StreamWeaver and Nebula consume it rather than opening duplicate sockets for the same authority where the shared gateway applies.
+    npm run release:audit
+    npm run cutover:audit
+    npm run persistence:audit
+    npm run nebula:check
 
-### StreamWeaver
+Evidence levels must be reported separately:
 
-Owns tenant command/persona behavior and private settings/state. Because it can actively speak and execute across many tenants, it has the highest duplicate-output risk. Its migration must prove single output authority, replay safety and cohort isolation before broad enablement.
+- compile: build/typecheck passed;
+- offline regression: deterministic local tests passed;
+- structural audit: config/source inventory passed;
+- workflow: named Actions jobs completed;
+- deployment: exact revision is running on each intended node;
+- live acceptance: owner browser journey and real provider/media behavior verified.
 
-### Nebula Arcade
+A passing PR workflow does not deploy production. A Node 1 deployment does not certify Node 2. No release is complete without exact commit identity, node health, logs, persistence/restart proof, and rollback evidence.
 
-Owns the Games Hub and all games as bounded modules under one product. It may maintain game-private durable state. Provider outputs/commands require the same single-authority and dedupe rules as StreamWeaver. It is a high-blast-radius late migration.
+## 11. Known migration and cleanup debt
 
-### Discord Stream Hub
+The following are intentionally visible rather than hidden by a misleading "complete" label:
 
-Owns community/live/spotlight/moderation product behavior. It should use SPMT for shared identity/XP and provider grants. Its live Discord publisher requires durable idempotency but has a lower immediate blast radius than StreamWeaver/Nebula in normal low-activity windows.
+- Node 1 shell/sign-in recovery and owner browser acceptance.
+- Node 2 deployment and worker/provider connection acceptance.
+- Full runtime proof that durable SPMT/app stores use the intended remote persistence backend rather than ephemeral local paths.
+- Replacement of residual Fly donor origins in HearMeOut and Nebula/Quackverse generation paths.
+- Removal or migration of legacy Sprite/Fly execution-target defaults and stale capability-wiring entries.
+- Real Twitch/Discord/Kick/YouTube provider workflows, voice/media playback and restart/restore acceptance.
+- Apollo-native terminal backend and OverlayBay frame integration.
+- Detailed per-app and per-tool README coverage.
 
-### HearMeOut
+These are tracked in the current state and app-specific acceptance documents. Do not add duplicate dated handoffs for every small defect.
 
-Owns room/media private state. Media and room workers should scale independently of the durable product authority. Existing Blue volumes are migration sources to classify, not shapes to copy wholesale.
+## 12. Change rules
 
-### Stellar Core
-
-Owns persona-neutral AI execution/routing/jobs. Stella and tenant personas are presentations above it. Hosted versus Companion routing is policy/entitlement driven and measured; no provider is permanently encoded as architecture.
-
-### MountainView and Companion
-
-SPMT owns public device identity/authorization. Companion owns local execution; MountainView owns its product workflows. Hardware/local jobs must not turn cloud workers into device authorities.
-
-## 9. Operations
-
-The Rotator/Mission Control model remains useful but should be provider-neutral at the contract level. Today it can operate Fly workloads; future adapters can control other providers without changing app APIs.
-
-Every lifecycle action needs:
-
-- bounded desired policy;
-- fresh health/demand evidence;
-- fencing/idempotency;
-- drain/lease safety;
-- cost ceilings;
-- audit evidence;
-- rollback/circuit breaking.
-
-A provider accepting a start/scale action is not readiness. Readiness must be verified by the workload.
-
-## 10. What is intentionally no longer governing
-
-The following ideas are retained only as history unless re-adopted with current evidence:
-
-- Fly as the mandatory home for the entire ecosystem;
-- one named `spmt-vault` Fly app as the only valid recovery design;
-- a specific pre-created Machine topology before measurements;
-- one giant integrated infrastructure rehearsal that blocks unrelated low-risk canaries;
-- one deployment per branded app;
-- one physical database containing every product-private record;
-- private launch plumbing for first-party apps;
-- infrastructure-provider hostnames as durable public app URLs;
-- frozen donor copies as ongoing parity sources after current live/GitHub evidence is available.
-
-## 11. Change rule
-
-Architecture documents are not sacred. Code is not automatically truth either. When production evidence, cost, provider capabilities or product behavior changes materially, compare the current implementation and the current requirement, make the decision explicitly, update this document, then change code/runtime. Do not preserve an obsolete topology merely because it once had a decision number.
+1. Identify the owning layer before changing behavior.
+2. Prefer one shared implementation behind a versioned contract.
+3. Preserve app-private data ownership and app identity.
+4. Add tests at the boundary that owns the behavior.
+5. Keep production secrets and data out of source and diagnostics.
+6. Confirm runtime/workflow references before removing scripts, files, assets, or dependencies.
+7. Update the owning README and index in the same change.
+8. Verify behavior with the narrow test, full validation, and actual runtime evidence appropriate to the change.
