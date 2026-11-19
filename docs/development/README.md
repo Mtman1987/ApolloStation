@@ -56,6 +56,8 @@ These tools are read-only audits unless their specific documentation says otherw
 
 ### Hostless runtime and deployment
 
+See [the Hostless tooling guide](../../scripts/hostless/README.md) for the two-node process map, exact script responsibilities, secret-synchronization boundary, persistence warning, and release troubleshooting.
+
 - scripts/hostless/start-node.mjs is the node process supervisor/bootstrap entrypoint.
 - scripts/hostless/ensure-node-app.mjs applies explicitly mapped runtime environment and ensures the target Hostless app exists.
 - scripts/hostless/nebula-runtime-config.mjs prepares Nebula runtime configuration.
