@@ -13,10 +13,10 @@ const browserDiagnosticQueue: Array<Record<string, unknown>> = [];
 let browserDiagnosticFlushScheduled = false;
 function scrubBrowserDiagnostic(value: unknown): string {
   return String(value ?? "").slice(0, 3000)
-    .replace(/https?:\\/\\/[^\\s?#]+\\?[^\\s]*/gi, "[URL_WITH_QUERY_REDACTED]")
-    .replace(/((?:token|secret|password|authorization|cookie|session)[\\w-]*\\s*[:=]\\s*)[^\\s,;]+/gi, "$1[REDACTED]")
-    .replace(/eyJ[a-zA-Z0-9_-]{10,}\\.[a-zA-Z0-9_-]{10,}(?:\\.[a-zA-Z0-9_-]{10,})?/g, "[JWT_REDACTED]")
-    .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [REDACTED]");
+    .replace(/https?:\/\/[^\s?#]+\?[^\s]*/gi, "[URL_WITH_QUERY_REDACTED]")
+    .replace(/((?:token|secret|password|authorization|cookie|session)[\w-]*\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}(?:\.[a-zA-Z0-9_-]{10,})?/g, "[JWT_REDACTED]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]");
 }
 function browserStorageKeyNames(kind: "local" | "session"): string[] {
   try {
