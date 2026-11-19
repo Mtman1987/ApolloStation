@@ -119,21 +119,20 @@ test("Hostless release refuses deployment until every recovered JSON source docu
   assert.match(workflow, /stagedDocuments !== 5748/);
   assert.match(workflow, /bySource\.streamweaver !== expectedBySource\.streamweaver/);
 });
-test("Hostless Node 1 and Node 2 receive the same canonical Turso database URL", () => {
+test("Hostless Node 1 and Node 2 verify the same canonical Turso database URL", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
-  assert.match(workflow, /SHARED_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE1_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
+  assert.match(workflow, /SHARED_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL/);
+  assert.match(workflow, /\["node1", process\.env\.SHARED_TURSO_DATABASE_URL, process\.env\.NODE1_TURSO_AUTH_TOKEN\]/);
+  assert.match(workflow, /\["node2", process\.env\.SHARED_TURSO_DATABASE_URL, process\.env\.NODE2_TURSO_AUTH_TOKEN\]/);
+  assert.match(workflow, /normalizeTursoUrl\(pairs\[0\]\[1\]\) !== normalizeTursoUrl\(pairs\[1\]\[1\]\)/);
   assert.doesNotMatch(workflow, /secrets\.NODE[12]_TURSO_DATABASE_URL/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_NEBULA_ARCADE_GAME_RUNTIME_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE2_STREAMWEAVER_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_DATABASE_URL: \$\{\{ secrets\.TURSO_DATABASE_URL \|\| vars\.TURSO_DATABASE_URL(?: \|\| 'libsql:\/\/apollo-persistence-spike-mtman1987\.aws-us-east-1\.turso\.io')? \}\}/);
-  assert.match(workflow, /APOLLO_RUNTIME_NODE1_DSH_TURSO_AUTH_TOKEN: \$\{\{ secrets\.NODE1_TURSO_AUTH_TOKEN \}\}/);
+  // Runtime database values remain Hostless-authoritative; this workflow only
+  // validates the shared endpoint and does not overwrite node environment values.
+  assert.doesNotMatch(workflow, /APOLLO_RUNTIME_NODE[12]_TURSO_DATABASE_URL:/);
 });
 
 
-test("production SPMT app launch defaults to the canonical SpaceMountain domain", () => {
+test("production app launch defaults to SpaceMountain while the SPMT bridge stays on its identity origin", () => {
   const launcher = readFileSync(new URL("../apps/spmt-service/src/provider-identity-start.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../apps/spmt-service/src/index.ts", import.meta.url), "utf8");
   const browser = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
@@ -144,7 +143,7 @@ test("production SPMT app launch defaults to the canonical SpaceMountain domain"
   assert.ok(!browser.includes("api/oauth/authorize"));
   assert.ok(!browser.includes("beginSpmtSso"));
   assert.ok(!browser.includes("canonicalOAuthRedirectUri"));
-  assert.ok(!browser.includes("spmt.live/api/session/bridge"));
+  assert.ok(browser.includes('window.open("https://spmt.live/api/session/bridge"'));
   assert.ok(browser.includes('"/v1/auth/session/bridge-login"'));
   assert.ok(!launcher.includes("apollo-node-1.hostless.app"));
 });
