@@ -59,6 +59,8 @@ jobs:
             app: apollo-node-2
             hostless_secret: HOSTLESS_NODE2_TOKEN
     steps:
+      - name: Check out sanitizer and diagnostic helpers
+        uses: actions/checkout@v4
       - name: Resolve exact Node 2 deployment from the triggering run
         id: deployment
         if: github.event_name == 'workflow_run'
@@ -206,6 +208,10 @@ jobs:
           pathlib.Path('agent-summary.md').write_text('\n'.join(out))
           PY
           gh issue comment 517 --repo "$REPOSITORY" --body-file agent-summary.md
+
+      - name: Redact every diagnostic artifact before upload
+        if: always()
+        run: node scripts/sanitize-diagnostics.mjs hostless-diagnostics
 
       - name: Upload diagnostic logs
         if: always()
