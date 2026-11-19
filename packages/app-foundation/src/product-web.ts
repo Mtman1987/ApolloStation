@@ -78,6 +78,7 @@ export interface ProductAppWebServerOptionsV1 {
   renderExtra?: (() => string) | undefined;
   browserJs?: string | undefined;
   extraCss?: string | undefined;
+  trustedParentOrigins?: readonly string[] | undefined;
   handleApi?: ((request: IncomingMessage, response: ServerResponse, url: URL) => boolean | Promise<boolean>) | undefined;
   close?: (() => void | Promise<void>) | undefined;
 }
@@ -90,6 +91,7 @@ export interface ProductAppLiveReadOptionsV1 {
 
 export function createProductAppWebServer(options: ProductAppWebServerOptionsV1) {
   const descriptor = validateDescriptor(options.descriptor);
+  const trustedParentOrigins = [...new Set((options.trustedParentOrigins ?? []).map(validateSpmtServiceOrigin))];
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://spmt.app");
@@ -97,8 +99,24 @@ export function createProductAppWebServer(options: ProductAppWebServerOptionsV1)
       // API alias. Front doors may reserve /api for their own application.
       const appApiPrefix = `/apps/${descriptor.appId}/api/`;
       if (url.pathname.startsWith(appApiPrefix)) url.pathname = `/api/${descriptor.appId}/${url.pathname.slice(appApiPrefix.length)}`;
+      const isAppApi = url.pathname === `/api/${descriptor.appId}` || url.pathname.startsWith(`/api/${descriptor.appId}/`);
+      if (isAppApi && request.method === "OPTIONS") {
+        const origin = request.headers.origin;
+        const requestedMethod = String(request.headers["access-control-request-method"] ?? "GET").toUpperCase();
+        const requestedHeaders = String(request.headers["access-control-request-headers"] ?? "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+        const allowedHeaders = new Set(["authorization", "content-type", "x-spmt-app", "x-spmt-tenant"]);
+        if (!origin || !trustedParentOrigins.includes(origin) || !["GET", "HEAD"].includes(requestedMethod) || requestedHeaders.some((name) => !allowedHeaders.has(name))) {
+          return sendJson(response, 403, { error: "cross_origin_request", message: "Only read-only requests from configured Node 1 origins are allowed." });
+        }
+        response.writeHead(204, corsHeaders(origin, requestedHeaders));
+        response.end();
+        return;
+      }
+      if (isAppApi && ["GET", "HEAD"].includes(request.method ?? "GET") && request.headers.origin && trustedParentOrigins.includes(request.headers.origin)) {
+        for (const [name, value] of Object.entries(corsHeaders(request.headers.origin))) response.setHeader(name, value);
+      }
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === `/apps/${descriptor.appId}`)) {
-        headers(response);
+        headers(response, trustedParentOrigins);
         return text(
           response,
           200,
@@ -408,10 +426,26 @@ export function validateSpmtServiceOrigin(value: string) {
   return url.origin;
 }
 
-function headers(response: ServerResponse) {
-  response.setHeader("content-security-policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'");
-  response.setHeader("x-frame-options", "SAMEORIGIN");
+export function productAppFrameAncestors(origins: readonly string[] = []) {
+  return ["'self'", ...new Set(origins.map(validateSpmtServiceOrigin))].join(" ");
+}
+
+function headers(response: ServerResponse, trustedParentOrigins: readonly string[]) {
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self'; frame-ancestors ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`);
+  if (trustedParentOrigins.length) response.removeHeader("x-frame-options");
+  else response.setHeader("x-frame-options", "SAMEORIGIN");
   response.setHeader("referrer-policy", "no-referrer");
+}
+
+function corsHeaders(origin: string, requestedHeaders: readonly string[] = []) {
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-methods": "GET, HEAD, OPTIONS",
+    ...(requestedHeaders.length ? { "access-control-allow-headers": requestedHeaders.join(", ") } : {}),
+    vary: "Origin",
+    "cache-control": "no-store",
+  };
 }
 
 function text(response: ServerResponse, status: number, body: string, type: string) {
