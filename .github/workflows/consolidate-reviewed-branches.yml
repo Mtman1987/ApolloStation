@@ -1,11 +1,13 @@
 name: Consolidate reviewed branches
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - docs/production/branch-consolidation-2026-09-06.json
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List reviewed branches without deleting them"
+        type: boolean
+        required: true
+        default: true
 
 permissions:
   contents: write
@@ -18,6 +20,8 @@ jobs:
   cleanup:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ inputs.dry_run != false }}
     steps:
       - uses: actions/checkout@v5
         with:
