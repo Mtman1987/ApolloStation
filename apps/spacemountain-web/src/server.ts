@@ -195,14 +195,14 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
           if (!item || typeof item !== "object" || Array.isArray(item)) continue;
           const value = item as Record<string, unknown>;
           const safe: Record<string, unknown> = {};
-          for (const key of ["type", "timestamp", "page", "build", "userAgent", "message", "stack", "source", "line", "column", "tag", "readyState", "localStorageKeys", "sessionStorageKeys"]) {
+          for (const key of ["type", "timestamp", "page", "build", "userAgent", "message", "stack", "source", "line", "column", "tag", "readyState", "method", "path", "status", "localStorageKeys", "sessionStorageKeys"]) {
             const field = value[key];
             if (typeof field === "string") safe[key] = field.slice(0, key === "stack" || key === "message" ? 3000 : 500);
             else if (typeof field === "number" || typeof field === "boolean") safe[key] = field;
             else if (Array.isArray(field) && (key === "localStorageKeys" || key === "sessionStorageKeys")) safe[key] = field.filter((entry): entry is string => typeof entry === "string").slice(0, 80).map((entry) => entry.slice(0, 100));
           }
           // Emit into Hostless runtime logs so the existing diagnostics workflow can retrieve it.
-          console.error("[browser-client-diagnostic]", JSON.stringify({ node: process.env.APOLLO_NODE_ROLE ?? "node1", remote, ...safe }));
+          console.error("[browser-client-diagnostic]", JSON.stringify({ node: process.env.APOLLO_NODE_ROLE ?? "node1", ...safe }));
         }
         return json(response, 202, { accepted: events.length });
       }
