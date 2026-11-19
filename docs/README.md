@@ -16,6 +16,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Commlink](../apps/commlink/README.md) — canonical desks, mail, notifications, live chat, and shared messaging contracts.
 - [Companion](../apps/companion/README.md) — paired local device, OBS, media, workflows, diagnostics and updates.
 - [MountainView](../apps/mountainview/README.md) — mobile/wearable pairing, voice routing, QR/camera events and Companion commands.
+- [Stellar Core](../apps/stellar-core/README.md) — AI job execution, hosted provider chain, private context, research, speech and privacy.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
