@@ -135,7 +135,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         }
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms/streamweaver") {
-        response.removeHeader("x-frame-options"); response.setHeader("content-security-policy",STREAMWEAVER_WIDGET_CSP.replace("frame-ancestors *","frame-ancestors 'self'"));
+
         return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
@@ -168,7 +168,6 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
         if (url.searchParams.get("surface") === "workspace-service") {
 
-          response.setHeader("content-security-policy", String(response.getHeader("content-security-policy")).replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
         }
         return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       }
