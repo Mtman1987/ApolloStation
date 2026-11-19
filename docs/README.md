@@ -6,6 +6,7 @@ All architecture, contracts, development notes, audit evidence and production ru
 
 - [Development and operator tooling](development/README.md) — canonical commands, audit families, migrations, and release tooling.
 - [SpaceMountain Web](../apps/spacemountain-web/README.md) — shell, workspace, sign-in, integrated gateway, and browser runtime.
+- [SPMT Service](../apps/spmt-service/README.md) — identity, shared authority, app catalog, grants, jobs, and provider integrations.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
