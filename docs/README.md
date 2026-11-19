@@ -91,6 +91,6 @@ Dated documents describe the evidence available at that time; their historical t
 
 ## Historical source material
 
-[Captured source manifest](archive/evidence/MANIFEST.md) indexes the original documentation/specification snapshots. They are retained under this documentation archive, outside application and package source. Source/public mirrors stay intact as dated evidence; current implementation decisions use the live-source audit and current code.
+[Captured source manifest](../mt-delete-me-archive/legacy-docs/docs/archive/evidence/MANIFEST.md) indexes the original documentation/specification snapshots. They are retained under the repository quarantine archive, outside application and package source. Source/public mirrors stay intact as dated evidence; current implementation decisions use the live-source audit and current code.
 
 [Branch preservation inventory](production/branch-consolidation-2026-09-06.json) records the reviewed heads and the main commit preserving each branch's work.
