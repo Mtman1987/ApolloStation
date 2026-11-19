@@ -1,6 +1,6 @@
 # Quarantined legacy material
 
-This directory is a temporary holding area for files identified during the ApolloStation repository hygiene project as historical, superseded, duplicated, or no longer operationally authoritative.
+This directory is the temporary holding area for historical, superseded, duplicated, or no-longer-operationally-authoritative documentation and files identified during the ApolloStation repository hygiene project.
 
 ## Rules
 
@@ -8,11 +8,14 @@ This directory is a temporary holding area for files identified during the Apoll
 - Before moving a file, check code, package scripts, workflows, documentation links, and tests for references.
 - Preserve original relative paths beneath this directory so material can be traced back and exported to the SPMT storage repository.
 - Do not place secrets, credentials, private keys, live database files, or generated user data here.
-- Keep a manifest for every batch: original path, archived path, reason, date, and reference-check result.
+- Keep the manifest current for every batch: original path, archive path, reason, and reference-check result.
 - Archive first; permanent deletion is a separate owner-approved action after the storage-repository copy is verified.
 
-## Current status
+## Current contents
 
-The directory is established as the quarantine destination. No source files have been moved yet. The first inventory found 1,665 tracked files, including 407 Markdown/text files. Active application contracts, current runbooks, required licenses, developer instructions, and build/runtime documentation are not archive candidates.
+- Nine superseded production handoff/plan documents.
+- The complete 295-file captured donor evidence tree formerly under docs/archive/evidence/.
 
-See the repository cleanup pull request for the audited batches and verification evidence.
+The captured donor tree is historical source evidence, not current product documentation. The active documentation index and root README link to the archived manifest. No archived content has been permanently deleted.
+
+See MANIFEST.md for the exact original and archive paths.
