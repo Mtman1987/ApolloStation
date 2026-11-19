@@ -120,7 +120,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
 
         const widget=url.pathname.startsWith("/assets/");
-        response.setHeader("", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self''; base-uri 'none'"+(widget?"; sandbox allow-scripts":""));
+
         if(!widget)return html(response,200,renderNebulaArcadeStage(true));
         const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||"";
         return [...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id)?html(response,200,renderNebulaGameWidget(id)):textResponse(response,404,"Not found","text/plain","no-store");
@@ -135,7 +135,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         }
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms/streamweaver") {
-        response.setHeader("", STREAMWEAVER_WIDGET_CSP);
+
         return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
