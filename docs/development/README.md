@@ -108,6 +108,7 @@ scripts/agents/ contains Python helpers for bootstrap, OpenAI runner inspection,
 
 - [Persistence audits and migrations](persistence-and-migrations.md) — SQLite inventory, Turso transfers, recovery archive imports, dry-run/apply semantics and restore gates.
 - [Donor parity and source audits](parity-audits.md) — inventory limits, capability wiring, functional parity workflow and safe port review.
+- [Performance and dependency audit](performance-and-dependencies.md) — workspace dependency hotspots, worker/web separation and staged slimming plan.
 - [Hostless runtime tooling](../../scripts/hostless/README.md) — two-node process composition and deployment script boundaries.
 
 ## Safety rules
