@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 export function classifyPath(path) {
-  if (/^(docs\/archive\/|donors?\/|evidence\/)/.test(path)) return "evidence";
+  if (/^(docs\/archive\/|donors?\/|evidence\/|mt-delete-me-archive\/)/.test(path)) return "evidence";
   if (/(^|\/)(__tests__|tests?|fixtures)(\/|$)/.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path)) return "test";
   if (/^(apps|packages|services)\//.test(path)) return "runtime";
   return "tooling";
