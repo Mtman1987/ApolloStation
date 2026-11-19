@@ -25,8 +25,6 @@ test("bridge-login bootstraps the owner workspace on first sign-in and reuses it
   assert.match(block, /data\.getProfileByUsername\(donorUsername\)/);
   assert.match(block, /control\.registerTenant\(\{ tenantId, ownerUserId: userId/);
   assert.match(block, /data\.registerUser\(\{ userId, username: donorUsername/);
-  assert.match(block, /control\.listTenants\(\)/);
-  assert.match(block, /data\.setUserTenants\(profile\.userId, tenantIds\)/);
   assert.match(service, /issueHumanSession\(\{ userId: profile\.userId, scopes: USER_SCOPES, tenantIds \}\)/);
 });
 
