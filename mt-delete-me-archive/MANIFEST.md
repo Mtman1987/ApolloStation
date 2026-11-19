@@ -1,0 +1,17 @@
+# Archived legacy documentation
+
+Files below were moved from their original locations after reference review. Originals are preserved byte-for-byte under this folder. These are historical snapshots, not current operating instructions.
+
+| Original path | Archive path | Reason |
+|---|---|---|
+| docs/production/APOLLO_CUTOVER_CONTINUATION_2026-09-12.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_CUTOVER_CONTINUATION_2026-09-12.md | Superseded dated cutover handoff; current operating state is in docs/CURRENT_STATE.md and config/production-rollout.v1.json. |
+| docs/production/APOLLO_HOSTLESS_CONTINUATION_2026-11-04.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_HOSTLESS_CONTINUATION_2026-11-04.md | Superseded three-account/three-node Hostless continuation; active topology is Node 1 and Node 2. |
+| docs/production/APOLLO_PARITY_CONTINUATION_RUNABLE_2026-11-03.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_PARITY_CONTINUATION_RUNABLE_2026-11-03.md | Historical parity continuation superseded by newer handoffs and current repository state. |
+| docs/production/APOLLO_PARITY_HANDOFF_2026-10-25.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_PARITY_HANDOFF_2026-10-25.md | Superseded October parity handoff. |
+| docs/production/APOLLO_PARITY_HANDOFF_2026-11-03.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_PARITY_HANDOFF_2026-11-03.md | Superseded November 3 handoff; explicitly points to a later follow-up. |
+| docs/production/APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md | Historical November 3 follow-up with old commit and workflow status. |
+| docs/production/APOLLO_MEDIA_PROXY_CONTINUATION_2026-11-03.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_MEDIA_PROXY_CONTINUATION_2026-11-03.md | Historical media-proxy continuation tied to the old Hostless/Oracle migration snapshot. |
+| docs/production/ORACLE_CLOUD_CUTOVER_PLAN.md | mt-delete-me-archive/legacy-docs/docs/production/ORACLE_CLOUD_CUTOVER_PLAN.md | Obsolete Oracle Cloud target plan; not the selected Hostless two-node deployment. |
+| docs/hostless/RESTREAM_NODE3_PORT.md | mt-delete-me-archive/legacy-docs/docs/hostless/RESTREAM_NODE3_PORT.md | Node 3-specific Restream port plan; Node 3 is retired from the active topology. |
+
+Archive first; permanent deletion requires a verified copy in the owner's storage repository.
