@@ -47,7 +47,7 @@ Exact process membership, environment names, health checks, and deployment steps
 | `packages/contracts/` | Shared versioned contracts and schemas |
 | `packages/*` | Reusable platform capabilities and adapters |
 | `services/` | Isolated supporting services with their own runtime boundary |
-| `scripts/` | Build, audit, migration, validation, release, and operator tooling |
+| `scripts/` | Build, audit, migration, validation, release, and operator tooling ([index](scripts/README.md)) |
 | `tests/` | Cross-package, application, contract, integration, and regression tests |
 | `config/` | Versioned runtime, capability, rollout, and ownership configuration |
 | `.github/workflows/` | CI, validation, deployment, diagnostics, and scheduled automation |
