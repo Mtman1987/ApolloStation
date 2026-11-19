@@ -6,7 +6,7 @@ import { createStreamWeaverWebServer } from "../apps/streamweaver/dist/web-serve
 const NODE1_ORIGIN = "https://apollo-node-1.hostless.app";
 const NODE1_ALIAS = "https://node-1.hostless.app";
 
-test("Node 1 shell permits the canonical Node 2 Hostless app frame", async () => {
+test("Node 1 shell serves the canonical Node 2 app", async () => {
   const app = createSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:3200", host: "127.0.0.1", port: 0 });
   try {
     await app.listen();
@@ -18,7 +18,7 @@ test("Node 1 shell permits the canonical Node 2 Hostless app frame", async () =>
   }
 });
 
-test("Node 1 can frame Node 2 StreamWeaver and use only allowlisted read-only CORS", async () => {
+test("Node 1 StreamWeaver access uses only allowlisted read-only CORS", async () => {
   const app = createStreamWeaverWebServer({ spmtOrigin: NODE1_ORIGIN, host: "127.0.0.1", port: 0 });
   try {
     await app.listen();
