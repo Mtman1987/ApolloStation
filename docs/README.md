@@ -1,6 +1,6 @@
 # ApolloStation documentation
 
-All architecture, contracts, development notes, audit evidence and production runbooks live here. The root README is the repository entry point. Runtime code, tests, configuration, build tools and required third-party notices remain with their implementation.
+This directory contains maintained architecture, contracts, product guides, development references, and operating runbooks. The root README is the ecosystem entry point. Historical donor snapshots and superseded issue reports live in the repository quarantine archive.
 
 ## Start here
 
@@ -15,13 +15,12 @@ All architecture, contracts, development notes, audit evidence and production ru
 - [Current StreamWeaver parity checklist](STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md) — `/docs/streamweaver/parity`.
 - [Current Discord Stream Hub audit](donor-audits/DSH_LIVE_AUDIT_2026-09-07.md) — deployed-source comparison and eleven remaining workflow groups.
 
-1. [Production cleanup and validation](production/READINESS_CLEANUP_2026-09-06.md)
 2. [Architecture](ARCHITECTURE.md)
 3. [Application contracts](APP_CONTRACTS.md) and [shared surface/developer contract](SURFACE_AND_DEVELOPER_CONTRACT.md)
 4. [Production path](PRODUCTION_PATH.md)
 5. [Offline acceptance procedure](MAIN_OFFLINE_TEST_CHECKLIST.md)
 
-Dated documents describe the evidence available at that time; their historical test counts and parity claims are not current launch certification. The production cleanup report states the latest repository verification and remaining cutover limits.
+Dated documents describe the evidence available at that time; their historical test counts and parity claims are not current launch certification. The current operating snapshot is [Current State](CURRENT_STATE.md). Historical handoffs and donor evidence are preserved in the [quarantine archive](../mt-delete-me-archive/MANIFEST.md).
 
 ## Reference index
 
