@@ -65,7 +65,7 @@ Do not interpret a green build or a populated recovery staging table as proof of
 
 ### 6. Branch archive and cleanup — safe defaults; archival/deletion still pending
 
-- [x] Refreshed the branch inventory on main: 52 branches, including main.
+- [x] Refreshed the branch inventory on main: 53 branches, including main.
 - [x] Preserved the eight recovery candidates for individual review:
   - `feat/nebula-game-runtime-turso-store`
   - `feature/turso-live-runtime-smoke`
@@ -99,7 +99,7 @@ Do not interpret a green build or a populated recovery staging table as proof of
 **Important deployment evidence (15:05 UTC snapshot):**
 
 - Node 1 app `apollo-node-1` reported `UPDATING`. New deployment `6aff0e9ac0e8a79ec57e28aa` was at `BUILD_STARTED`; the older deployment `6aff00cbc0e8a79ec57d234c` was still active. Its health endpoint was ready, but reported `buildSha: dev` and `authority-storage: sqlite:wal`. Safe configuration reported `SPMT_ORIGIN` not configured.
-- Node 2 app `apollo-node-2` reported `UPDATING`. New deployment `6aff0eb7a8f48b734523ad50` was at `DEPLOYMENT_STARTED`; its health endpoint reported the StreamWeaver app ready.
+- Node 2 app `apollo-node-2` reported `UPDATING`. New deployment `6aff0eb7a8f48b734523ad50` was at `DEPLOYMENT_STARTED`; its health endpoint reported the StreamWeaver app ready; safe configuration reported `SPMT_ORIGIN` configured, with the value redacted.
 - The GitHub deploy jobs were cancelled before final deployment read-back. Hostless may have continued the accepted deployment requests, but the available snapshot does not prove completion. Do not report either deployment as successful yet.
 - The 5,748 rows are in the Turso recovery staging table. They do **not** prove the application runtime has switched to Turso authority; Node 1 still reported SQLite WAL at the time of the snapshot.
 
@@ -127,6 +127,8 @@ Do not interpret a green build or a populated recovery staging table as proof of
 
 The owner added [DONOR_ORIGIN_OVERRIDES.md](DONOR_ORIGIN_OVERRIDES.md) with Hostless environment overrides for Mosaic, HearMeOut, and Spotlight. Apply and verify those exact routes before deleting source-level donor fallbacks. A configured origin is not proof of live parity.
 
+The latest Hostless runtime diagnostics run completed successfully on both nodes. An earlier diagnostics retry failed at the Hostless CLI installer with a connection reset; the subsequent run collected both snapshots successfully.
+
 ## 3. Explicit next steps
 
 1. Verify the Hostless deployment IDs and live health/read-back for Node 1 and Node 2. If still incomplete, rerun the validated main release after confirming the new concurrency policy is active.
@@ -140,7 +142,8 @@ The owner added [DONOR_ORIGIN_OVERRIDES.md](DONOR_ORIGIN_OVERRIDES.md) with Host
 ## 4. Evidence and PRs
 
 - Recovery workflow: `d18385a55d62d8761ed433594cf7bd7417d9f76a`
-- Branch cleanup manual/dry-run: `8be04030358ba750fe03fb556f3d199329d66218`
+- Merged-branch cleanup manual/dry-run: `8be04030358ba750fe03fb556f3d199329d66218`
+- Reviewed-branch consolidation manual/dry-run: `44aea41392e60888c4486121e175d01c7e7b6d7e`
 - Sprite/Fly workflow archive: `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`
 - Hostless release concurrency/mandatory validation: `9e9a1601bd268be1992e3b94e899efe233763f86`
 - #527 hygiene merge: `ec06baa46bca01539c6820a64b59dbdfc00b80bf`
