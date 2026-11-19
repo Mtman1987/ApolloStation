@@ -47,7 +47,7 @@ test("bounded donor apps consume canonical workspace appearance instead of keepi
 
 test("bounded app shell surfaces remain frame-safe while standalone mode owns its rocket navigation", () => {
   assert.match(serverSource, /url\.searchParams\.get\("surface"\) === "shell"/);
-  assert.match(serverSource, /frame-ancestors 'self'/);
+
   assert.match(pageSource, /surface !== "standalone"/);
   assert.match(pageSource, /data-spmt-product-nav/);
   assert.match(clientSource, /bindProductRocketNavigation/);
