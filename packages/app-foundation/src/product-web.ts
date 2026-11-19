@@ -428,8 +428,8 @@ export function validateSpmtServiceOrigin(value: string) {
 
 export function headers(response: ServerResponse) {
   response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self'; object-src 'none'`);
-  if (trustedParentOrigins.length) response.removeHeader("x-frame-options");
-  else response.setHeader("x-frame-options", "SAMEORIGIN");
+  if (trustedParentOrigins.length) 
+  else 
   response.setHeader("referrer-policy", "no-referrer");
 }
 
