@@ -8,6 +8,7 @@ import type {ControlService} from '@spmt/control-core';
 import {storePinnedProviderAuthorization,theCountTwitchPolicy,type SqliteProviderCredentialAuthority,type ProviderCredentialV1} from '@spmt/provider-grants-core';
 
 const ROOT='/v1/identity/twitch-bots',SCOPES=['chat:read','chat:edit'];
+const SHARED_CALLBACK='/v1/onboarding/twitch/callback';
 const BROADCASTER_SCOPES=[...new Set(Object.values(STREAMWEAVER_TWITCH_COMMAND_SCOPES).flat())];
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
 export interface TwitchBotRole {roleId:string;tenantId:string;ownerUserId:string;providerUserId:string;login:string;}
@@ -21,7 +22,7 @@ export function parseTwitchBotRoles(raw:string|undefined):TwitchBotRole[]{
   if(r.roleId==='the-count'&&r.login.toLowerCase()!=='thecountspmt')throw Error('The Count must use TheCountSPMT');
   seen.add(r.roleId);seen.add(r.providerUserId);seen.add(r.login.toLowerCase());return {...r,login:r.login.toLowerCase()};});
 }
-type Pending={tenant:string;owner:string;broadcaster:string;login:string;role:string;expires:number};
+type Pending={tenant:string;owner:string;broadcaster:string;login:string;role:string;expires:number;redirectUri?:string};
 type Connection={tenant:string;owner:string;broadcaster:string;channel:string;account:string;login:string;role:string;desired:number};
 export class TwitchBotApi {
  private readonly db:DatabaseSync;
@@ -54,10 +55,14 @@ export class TwitchBotApi {
    connections.push({schemaVersion:1,tenantId:r.tenant,provider:'twitch',connectionId:'twitch-bot-'+hash(r.broadcaster+':'+r.account).slice(0,16),channelId:r.channel,providerAccountId:r.account,desired});
   }return json(res,200,{connections});
  }
- async handle(req:IncomingMessage,res:ServerResponse,url:URL){if(!url.pathname.startsWith(ROOT+'/')&&url.pathname!==ROOT&&url.pathname!=='/v1/chat/twitch-bot-connections')return false;
+ async handle(req:IncomingMessage,res:ServerResponse,url:URL){
+  // Only claim the shared callback when its random state belongs to a pending
+  // bot flow. Account linking and onboarding keep their existing handlers.
+  const sharedCallback=url.pathname===SHARED_CALLBACK&&!!url.searchParams.get('state')&&!!this.db.prepare('SELECT id FROM twitch_bot_pending WHERE id=?').get(hash(url.searchParams.get('state')!));
+  if(!sharedCallback&&!url.pathname.startsWith(ROOT+'/')&&url.pathname!==ROOT&&url.pathname!=='/v1/chat/twitch-bot-connections')return false;
   try{const token=this.options.accessToken(req);if(!token)return json(res,401,{message:'Sign in to manage Twitch bots'});
    if(url.pathname==='/v1/chat/twitch-bot-connections')return await this.discovery(req,res,token);
-   const callback=url.pathname===ROOT+'/callback',state=url.searchParams.get('state')??'';let pending:Pending|undefined;
+   const callback=sharedCallback||url.pathname===ROOT+'/callback',state=url.searchParams.get('state')??'';let pending:Pending|undefined;
    if(callback){if(!state||cookie(req)!==state)throw Error('Bot authorization expired. Start again.');const r=this.db.prepare('SELECT body FROM twitch_bot_pending WHERE id=? AND expires>?').get(hash(state),Date.now());if(!r)throw Error('Bot authorization expired. Start again.');pending=JSON.parse(String(r.body));}
    const tenant=pending?.tenant??String(req.headers['x-spmt-tenant']??url.searchParams.get('tenantId')??'');if(!tenant)throw Error('Choose a workspace');
    const p=this.options.auth.authorize(token,req.method==='GET'&&url.pathname===ROOT?'identity:read':'identity:write',tenant);if(p.actorType!=='user')throw new AuthDeniedError('Use your signed-in account');
@@ -77,16 +82,16 @@ export class TwitchBotApi {
     const broadcaster=url.searchParams.get('broadcasterId')??'',role=url.searchParams.get('role')??'bot',pin=this.pin(role,tenant,p.actorId),login=(pin?.login??url.searchParams.get('login')??'').trim().replace(/^@/,'').toLowerCase();
     if(role!=='broadcaster'&&!/^\w{1,25}$/.test(login))throw Error('Enter the Twitch bot login');
     if(role==='bot'&&(login==='thecountspmt'||this.options.roles?.some(r=>r.login===login)))throw new AuthDeniedError('Use the reserved bot role with its owner account');
-    const binding:Pending={tenant,owner:p.actorId,broadcaster,login,role,expires:Date.now()+600000};if(!this.allowed({...binding,account:'',channel:'',desired:1}))throw new AuthDeniedError('Link the broadcaster and enable StreamWeaver and Chat Gateway first');
+    const binding:Pending={tenant,owner:p.actorId,broadcaster,login,role,expires:Date.now()+600000,redirectUri:this.options.publicBaseUrl+SHARED_CALLBACK};if(!this.allowed({...binding,account:'',channel:'',desired:1}))throw new AuthDeniedError('Link the broadcaster and enable StreamWeaver and Chat Gateway first');
     const value=randomBytes(32).toString('base64url');this.db.prepare('DELETE FROM twitch_bot_pending WHERE expires<?').run(Date.now());this.db.prepare('INSERT INTO twitch_bot_pending VALUES(?,?,?)').run(hash(value),JSON.stringify(binding),binding.expires);
-    const target=new URL('https://id.twitch.tv/oauth2/authorize');for(const [k,v]of Object.entries({client_id:this.options.client.clientId,redirect_uri:this.options.publicBaseUrl+ROOT+'/callback',response_type:'code',scope:(role==='broadcaster'?BROADCASTER_SCOPES:SCOPES).join(' '),force_verify:'true',state:value}))target.searchParams.set(k,v);return redirect(res,target.href,value);
+    const target=new URL('https://id.twitch.tv/oauth2/authorize');for(const [k,v]of Object.entries({client_id:this.options.client.clientId,redirect_uri:binding.redirectUri!,response_type:'code',scope:(role==='broadcaster'?BROADCASTER_SCOPES:SCOPES).join(' '),force_verify:'true',state:value}))target.searchParams.set(k,v);return redirect(res,target.href,value);
    }
    if(!callback||!pending)return json(res,404,{message:'Bot route was not found'});
    if(pending.owner!==p.actorId)throw new AuthDeniedError('Use the owner account that started authorization');const pin=this.pin(pending.role,tenant,p.actorId);
    if(!this.allowed({...pending,account:'',channel:'',desired:1}))throw new AuthDeniedError('The broadcaster or workspace authorization changed');
    if(!this.db.prepare('DELETE FROM twitch_bot_pending WHERE id=?').run(hash(state)).changes)throw Error('Authorization already used');
    const code=url.searchParams.get('code');if(!code||code.length>4000)throw Error('Twitch authorization did not complete');
-   const response=await this.options.fetchImpl('https://id.twitch.tv/oauth2/token',{method:'POST',body:new URLSearchParams({client_id:this.options.client.clientId,client_secret:this.options.client.clientSecret,redirect_uri:this.options.publicBaseUrl+ROOT+'/callback',grant_type:'authorization_code',code}),redirect:'error',signal:AbortSignal.timeout(15000)}),grant=await response.json() as {access_token?:string;refresh_token?:string;expires_in?:number};
+   const response=await this.options.fetchImpl('https://id.twitch.tv/oauth2/token',{method:'POST',body:new URLSearchParams({client_id:this.options.client.clientId,client_secret:this.options.client.clientSecret,redirect_uri:pending.redirectUri??this.options.publicBaseUrl+ROOT+'/callback',grant_type:'authorization_code',code}),redirect:'error',signal:AbortSignal.timeout(15000)}),grant=await response.json() as {access_token?:string;refresh_token?:string;expires_in?:number};
    if(!response.ok||!grant.access_token||!grant.refresh_token)throw Error('Twitch could not authorize the bot');const scopes=pending.role==='broadcaster'?BROADCASTER_SCOPES:SCOPES,identity=await this.validate(grant.access_token,scopes);
    if((pending.role!=='broadcaster'&&identity.login!.toLowerCase()!==pending.login)||pin&&identity.user_id!==pin.providerUserId)throw Error('Authorize the selected bot account');
    if(!pin&&(identity.login!.toLowerCase()==='thecountspmt'||this.options.roles?.some(r=>r.providerUserId===identity.user_id)))throw new AuthDeniedError('This bot identity is reserved');
@@ -104,7 +109,7 @@ export class TwitchBotApi {
    this.db.prepare('INSERT INTO twitch_bot_connections VALUES(?,?,?,?,?,?,?,1) ON CONFLICT(tenant,broadcaster) DO UPDATE SET owner=excluded.owner,channel=excluded.channel,account=excluded.account,login=excluded.login,role=excluded.role,desired=1').run(tenant,pending.broadcaster,p.actorId,channel.login.toLowerCase(),identity.user_id!,pending.login,pending.role);
    if(previous&&previous.account!==identity.user_id&&!this.db.prepare('SELECT 1 FROM twitch_bot_connections WHERE tenant=? AND account=? AND desired=1').get(tenant,previous.account)){const old=this.options.credentials.get(tenant,'twitch',previous.account);if(old&&old.state!=='revoked')this.options.credentials.revoke(tenant,'twitch',previous.account,old.revision);}
    this.validated.set(tenant+':'+identity.user_id+':'+hash(grant.access_token),Date.now());this.audit(tenant,p.actorId,'authorize',identity.user_id!);return redirect(res,this.options.publicBaseUrl+'/apps/streamweaver?botConnected=1','');
-  }catch(e){const message=e instanceof Error?e.message:'Bot request failed';if(url.pathname===ROOT+'/callback')return redirect(res,this.options.publicBaseUrl+'/apps/streamweaver?botError='+encodeURIComponent(message.slice(0,200)),'');return json(res,e instanceof AuthDeniedError?403:400,{message});}
+  }catch(e){const message=e instanceof Error?e.message:'Bot request failed';if(sharedCallback||url.pathname===ROOT+'/callback')return redirect(res,this.options.publicBaseUrl+'/apps/streamweaver?botError='+encodeURIComponent(message.slice(0,200)),'');return json(res,e instanceof AuthDeniedError?403:400,{message});}
  }
  private audit(tenantId:string,actorId:string,action:string,account:string){this.options.authority.audit({tenantId,actorType:'user',actorId,action:'identity.bot.'+action,target:'provider:twitch:'+account,outcome:'accepted'})}
 }

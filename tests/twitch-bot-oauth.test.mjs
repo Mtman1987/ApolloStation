@@ -16,7 +16,7 @@ async function fixture(run){const dir=mkdtempSync(join(tmpdir(),'twitch-bot-'));
  let web;try{service.control.registerApp(streamweaverCatalogRegistration('https://sw.example'));service.control.registerApp(chatGatewayCatalogRegistration('https://chat.example'));for(const id of ['owner','viewer','other'])service.authority.ensureUser(id);for(const [tenantId,ownerUserId]of [['a','owner'],['b','other']]){service.control.registerTenant({tenantId,ownerUserId,displayName:tenantId});service.authority.getOrCreateWorkspace(tenantId);service.control.installApp(tenantId,'streamweaver');service.control.installApp(tenantId,'chat-gateway')}service.authority.linkProvider('owner','twitch','100');await service.listen();const base='http://127.0.0.1:'+service.server.address().port;web=createSpaceMountainWebHost({spmtOrigin:base,host:'127.0.0.1',port:0});await web.listen();const browser='http://127.0.0.1:'+web.server.address().port;
  const sessions=Object.fromEntries(['owner','viewer','other'].map(user=>[user,'spmt_token='+encodeURIComponent(service.auth.issueHumanSession({userId:user,scopes:['identity:read','identity:write'],tenantIds:['a','b']}).accessToken)]));
  const begin=async(user='owner',params={})=>{const q=new URLSearchParams({tenantId:'a',broadcasterId:'100',login:'testbot',...params});const response=await fetch(browser+ROOT+'/start?'+q,{headers:{cookie:sessions[user]},redirect:'manual'});if(response.status!==302)return {response};const target=new URL(response.headers.get('location'));return {response,target,state:target.searchParams.get('state'),cookie:response.headers.get('set-cookie').split(';')[0]}};
- const callback=(pending,user='owner',state=pending.state)=>fetch(browser+ROOT+'/callback?state='+state+'&code=verified-code',{headers:{cookie:sessions[user]+'; '+pending.cookie},redirect:'manual'});
+ const callback=(pending,user='owner',state=pending.state,path=ROOT+'/callback')=>fetch(browser+path+'?state='+state+'&code=verified-code',{headers:{cookie:sessions[user]+'; '+pending.cookie},redirect:'manual'});
  const disconnect=(user='owner',origin=browser)=>fetch(browser+ROOT+'?tenantId=a',{method:'POST',headers:{cookie:sessions[user],origin,'content-type':'application/json'},body:JSON.stringify({action:'disconnect',broadcasterId:'100'})});
  const gatewayCredential='gateway-credential-for-tests-at-least-32';service.auth.registerServiceIdentity({serviceId:'chat-gateway',credential:gatewayCredential,scopes:['jobs:read','jobs:work','providers:grant'],tenantMode:'any'});const token=service.auth.issueServiceAccess('chat-gateway',gatewayCredential).accessToken;
  const discover=()=>fetch(base+'/v1/chat/twitch-bot-connections',{headers:{authorization:'Bearer '+token}}).then(r=>r.json());
@@ -25,13 +25,23 @@ async function fixture(run){const dir=mkdtempSync(join(tmpdir(),'twitch-bot-'));
 const result=r=>new URL(r.headers.get('location')).searchParams;
 test('Twitch bot consent binds owner, cookie, expected account and one-time state',async()=>fixture(async f=>{
  assert.equal((await f.begin('viewer')).response.status,403);assert.equal((await f.begin('other')).response.status,403);assert.equal((await f.begin('owner',{broadcasterId:'unknown'})).response.status,403);
- const p=await f.begin();assert.equal(p.target.origin,'https://id.twitch.tv');assert.equal(p.target.searchParams.get('force_verify'),'true');assert.equal(p.target.searchParams.get('scope'),'chat:read chat:edit');assert.equal(p.target.searchParams.get('redirect_uri'),'https://spmt.test'+ROOT+'/callback');
+ const p=await f.begin();assert.equal(p.target.origin,'https://id.twitch.tv');assert.equal(p.target.searchParams.get('force_verify'),'true');assert.equal(p.target.searchParams.get('scope'),'chat:read chat:edit');assert.equal(p.target.searchParams.get('redirect_uri'),'https://spmt.test/v1/onboarding/twitch/callback');
  assert.ok(result(await f.callback(p,'viewer')).get('botError'));assert.ok(result(await f.callback(p,'owner','wrong')).get('botError'));assert.equal(f.calls.length,0);
  assert.equal(result(await f.callback(p)).get('botConnected'),'1');assert.match(result(await f.callback(p)).get('botError'),/expired/);assert.equal(f.calls.length,3);
  const c=f.service.providerCredentials.get('a','twitch','200');assert.deepEqual(c.allowedCapabilities,['provider-chat']);assert.deepEqual(c.allowedAppIds,['chat-gateway']);assert.doesNotMatch(JSON.stringify(c),/bot-access-for-tests|bot-refresh-for-tests/);assert.equal(f.service.authority.listProviderLinks('owner').length,1,'bot account must not become a human identity');
  const list=await fetch(f.browser+ROOT+'?tenantId=a',{headers:{cookie:f.sessions.owner}}).then(r=>r.json());assert.equal(list.connections[0].login,'testbot');assert.equal(list.roles[0].roleId,'the-count');assert.equal((await f.discover()).connections[0].desired,true);
  assert.equal((await fetch(f.base+'/v1/chat/twitch-bot-connections',{headers:{cookie:f.sessions.owner}})).status,403);assert.equal((await f.disconnect('viewer')).status,403);assert.equal((await f.disconnect('owner','https://other.example')).status,403);
  assert.equal((await f.disconnect()).status,200);assert.equal((await f.discover()).connections[0].desired,false);assert.equal(f.service.providerCredentials.get('a','twitch','200').state,'revoked');
+}));
+test('shared Account callback dispatches bot consent and returns to StreamWeaver without linking bot identity',async()=>fixture(async f=>{
+ const p=await f.begin();
+ const wrong=await f.callback(p,'viewer',p.state,'/v1/onboarding/twitch/callback');
+ assert.ok(result(wrong).get('botError'));assert.equal(f.calls.length,0);
+ const response=await f.callback(p,'owner',p.state,'/v1/onboarding/twitch/callback');
+ assert.equal(new URL(response.headers.get('location')).pathname,'/apps/streamweaver');
+ assert.equal(result(response).get('botConnected'),'1');
+ assert.equal(f.service.authority.listProviderLinks('owner').length,1);
+ assert.deepEqual(f.service.providerCredentials.get('a','twitch','200').allowedAppIds,['chat-gateway']);
 }));
 test('reserved Count identity cannot be authorized or replaced through an ordinary role',async()=>fixture(async f=>{
  assert.equal((await f.begin('owner',{login:'TheCountSPMT'})).response.status,403);assert.equal((await f.begin('other',{tenantId:'b',role:'the-count'})).response.status,403);
