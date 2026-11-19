@@ -23,11 +23,31 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
   assert.equal(section.includes(String.fromCharCode(92) + 'n'), false, 'artifact paths must not be encoded as literal backslash-n text');
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /donor code is never installed or run/);
+  assert.match(section, /name: parity-evidence-\$\{\{ inputs\.donor \}\}-\$\{\{ github\.run_id \}\}/);
+  assert.doesNotMatch(section, /name: parity-evidence-.*inputs\.apollo_app/);
   assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
   assert.ok(workflow.includes('--app-path "$APOLLO_APP" --output apollo-inventory.json'));
   for (const artifact of ['donor-rea-analysis.json', 'apollo-rea-analysis.json']) {
     assert.ok(workflow.includes(`jq -e 'type == "object"' ${artifact} >/dev/null`), 'missing JSON validation: ' + artifact);
   }
+});
+
+test('ChatTag is the confirmed read-only Nebula Arcade donor in both evidence workflows', () => {
+  const registry = JSON.parse(read('config/apollo-donor-sources.v1.json'));
+  const source = registry.sources.find(item => item.id === 'nebula-arcade');
+  assert.equal(source?.repository, 'Mtman1987/chat-tag');
+  assert.equal(source?.defaultRef, 'main');
+  assert.equal(source?.status, 'confirmed');
+  assert.equal(registry.policy.donorRepositoriesAreReadOnly, true);
+  assert.equal(registry.policy.executeDonorCode, false);
+
+  const manual = read('.github/workflows/apollo-donor-inventory.yml');
+  assert.match(manual, /- nebula-arcade/);
+  assert.match(manual, /- apps\/nebula-arcade/);
+  assert.match(manual, /expectedAppByDonor/);
+  assert.match(manual, /Selected donor and Apollo app do not form a supported pair/);
+  const nightly = read('.github/workflows/apollo-parity-nightly.yml');
+  assert.match(nightly, /donor: nebula-arcade[\s\S]*?repository: Mtman1987\/chat-tag[\s\S]*?apollo_app: apps\/nebula-arcade/);
 });
 
 test('nightly donor matrix also prepares and uploads the review-only port brief', () => {

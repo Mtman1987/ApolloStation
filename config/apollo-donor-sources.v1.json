@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-03",
+  "updatedAt": "2026-11-19",
   "policy": {
     "donorRepositoriesAreReadOnly": true,
     "executeDonorCode": false,
@@ -23,19 +23,19 @@
       "status": "confirmed"
     },
     {
+      "id": "nebula-arcade",
+      "name": "Nebula Arcade (ChatTag donor)",
+      "repository": "Mtman1987/chat-tag",
+      "defaultRef": "main",
+      "status": "confirmed",
+      "note": "Owner-confirmed donor mapping. ChatTag is provenance only; Apollo product identity remains nebula-arcade."
+    },
+    {
       "id": "discord-stream-hub",
       "name": "Discord StreamHub",
       "repository": "Mtman1987/DiscordStreamHub",
       "defaultRef": "main",
       "status": "confirmed"
-    },
-    {
-      "id": "nebula-arcade",
-      "name": "Nebula Arcade",
-      "repository": null,
-      "defaultRef": null,
-      "status": "unresolved",
-      "note": "No separate Nebula Arcade donor repository was found in the connected repository inventory. Do not substitute Nebula-Link without owner confirmation."
     }
   ]
 }

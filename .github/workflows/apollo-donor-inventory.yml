@@ -10,6 +10,7 @@ on:
         options:
           - hearmeout
           - streamweaver
+          - nebula-arcade
           - discord-stream-hub
       donor_ref:
         description: Donor branch, tag, or commit to inspect
@@ -47,9 +48,19 @@ jobs:
         id: donor
         env:
           DONOR_ID: ${{ inputs.donor }}
+          APOLLO_APP: ${{ inputs.apollo_app }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
+          const expectedAppByDonor = {
+            hearmeout: 'apps/hearmeout',
+            streamweaver: 'apps/streamweaver',
+            'nebula-arcade': 'apps/nebula-arcade',
+            'discord-stream-hub': 'apps/discord-stream-hub',
+          };
+          if (process.env.APOLLO_APP !== expectedAppByDonor[process.env.DONOR_ID]) {
+            throw new Error('Selected donor and Apollo app do not form a supported pair.');
+          }
           const registry = JSON.parse(fs.readFileSync('config/apollo-donor-sources.v1.json', 'utf8'));
           const source = registry.sources.find(item => item.id === process.env.DONOR_ID && item.status === 'confirmed' && item.repository);
           if (!source) throw new Error('Donor is not in the confirmed read-only allowlist.');
@@ -123,7 +134,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: parity-evidence-${{ inputs.donor }}-${{ inputs.apollo_app }}
+          name: parity-evidence-${{ inputs.donor }}-${{ github.run_id }}
           path: |
             donor-inventory.json
             apollo-inventory.json

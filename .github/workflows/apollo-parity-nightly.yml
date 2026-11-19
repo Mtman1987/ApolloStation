@@ -32,6 +32,9 @@ jobs:
           - donor: streamweaver
             repository: Mtman1987/streamweaver
             apollo_app: apps/streamweaver
+          - donor: nebula-arcade
+            repository: Mtman1987/chat-tag
+            apollo_app: apps/nebula-arcade
           - donor: discord-stream-hub
             repository: Mtman1987/DiscordStreamHub
             apollo_app: apps/discord-stream-hub
