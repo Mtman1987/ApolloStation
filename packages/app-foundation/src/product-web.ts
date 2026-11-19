@@ -427,9 +427,6 @@ export function validateSpmtServiceOrigin(value: string) {
 }
 
 export function headers(response: ServerResponse) {
-  
-  if (trustedParentOrigins.length) 
-  else 
   response.setHeader("referrer-policy", "no-referrer");
 }
 
