@@ -139,7 +139,7 @@ apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); 
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
 document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
-selectTab("apollo");
+selectTab("spmt");
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
