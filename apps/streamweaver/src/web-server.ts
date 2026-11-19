@@ -81,8 +81,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
-        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; object-src 'none'`
-      });
+        });
       response.end(renderAvatarStudioPage(nonce));
       return true;
     }
