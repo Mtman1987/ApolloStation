@@ -19,7 +19,8 @@ Verified:
 
 Failed / unknown:
 - Apply `44416096223` cancelled at the 30-minute timeout during `xp_ledger`.
-- Apply `44421403740` (started 23:31 UTC, 90-minute timeout) was still in the import step at 00:31 UTC. Expected to time out about 01:01 UTC. Turso state is unknown and partial. The script clears and reloads each table, so a rerun is safe.
+- Apply `44421403740` finished `success` at 00:42 UTC (about 11 minutes of import). Verified: Turso `spmt_*` counts match the export exactly (`xp_ledger` 182648, `users` 653, `workspace_profiles` 32, `user_settings` 0, `app_state_records` 56).
+- Release `spmt-xp-export-2026-11-18` (id `450654585`) deleted.
 
 Root cause (likely): one INSERT per row in 500-statement pipelines is too slow for 182k rows.
 
@@ -28,8 +29,10 @@ Fix merged to `main` as PR #510 (`60628356`):
 - Log line per request with elapsed seconds.
 - Syntax checked only. Not run against Turso.
 
-Next:
-1. Confirm run `44421403740` ended (timeout or failure). Read its logs.
+Next: none for the import. Item 5 below is the only open token step.
+
+Old next steps (done):
+1. Confirm run `44421403740` ended. Done, success.
 2. Done (PR #510 merged). The workflow runs from `main`.
 3. Rerun with `apply=true` after run `44421403740` has ended, so two runs never write the same tables. Compare `spmt_*` counts to the table above.
 4. Delete release `450654585`.
