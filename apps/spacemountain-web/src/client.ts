@@ -186,7 +186,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Sign in with your Apollo username and password, or create an Apollo account below.");
+      showAuth("Your existing SPMT session is not active in this browser. Sign in with your SPMT bridge JSON below to open your Apollo workspace.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -869,7 +869,11 @@ function showAuth(detail: string) {
   shellView.hidden = true;
   authView.hidden = false;
   authView.dataset.mode = "signin";
+  // Always return to the owner-approved bridge flow after a rejected or missing
+  // session. A stale tab selection must never leave the gate looking empty.
+  selectTab("spmt");
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
+  reportBrowserDiagnostic("auth-gate-shown", { mode: authView.dataset.mode, bridgeFormVisible: !loginForm.hidden });
 }
 
 function showSessionUnavailable(detail: string) {
