@@ -11,7 +11,20 @@ Status: current-source comparison and continuation plan. **No product is declare
 | Nebula Arcade (ChatTag donor) | `Mtman1987/chat-tag` — `3966721fb7d95b828bcbd4e5e78bc195db5e985b` | `apps/nebula-arcade` in ApolloStation — `673efc3f9b957833b590194557a84bada2f19238` | Ported-unverified; the user confirmed `chat-tag` is the donor. Compare its current Tag/Bingo/game suite to Apollo's canonical Nebula owner. |
 | Discord Stream Hub | `Mtman1987/DiscordStreamHub` — `535fb6c52ce3b4e0b95a52567a32a67328796eff` | `apps/discord-stream-hub` in ApolloStation — `673efc3f9b957833b590194557a84bada2f19238` | Partial; many September gaps have since been implemented, while current provider and tenant acceptance remains. |
 
-The pinned repositories were inspected read-only. This is a source-level review, not a full route-by-route execution, donor deployment inspection, production database inventory, live-provider rehearsal, or user-device acceptance. Existing dated audits are evidence leads, not authoritative current status; use their later implementation notes and current source before acting. No local builds or product behavior tests were run for this audit. Inventory/path-hash reports and REA output are candidate evidence only: file overlap does not prove behavioral equivalence.
+The pinned repositories were inspected read-only. This is a source-level review, not a full route-by-route execution, donor deployment inspection, production database inventory, live-provider rehearsal, or user-device acceptance. Existing dated audits are evidence leads, not authoritative current status; use their later implementation notes and current source before acting. No local builds or product behavior tests were run for this audit. A post-merge main-branch build and inventory/REA pass is recorded below; those outputs remain candidate evidence only, and file overlap does not prove behavioral equivalence.
+
+## Post-merge inventory evidence (2026-11-19)
+
+PR [#522](https://github.com/Mtman1987/ApolloStation/pull/522) merged as Apollo `e96b88207607ab5f586592baebbe03b2bc101ca1`. The [nightly evidence run](https://github.com/Mtman1987/ApolloStation/actions/runs/44520341521) completed successfully on that exact Apollo SHA. All four matrix jobs checked out the donor commits pinned in the table above, built Apollo, generated donor/Apollo inventories and static REA outputs, validated the REA JSON, generated review briefs, and uploaded one bundle per product. The donor inventories record `donorCodeExecuted: false` and `inventoryOnly: true`. Each unexpired bundle contained the seven expected files (inventories, comparison, REA outputs, and JSON/Markdown port brief); artifact retention is 14 days.
+
+| Donor → Apollo app | Inventory files (donor / Apollo) | Exact path matches | Exact content matches |
+|---|---:|---:|---:|
+| StreamWeaver → `apps/streamweaver` | 1,626 / 98 | 2 | 0 |
+| HearMeOut → `apps/hearmeout` | 631 / 105 | 2 | 0 |
+| Nebula Arcade (`chat-tag`) → `apps/nebula-arcade` | 480 / 104 | 2 | 0 |
+| Discord Stream Hub → `apps/discord-stream-hub` | 539 / 73 | 2 | 0 |
+
+These counts describe inventory scope and literal path/hash overlap only. They are not a parity score, do not classify donor-only paths as missing features, and do not replace the capability-specific dispositions and acceptance gates below. The nightly workflow is not a provider/browser behavior test. The separate [Oracle release-validation run](https://github.com/Mtman1987/ApolloStation/actions/runs/44520341707) also completed successfully on the merge SHA; neither successful run establishes product parity completion. GitHub's optional annotation read returned 403 because the connected token lacks `checks:read`; the nightly run and all four matrix jobs nevertheless concluded `success`.
 
 ## Executive decision
 
