@@ -60,11 +60,11 @@ Current branches:
 - test/hmo-youtube-single-av-proof
 
 Branches retained for open PRs:
-- chore/repo-hygiene-docs-audit-2026-11-19 — PR #527 merged after all five required checks passed
-- feat/owner-diagnostic-terminal — PR #528, draft
-- docs/apollo-final-handoff-current-main-2026-11-19 — PR #530, draft
+- feat/owner-diagnostic-terminal — PR #528, draft; session-derived owner diagnostics implementation
+- docs/apollo-final-handoff-current-main-2026-11-19 — PR #530, draft; consolidated handoff
 
-Closed/superseded PR branches intentionally left untouched pending full-history archive:
+Merged/closed PR branches intentionally left untouched pending full-history archive:
+- chore/repo-hygiene-docs-audit-2026-11-19 — PR #527 merged green
 - spmt/hostless-control-plane-foundation — PR #518 closed in favor of #525
 - audit/foundation-donor-final-sweep — PR #520 superseded by #530
 - docs/apollo-final-handoff-2026-11-19 — PR #529 superseded by #530
