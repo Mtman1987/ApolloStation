@@ -7,6 +7,71 @@ import { SpaceMountainSessionRecoveryGate, classifySpaceMountainSessionFailure }
 import { createBrowserEcosystemEggCompletionQueue, EcosystemEggRetryCoordinator, reconcileEcosystemEggCompletions } from "./egg-completion-retry.js";
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
+// Capture browser-side failures from the real signed-in or signed-out session.
+// Never read or transmit cookie values, localStorage values, form fields, or tokens.
+const browserDiagnosticQueue: Array<Record<string, unknown>> = [];
+let browserDiagnosticFlushScheduled = false;
+function scrubBrowserDiagnostic(value: unknown): string {
+  return String(value ?? "").slice(0, 3000)
+    .replace(/https?:\\/\\/[^\\s?#]+\\?[^\\s]*/gi, "[URL_WITH_QUERY_REDACTED]")
+    .replace(/((?:token|secret|password|authorization|cookie|session)[\\w-]*\\s*[:=]\\s*)[^\\s,;]+/gi, "$1[REDACTED]")
+    .replace(/eyJ[a-zA-Z0-9_-]{10,}\\.[a-zA-Z0-9_-]{10,}(?:\\.[a-zA-Z0-9_-]{10,})?/g, "[JWT_REDACTED]")
+    .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [REDACTED]");
+}
+function browserStorageKeyNames(storage: Storage): string[] {
+  try { return Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => Boolean(key)).slice(0, 80); }
+  catch { return ["[storage-unavailable]"]; }
+}
+function reportBrowserDiagnostic(type: string, detail: Record<string, unknown> = {}) {
+  try {
+    const entry = {
+      type: scrubBrowserDiagnostic(type),
+      timestamp: new Date().toISOString(),
+      page: window.location.pathname,
+      build: document.documentElement.dataset.buildSha ?? "unknown",
+      userAgent: navigator.userAgent.slice(0, 240),
+      // Names only: values (including session tokens) are deliberately never read.
+      localStorageKeys: browserStorageKeyNames(window.localStorage),
+      sessionStorageKeys: browserStorageKeyNames(window.sessionStorage),
+      ...Object.fromEntries(Object.entries(detail).map(([key, value]) => [key, typeof value === "string" ? scrubBrowserDiagnostic(value) : value])),
+    };
+    browserDiagnosticQueue.push(entry);
+    if (browserDiagnosticQueue.length > 20) browserDiagnosticQueue.shift();
+    if (!browserDiagnosticFlushScheduled) {
+      browserDiagnosticFlushScheduled = true;
+      window.setTimeout(() => {
+        browserDiagnosticFlushScheduled = false;
+        const batch = browserDiagnosticQueue.splice(0, 20);
+        if (!batch.length) return;
+        const body = JSON.stringify({ events: batch });
+        try {
+          if (navigator.sendBeacon) navigator.sendBeacon("/sandbox/diagnostics/client", new Blob([body], { type: "application/json" }));
+          else void fetch("/sandbox/diagnostics/client", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
+        } catch { /* Diagnostics must never interfere with sign-in or app startup. */ }
+      }, 150);
+    }
+  } catch { /* Diagnostics must never interfere with sign-in or app startup. */ }
+}
+window.addEventListener("error", (event) => {
+  const target = event.target;
+  if (target && target !== window) {
+    const resource = target as HTMLElement;
+    reportBrowserDiagnostic("resource-load-error", { tag: resource.tagName, source: scrubBrowserDiagnostic((resource as HTMLImageElement).src || (resource as HTMLScriptElement).src || (resource as HTMLLinkElement).href || "") });
+    return;
+  }
+  reportBrowserDiagnostic("window-error", { message: event.message, source: event.filename, line: event.lineno, column: event.colno, stack: event.error instanceof Error ? event.error.stack : "" });
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  reportBrowserDiagnostic("unhandled-rejection", { message: reason instanceof Error ? reason.message : scrubBrowserDiagnostic(reason), stack: reason instanceof Error ? reason.stack : "" });
+});
+const originalConsoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  originalConsoleError(...args);
+  reportBrowserDiagnostic("console-error", { message: args.map((arg) => arg instanceof Error ? arg.stack || arg.message : typeof arg === "string" ? arg : Object.prototype.toString.call(arg)).join(" ").slice(0, 3000) });
+};
+reportBrowserDiagnostic("client-start", { readyState: document.readyState });
+
 
 const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
