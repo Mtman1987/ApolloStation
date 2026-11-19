@@ -11,6 +11,24 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <title>SPMT Account · SpaceMountain</title>
   <link rel="stylesheet" href="/assets/web/spmt-auth.css">
   <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/contracts/human-reference":"/assets/contracts/human-reference.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
+  <script nonce="${nonce}">
+    // Install before the application module so even module parse/load failures are reported.
+    (() => {
+      const safe = (value) => String(value ?? "").slice(0, 2500).replace(/https?:\\/\\/[^\\s?#]+\\?[^\\s]*/gi, "[URL_WITH_QUERY_REDACTED]").replace(/((?:token|secret|password|authorization|cookie|session)[\\w-]*\\s*[:=]\\s*)[^\\s,;]+/gi, "$1[REDACTED]").replace(/Bearer\\s+[^\\s]+/gi, "Bearer [REDACTED]");
+      const keys = (kind) => { try { const store = kind === "local" ? localStorage : sessionStorage; return Array.from({length: store.length}, (_, i) => store.key(i)).filter(Boolean).slice(0, 80); } catch { return ["[storage-unavailable]"]; } };
+      const send = (type, detail = {}) => {
+        try {
+          const event = { type, timestamp: new Date().toISOString(), page: location.pathname, build: "${buildSha}", userAgent: navigator.userAgent.slice(0, 240), localStorageKeys: keys("local"), sessionStorageKeys: keys("session"), ...detail };
+          const body = JSON.stringify({ events: [event] });
+          if (navigator.sendBeacon) navigator.sendBeacon("/sandbox/diagnostics/client", new Blob([body], {type: "application/json"}));
+          else fetch("/sandbox/diagnostics/client", {method: "POST", credentials: "same-origin", headers: {"content-type": "application/json"}, body, keepalive: true}).catch(() => {});
+        } catch {}
+      };
+      addEventListener("error", (event) => send(event.target && event.target !== window ? "bootstrap-resource-error" : "bootstrap-window-error", { message: safe(event.message), source: safe(event.filename || event.target?.src || event.target?.href || ""), line: event.lineno || 0, column: event.colno || 0 }));
+      addEventListener("unhandledrejection", (event) => send("bootstrap-unhandled-rejection", { message: safe(event.reason?.stack || event.reason?.message || event.reason) }));
+      send("document-bootstrap", { readyState: document.readyState });
+    })();
+  </script>
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
 <body>
