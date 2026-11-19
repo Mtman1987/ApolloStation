@@ -108,6 +108,21 @@ jobs:
             node scripts/parity-prepare-port.mjs parity-comparison.json config/apollo-parity-capabilities.v1.json port-brief
           fi
 
+      - name: Publish plain-English port brief to Actions summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo
+            echo "## Plain-English port brief"
+            echo
+            if [ -s port-brief/port-brief.md ]; then
+              cat port-brief/port-brief.md
+            else
+              echo "Port brief was not generated. Check the preceding inventory/comparison steps and artifact files."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload nightly evidence
         if: always()
         uses: actions/upload-artifact@v4
