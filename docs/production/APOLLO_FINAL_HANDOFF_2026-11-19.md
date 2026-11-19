@@ -175,16 +175,16 @@ The latest Hostless runtime diagnostics run completed successfully on both nodes
 
 - Main is at merge commit 18c6dd387bdfc7b939454db9301f58204203d790 for the production donor-origin override guide.
 - docs/production/DONOR_ORIGIN_OVERRIDES.md exists on main. It documents STREAMWEAVER_URL, HEARMEOUT_DONOR_ORIGIN, HEARMEOUT_VOICE_BRIDGE_ORIGIN, and SPOTLIGHT_ENDPOINT, intended node placement, and the rule not to remove fallbacks until the Apollo route is proven healthy.
-- The handoff branch was zero commits behind main when first checked. Main subsequently advanced by two commits updating only the archived branch-audit inventory text; the handoff branch is now two commits behind and should be refreshed before merge. Its current diff adds the handoff, foundation donor-sweep report, and production index link; no runtime code changes are included.
+- The handoff branch has now been refreshed onto the latest main commit. Its current diff adds only the final handoff, foundation donor-sweep report, and production index link; no runtime code changes are included.
 - PR #530 remains open and draft. PR #528 remains open and draft.
 - The maintained topology and production guide specify Hostless Node 1 and Node 2 only. Node 3 is not an approved deployment target.
 - The production path explicitly separates CI, deployment, and live acceptance. A green check is not proof of a live release.
 
 ### Environment access limitation
 
-This walkthrough had GitHub repository access only. No connected Hostless runtime, Rotator terminal, or live node health/log interface was available. Therefore this pass did not inspect live process state, deployed SHAs, environment-variable presence, domain routing, database connections, or browser behavior. No deployment, restart, workflow dispatch, secret change, database write, or recovery import was performed.
+This walkthrough had GitHub repository access and CI-collected Hostless diagnostic artifacts, but no connected Hostless runtime or Rotator terminal. It inspected the 15:12 UTC snapshots, not a live interactive node session. The #527 merge automatically triggered the normal Hostless release: typecheck and both shared-Turso preflights passed, and Hostless accepted Node 1/2 deployment requests, but the GitHub jobs were cancelled before final read-back. No manual deployment, restart, workflow dispatch, secret change, database write, or recovery import was performed.
 
-The last recorded Hostless snapshot in this handoff remains the 15:05 UTC evidence in section 1. It is historical evidence, not a fresh status check. In that snapshot Node 1 was still reporting SQLite WAL and SPMT_ORIGIN was not configured; Node 1/2 deployment completion and final read-back were not proven. Recheck both nodes before relying on those values or declaring a release complete.
+The latest recorded Hostless snapshot in this handoff is the 15:12 UTC diagnostics artifact in section 1. It is a CI-collected snapshot, not a live Hostless session. Node 1 and Node 2 were still `UPDATING`; Node 1 reported SQLite WAL and SPMT_ORIGIN not configured, while Node 2's readiness route reported StreamWeaver ready and safe configuration reported SPMT_ORIGIN configured. The new deployments remained at `BUILD_STARTED` and `DEPLOYMENT_STARTED` respectively. Recheck both nodes before relying on those values or declaring a release complete.
 
 ### Remaining work — resume in this order
 
@@ -196,12 +196,12 @@ The last recorded Hostless snapshot in this handoff remains the 15:05 UTC eviden
 6. **Complete the remaining runtime parity.** Verify real Twitch/Discord OAuth and provider connections; Chat Gateway reconnect/dedupe/leases; StreamWeaver commands/personas/rewards and audible speech; Nebula games/Tag/Quackverse/Mosaic generation; DSH publishing/media delivery; and HearMeOut playback plus bidirectional Discord audio. Offline tests and code presence do not satisfy these checks.
 7. **Finish the supporting service ports.** Integrate and rehearse Restream Control in the Node 2 process map. Replace Companion/MountainView donor release-asset URLs with Apollo-owned signed artifacts. Migrate remaining Sprite/Fly execution-target defaults and the HearMeOut legacy-worker adapter only after replacement behavior and acceptance tests exist.
 8. **Review dependencies and performance after correctness.** Capture a fresh npm audit --json, identify the exact affected dependency paths, and remediate narrowly with compatibility tests. The previously reported two high-severity advisories are not a current audit result. Profile hot paths only after live acceptance and capture a comparable baseline.
-9. **Archive branches safely.** Preserve the eight named recovery-candidate branches in section 1. Create and verify a full-history Git bundle or equivalent external archive before deleting anything. The 52-branch inventory is not a source archive; no branch deletion is approved by this handoff.
+9. **Archive branches safely.** Preserve the eight named recovery-candidate branches in section 1. Create and verify a full-history Git bundle or equivalent external archive before deleting anything. The 53-branch inventory is not a source archive; no branch deletion is approved by this handoff.
 10. **Keep the docs synchronized.** Update docs/CURRENT_STATE.md only when new deployment, persistence, or browser evidence is verified. Do not create another parallel status document for each small issue.
 
 ### Explicitly not done in this walkthrough
 
-- No Node 1 or Node 2 deploy/redeploy/restart.
+- No manual Node 1 or Node 2 deploy/redeploy/restart was performed; the automatic #527 release attempt and its incomplete read-back are recorded above.
 - No recovery import or replay of the 5,748 already verified rows.
 - No secret values read, copied, or changed.
 - No Hostless environment overrides configured or asserted healthy.
