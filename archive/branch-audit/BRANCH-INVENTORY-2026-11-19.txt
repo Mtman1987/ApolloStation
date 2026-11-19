@@ -3,7 +3,7 @@ Repository: Mtman1987/ApolloStation
 Source: GitHub branches API (52 results; complete response)
 
 Total branches: 52
-No branches were deleted during this cleanup.
+No branches were deleted during this cleanup. The #527 hygiene branch remains present after merge until the full-history archive is verified.
 
 Current branches:
 - audit/foundation-donor-final-sweep
@@ -60,7 +60,7 @@ Current branches:
 - test/hmo-youtube-single-av-proof
 
 Branches retained for open PRs:
-- chore/repo-hygiene-docs-audit-2026-11-19 — PR #527, validation pending
+- chore/repo-hygiene-docs-audit-2026-11-19 — PR #527 merged after all five required checks passed
 - feat/owner-diagnostic-terminal — PR #528, draft
 - docs/apollo-final-handoff-current-main-2026-11-19 — PR #530, draft
 
