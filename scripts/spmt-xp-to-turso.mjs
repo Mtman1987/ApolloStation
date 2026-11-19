@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 import { TursoHttpAdapter } from "../packages/turso-http/index.mjs";
 
 const TABLES = ["xp_ledger", "users", "workspace_profiles", "user_settings", "app_state_records"];
-const BATCH = 500;
+const ROWS_PER_STMT = 100;
+const STMTS_PER_REQUEST = 20;
 const q = (name) => '"' + String(name).replaceAll('"', '""') + '"';
 
 const args = process.argv.slice(2);
@@ -35,13 +36,24 @@ for (const table of TABLES) {
   await adapter.execute(`CREATE TABLE IF NOT EXISTS ${q(target)} (${cols.map(q).join(", ")})`);
   await adapter.execute(`DELETE FROM ${q(target)}`);
   const colSql = cols.map(q).join(", ");
-  const ph = "(" + cols.map(() => "?").join(",") + ")";
+  const rowPh = "(" + cols.map(() => "?").join(",") + ")";
   const rows = db.prepare(`SELECT ${colSql} FROM ${q(table)}`).all();
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const chunk = rows.slice(i, i + BATCH);
-    const statements = chunk.map((row) => ({ sql: `INSERT INTO ${q(target)} (${colSql}) VALUES ${ph}`, args: cols.map((c) => row[c]) }));
+  const started = Date.now();
+  // Multi-row INSERTs: ROWS_PER_STMT rows per statement, STMTS_PER_REQUEST statements per HTTP call.
+  const perRequest = ROWS_PER_STMT * STMTS_PER_REQUEST;
+  for (let i = 0; i < rows.length; i += perRequest) {
+    const statements = [];
+    for (let j = i; j < Math.min(i + perRequest, rows.length); j += ROWS_PER_STMT) {
+      const chunk = rows.slice(j, Math.min(j + ROWS_PER_STMT, rows.length));
+      statements.push({
+        sql: `INSERT INTO ${q(target)} (${colSql}) VALUES ${chunk.map(() => rowPh).join(",")}`,
+        args: chunk.flatMap((row) => cols.map((c) => row[c])),
+      });
+    }
     await adapter.pipeline(statements);
-    console.log(`${table}: ${Math.min(i + BATCH, rows.length)}/${rows.length} rows written (${new Date().toISOString()})`);
+    const done = Math.min(i + perRequest, rows.length);
+    const secs = ((Date.now() - started) / 1000).toFixed(0);
+    console.log(`${table}: ${done}/${rows.length} rows written after ${secs}s (${new Date().toISOString()})`);
   }
   const remote = await adapter.execute(`SELECT COUNT(*) AS n FROM ${q(target)}`, [], true);
   const remoteCount = Number(remote.rows[0][0]);
