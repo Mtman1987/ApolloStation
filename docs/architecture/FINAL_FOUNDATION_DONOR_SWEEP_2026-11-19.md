@@ -167,3 +167,8 @@ Once those gates pass, remove these three from the active parity party bus and f
 - PR #526 is merged to main. The signed-out/rejected-session path now selects the SPMT bridge form and emits a browser diagnostic event. This is a code-level correction, not proof of live sign-in success.
 - PR #528 is still a draft. Its current browser request sends `x-spmt-tenant` as a tenant selector; the API adapter currently reads that selector to scope operations. It is not a credential, but the requested architecture is to derive tenant context from the validated Apollo session/shell. Do not simply delete the header client-side until the server-side contract is changed and tested.
 - The recovery import is already verified at 5,748 records. Do not replay it as part of this foundation audit.
+
+
+## Hostless donor-origin configuration update (2026-11-19)
+
+The owner added `docs/production/DONOR_ORIGIN_OVERRIDES.md` with non-auth production overrides for Mosaic, HearMeOut, and Spotlight. Apply those values in the relevant Hostless environments and verify the target routes before removing the corresponding Fly fallback constants from source. Do not treat a configured origin as proof of runtime parity until the route health check and app-level acceptance pass.
