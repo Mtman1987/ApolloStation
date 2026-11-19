@@ -91,7 +91,7 @@ The actual typed operations implementation lives in @spmt/platform-ops and is ex
 
 Mission Control should consume these existing contracts. Do not add direct database access or a second operations API.
 
-The operator capability placement plan is documented in docs/architecture/ROTATOR_CAPABILITY_LIFEBOAT.md. That document describes which donor capabilities are retained in Apollo owners and explicitly rejects a standalone Rotator runtime. It should be kept aligned with the Apollo-owned terminal and operator implementation.
+The operator capability placement plan is documented in docs/architecture/APOLLO_OPERATOR_CAPABILITIES.md. That document describes which donor capabilities are retained in Apollo owners and explicitly rejects a standalone Rotator runtime. It should be kept aligned with the Apollo-owned terminal and operator implementation.
 
 ## 7. Security requirements
 
