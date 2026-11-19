@@ -1,9 +1,9 @@
 ApolloStation open PR review — refreshed 2026-11-19 14:42 UTC
 
 ## Open PRs to retain
-- #527 Repository hygiene: keep; latest branch repair restores the active machine-readable app-code parity manifest after the broad docs archive moved it. Full offline validation is running again; do not merge until every required check is green.
-- #528 Owner diagnostic terminal: keep draft; remove the client-side x-spmt-tenant dependency only together with a server-side change that derives active tenant from the validated Apollo session/shell. Keep read-only, owner-only, bounded; no shell execution.
-- #530 Final Apollo cleanup and handoff record: keep draft; current-main documentation-only handoff and refreshed foundation donor sweep.
+- #527 Repository hygiene: merged after all five required checks passed on the rebased head. The active machine-readable app-code parity manifest is retained; historical donor reports are referenced from the archive.
+- #528 Owner diagnostic terminal: keep draft; the terminal now uses the signed Apollo session and a dedicated owner-only log endpoint, returning metadata only. All checks passed on the pre-rebase head; validation is rerunning after the latest-main rebase. Keep draft until Node 1 browser acceptance.
+- #530 Final Apollo cleanup and handoff record: keep draft temporarily; it will be recreated from the latest main commit after the release workflow hardening.
 
 ## Closed/superseded
 - #518 closed: diagnostic sanitizer work is superseded by merged #525.
@@ -18,6 +18,12 @@ ApolloStation open PR review — refreshed 2026-11-19 14:42 UTC
 - d18385a55d62d8761ed433594cf7bd7417d9f76a — recovery import workflow manual-only, apply=false by default, supports JSONL and gzip manifests.
 - 8be04030358ba750fe03fb556f3d199329d66218 — branch cleanup workflow manual-only, dry-run default.
 - 6091c1cdbe12c1a821712b2c2ed7742da1c7fd30 — archive obsolete Sprite/Fly terminal workflow and remove active workflow path.
+- 9e9a1601bd268be1992e3b94e899efe233763f86 — isolate PR Hostless runs from main releases; make main typecheck mandatory and remove the validation-skip bypass.
+
+## Hostless release note
+- The #527 merge's Hostless release passed typecheck and both Node 1/2 shared-Turso preflights (5,748 staged records on each node). Hostless accepted deployment requests for both nodes, but the GitHub deploy jobs were cancelled before domain/read-back verification because PR validation shared the main release concurrency group.
+- Runtime log snapshots for both nodes completed. Deployment completion is therefore unverified, not reported as successful.
+- Commit 9e9a160 isolates PR runs from the main release group and requires typecheck success; workflow-only changes no longer trigger a production deploy.
 
 ## Safety rules
 - Never merge a red PR.
