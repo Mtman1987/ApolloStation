@@ -112,6 +112,29 @@ jobs:
           else
             echo "No public app URL was returned for $APP; HTTP readiness was not tested."
           fi
+
+          # Capture a bounded HTTP behavior matrix. Record status/timing separately
+          # from bodies so 4xx/5xx responses remain useful evidence rather than vanishing.
+          : > hostless-diagnostics/http-probes.txt
+          if [ -n "$APP_URL" ]; then
+            for route in / /health/live /health/ready /login /api/health; do
+              safe_name="$(printf '%s' "$route" | tr '/-' '__')"
+              code="$(curl -sS --max-time 20 -o "hostless-diagnostics/http-${safe_name}.body" -w '%{http_code}' "$APP_URL$route" 2>"hostless-diagnostics/http-${safe_name}.stderr" || true)"
+              timing="$(curl -sS --max-time 20 -o /dev/null -w 'total=%{time_total}s connect=%{time_connect}s ttfb=%{time_starttransfer}s bytes=%{size_download}' "$APP_URL$route" 2>/dev/null || true)"
+              printf '%-18s status=%s %s\\n' "$route" "${code:-000}" "$timing" | tee -a hostless-diagnostics/http-probes.txt
+            done
+          else
+            echo "HTTP probes skipped: no public URL." | tee -a hostless-diagnostics/http-probes.txt
+          fi
+          # Capture informational and warning logs as well as errors. Keep the
+          # complete output in the Actions artifact; the issue publisher bounds excerpts.
+          hostless logs --app "$APP" --since "$WINDOW" --level warn 2>&1 | tee hostless-diagnostics/recent-warnings.log
+          echo "Warning log command exit code: ${PIPESTATUS[0]}" >> hostless-diagnostics/summary.txt
+          hostless logs --app "$APP" --since "$WINDOW" --level info 2>&1 | tee hostless-diagnostics/recent-info.log
+          echo "Info log command exit code: ${PIPESTATUS[0]}" >> hostless-diagnostics/summary.txt
+          # Record configuration key names only; never retrieve or print secret values.
+          curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/environment-variables" -o hostless-diagnostics/environment-variable-names.json
+          node --input-type=module -e 'import fs from "node:fs"; const p="hostless-diagnostics/environment-variable-names.json"; try { const d=JSON.parse(fs.readFileSync(p,"utf8")); const a=Array.isArray(d)?d:(d.variables??d.environmentVariables??d.items??d.data??[]); fs.writeFileSync("hostless-diagnostics/environment-variable-names.json",JSON.stringify(a.map(x=>x.name??x.key).filter(x=>typeof x==="string").sort(),null,2)); } catch { fs.writeFileSync(p,"[unparseable response; raw body intentionally discarded]"); }'
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
@@ -161,7 +184,7 @@ jobs:
           import os, re, pathlib
           node = os.environ["NODE"]
           run_id = os.environ["RUN_ID"]
-          files = [pathlib.Path('hostless-diagnostics/summary.txt'), pathlib.Path('hostless-diagnostics/recent-errors.log'), pathlib.Path('hostless-diagnostics/deployment.log'), pathlib.Path('hostless-diagnostics/deployment-api-logs.json'), pathlib.Path('hostless-diagnostics/post-build-logs.json'), pathlib.Path('hostless-diagnostics/deployment-detail.json')]
+          files = [pathlib.Path('hostless-diagnostics/summary.txt'), pathlib.Path('hostless-diagnostics/http-probes.txt'), pathlib.Path('hostless-diagnostics/recent-errors.log'), pathlib.Path('hostless-diagnostics/recent-warnings.log'), pathlib.Path('hostless-diagnostics/recent-info.log'), pathlib.Path('hostless-diagnostics/environment-variable-names.json'), pathlib.Path('hostless-diagnostics/deployment.log'), pathlib.Path('hostless-diagnostics/deployment-api-logs.json'), pathlib.Path('hostless-diagnostics/post-build-logs.json'), pathlib.Path('hostless-diagnostics/deployment-detail.json')]
           def redact(s):
             patterns = [(r'(?i)(authorization\s*[:=]\s*bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(cookie|set-cookie)\s*[:=]\s*[^\r\n]+', r'\1: [REDACTED]'), (r'(?i)(["\']?(?:token|secret|password|passwd|api[_-]?key|session[_-]?key)["\']?\s*[:=]\s*["\']?)[^\s,;"\']+', r'\1[REDACTED]'), (r'(?i)(sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})', '[REDACTED]'), (r'(?i)(eyJ[a-z0-9_-]{10,}\.)[a-z0-9_-]{10,}(?:\.[a-z0-9_-]{10,})?', '[REDACTED-JWT]')]
             for p, repl in patterns: s = re.sub(p, repl, s)
