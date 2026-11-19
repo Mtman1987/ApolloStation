@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { renderAvatarStudioPage } from "./avatar-studio.js";
 import {streamWeaverTikTokBrowserJs} from "./tiktok-client.js";
 import {streamWeaverCheckinRoleBrowserJs} from "./checkin-role-client.js";
@@ -15,7 +14,7 @@ import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
-import { createProductAppWebServer, productAppFrameAncestors, productAppSnapshotHandler, productAppSnapshotSources, validateSpmtServiceOrigin, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1, validateSpmtServiceOrigin } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { streamWeaverMediaBrowserJs } from "./media-client.js";
@@ -24,6 +23,7 @@ import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
 import { STREAMWEAVER_OVERLAYS } from "./overlay-runtime.js";
 import { StreamWeaverWebControls, parseStreamWeaverWebConnections } from "./web-controls.js";
 import { StreamWeaverSecureChoiceWeb } from "./secure-choice.js";
+import { randomBytes } from "node:crypto";
 
 const COMMAND_UI: Array<{ trigger: string; family: string; aliases: readonly string[]; cooldownSeconds: number }> = [];
 const commandTriggers = new Set<string>();
@@ -82,8 +82,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
-        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; frame-ancestors ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`
-      });
+        });
       response.end(renderAvatarStudioPage(nonce));
       return true;
     }

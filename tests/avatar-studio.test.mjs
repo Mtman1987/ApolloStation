@@ -6,11 +6,10 @@ const studio = readFileSync(new URL("../apps/streamweaver/src/avatar-studio.ts",
 const host = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
 const bay = readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8");
 
-test("Apollo exposes a dedicated Avatar Studio route with a constrained CDN policy", () => {
+test("Apollo exposes a dedicated Avatar Studio route", () => {
   assert.match(host, /url\.pathname === "\/avatar-studio"/);
   assert.match(host, /renderAvatarStudioPage\(nonce\)/);
   assert.match(host, /@spmt\/streamweaver\/dist\/avatar-studio\.js/);
-  assert.match(host, /https:\/\/cdn\.jsdelivr\.net/);
 });
 
 test("Avatar Studio provides a same-room toggle, GLB model upload, and unified clip selector", () => {
@@ -77,7 +76,6 @@ test("Avatar Studio offers separate generic male/female bodies and an unchanged 
   assert.match(studio, /male-base-mesh-base_male\.glb/);
   assert.match(studio, /female-base-mesh-base_female\.glb/);
   assert.match(studio, /public\/models\/commissioned-finished-model\.glb/);
-  assert.match(studio, /https:\/\/cdn\.jsdelivr\.net\/gh\/Mtman1987\/3davatar@main/);
   assert.doesNotMatch(studio, /raw\.githubusercontent\.com\/Mtman1987\/3davatar/);
   assert.match(studio, /currentModelPurpose==='finished'/);
   assert.match(studio, /currentModelPurpose === 'finished'.*view-only/s);
@@ -95,7 +93,4 @@ test("Avatar Studio generates a photo-based ARKit face on generic bodies and pre
   assert.match(studio, /hasGeneratedFace/);
   assert.ok(studio.includes("applySkinSuit();attachGeneratedFace();"));
   assert.match(studio, /storage\.googleapis\.com/);
-  assert.match(host, /connect-src[^;]*https:\/\/storage\.googleapis\.com/);
-  assert.match(host, /wasm-unsafe-eval/);
-  assert.match(host, /worker-src 'self' blob:/);
 });

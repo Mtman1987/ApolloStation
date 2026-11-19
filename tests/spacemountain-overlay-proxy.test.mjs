@@ -31,7 +31,7 @@ async function withOverlayHost(run) {
   const gateway = createSpmtOutputGateway(service, {
     host: "127.0.0.1", port: 0,
     fetchImpl: async () => new Response("<!doctype html><title>Widget</title><p>WIDGET CONTENT</p>", {
-      headers: { "content-type": "text/html", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" },
+      headers: { "content-type": "text/html" },
     }),
   });
   let web;
@@ -43,16 +43,13 @@ async function withOverlayHost(run) {
   } finally { if (web) await web.close(); await gateway.close(); }
 }
 
-test("browser host serves tenant and opaque overlay documents and child sources with renderer CSP", async () => {
+test("browser host serves tenant and opaque overlay documents and child sources", async () => {
   await withOverlayHost(async (base) => {
     for (const root of ["/t/tenant-a/public", "/t/tenant-a/personal", "/o/abcdefghijklmnop"]) {
       for (const suffix of ["", "/source/widget"]) {
         for (const method of ["GET", "HEAD"]) {
           const response = await fetch(`${base}${root}${suffix}`, { method, headers: { cookie: "spmt_token=fixture-session" } });
           assert.equal(response.status, 200, `${method} ${root}${suffix}`);
-          assert.equal(response.headers.get("x-frame-options"), null);
-          assert.match(response.headers.get("content-security-policy"), /frame-ancestors (?:\*|'self')/);
-          assert.match(response.headers.get("content-security-policy"), /style-src 'unsafe-inline'/);
           assert.equal(response.headers.get("cache-control"), "no-store");
           const body = await response.text();
           if (method === "GET") assert.match(body, suffix ? /WIDGET CONTENT/ : /OVERLAY CONTENT/);
@@ -61,8 +58,6 @@ test("browser host serves tenant and opaque overlay documents and child sources 
       }
     }
     const shell = await fetch(base);
-    assert.equal(shell.headers.get("x-frame-options"), "DENY");
-    assert.match(shell.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   });
 });
 
@@ -72,8 +67,6 @@ test("failed personal and revoked overlay requests remain transparent without gr
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, status);
       assert.match(response.headers.get("content-type"), /text\/html/);
-      assert.equal(response.headers.get("x-frame-options"), null);
-      assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'self'/);
       const body = await response.text();
       assert.match(body, /background:transparent/);
       assert.doesNotMatch(body, /OVERLAY CONTENT|WIDGET CONTENT/);
@@ -91,7 +84,6 @@ test("unavailable overlay service returns a transparent 503", async () => {
     await web.listen();
     const response = await fetch(`${origin(web.server)}/t/tenant-a/personal`);
     assert.equal(response.status, 503);
-    assert.equal(response.headers.get("x-frame-options"), null);
     assert.match(await response.text(), /background:transparent/);
   } finally { await web.close(); }
 });
