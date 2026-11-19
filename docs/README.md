@@ -14,6 +14,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Discord Stream Hub](../apps/discord-stream-hub/README.md) — Discord community, publishing, calendar, moderation, points, and media workers.
 - [HearMeOut](../apps/hearmeout/README.md) — watch rooms, playback, IPTV/HLS, Discord Activity, RTC, voice and media workers.
 - [Commlink](../apps/commlink/README.md) — canonical desks, mail, notifications, live chat, and shared messaging contracts.
+- [Companion](../apps/companion/README.md) — paired local device, OBS, media, workflows, diagnostics and updates.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
