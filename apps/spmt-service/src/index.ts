@@ -216,6 +216,13 @@ export function createSpmtService(options: SpmtServiceOptions) {
     const donorUsername = donor.username.trim().toLowerCase();
     const donorDiscordId = typeof donor.discordId === "string" ? donor.discordId.trim() : "";
     const donorTwitchId = typeof donor.twitchId === "string" ? donor.twitchId.trim() : "";
+    // The verified owner's canonical SPMT username takes precedence over any
+    // stale provider-link mapping. For everyone else, retain provider-link-first
+    // resolution so linked Discord/Twitch identities continue to work as before.
+    const ownerBootstrap = donorUsername === OWNER_SPMT_USERNAME
+      || donorDiscordId === OWNER_DISCORD_ID
+      || donorTwitchId === OWNER_TWITCH_ID;
+    const usernameProfile = data.getProfileByUsername(donorUsername);
     const linkedUserId = ([["discord", donorDiscordId], ["twitch", donorTwitchId]] as const)
       .map(([provider, providerUserId]) => {
         if (!providerUserId) return undefined;
@@ -224,14 +231,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
       })
       .find((value): value is string => Boolean(value));
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
-    let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined = linkedProfile;
-    if (!profile) profile = data.getProfileByUsername(donorUsername);
-    // First sign-in for the owner: SPMT has already validated this identity, so the
-    // owner's own SPMT account may create its Apollo workspace. Other identities still
-    // need an existing linked workspace unless the operator sets the env flag.
-    const ownerBootstrap = donorUsername === OWNER_SPMT_USERNAME
-      || donorDiscordId === OWNER_DISCORD_ID
-      || donorTwitchId === OWNER_TWITCH_ID;
+    let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
+      ownerBootstrap ? (usernameProfile ?? linkedProfile) : (linkedProfile ?? usernameProfile);
     if (!profile && !ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
