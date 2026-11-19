@@ -1,12 +1,13 @@
-ApolloStation branch inventory — refreshed 2026-11-19 14:42 UTC
+ApolloStation branch inventory — refreshed 2026-11-19 15:15 UTC
 Repository: Mtman1987/ApolloStation
-Source: GitHub branches API (52 results; complete response)
+Source: GitHub branches API (53 results; complete response)
 
-Total branches: 52
+Total branches: 53
 No branches were deleted during this cleanup. The #527 hygiene branch remains present after merge until the full-history archive is verified.
 
 Current branches:
 - audit/foundation-donor-final-sweep
+- chore/document-donor-origin-overrides-2026-11-19
 - chore/repo-hygiene-docs-audit-2026-11-19
 - ci/hmo-media-browser-in-shard4
 - ci/hostless-gated-three-node-deploy
@@ -64,6 +65,7 @@ Branches retained for open PRs:
 - docs/apollo-final-handoff-current-main-2026-11-19 — PR #530, draft; consolidated handoff
 
 Merged/closed PR branches intentionally left untouched pending full-history archive:
+- chore/document-donor-origin-overrides-2026-11-19 — owner-authored donor-origin override documentation merged to main
 - chore/repo-hygiene-docs-audit-2026-11-19 — PR #527 merged green
 - spmt/hostless-control-plane-foundation — PR #518 closed in favor of #525
 - audit/foundation-donor-final-sweep — PR #520 superseded by #530
