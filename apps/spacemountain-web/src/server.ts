@@ -512,7 +512,7 @@ async function proxyNebulaArcade(response: ServerResponse, request: IncomingMess
     "content-type": upstream.headers.get("content-type") ?? "application/octet-stream",
     "content-length": encoded.byteLength,
     "cache-control": upstream.headers.get("cache-control") ?? "no-store",
-    "": upstream.headers.get("") ?? "default-src 'none'",
+
   });
   response.end(encoded);
 }
