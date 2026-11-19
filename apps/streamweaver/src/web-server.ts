@@ -14,7 +14,7 @@ import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
-import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1, validateSpmtServiceOrigin } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { streamWeaverMediaBrowserJs } from "./media-client.js";
@@ -23,6 +23,7 @@ import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
 import { STREAMWEAVER_OVERLAYS } from "./overlay-runtime.js";
 import { StreamWeaverWebControls, parseStreamWeaverWebConnections } from "./web-controls.js";
 import { StreamWeaverSecureChoiceWeb } from "./secure-choice.js";
+import { randomBytes } from "node:crypto";
 
 const COMMAND_UI: Array<{ trigger: string; family: string; aliases: readonly string[]; cooldownSeconds: number }> = [];
 const commandTriggers = new Set<string>();
@@ -69,18 +70,20 @@ export interface StreamWeaverWebServerOptionsV1 { openAiKey?:string; privateAiDr
 
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   // The release supplies the canonical Node 1 origin; also retain the exact Node 1 alias shown by the owner.
+  const trustedParentOrigins = [...new Set([validateSpmtServiceOrigin(options.spmtOrigin), "https://node-1.hostless.app"])];
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
   const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, trustedParentOrigins, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
     if (request.method === "GET" && ["/avatar-studio", "/apps/streamweaver/avatar-studio"].includes(url.pathname)) {
+      const nonce = randomBytes(18).toString("base64");
       response.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
         });
-      response.end(renderAvatarStudioPage(""));
+      response.end(renderAvatarStudioPage(nonce));
       return true;
     }
     return await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url);
