@@ -85,7 +85,7 @@ export class OverlayBayParityController {
   }
 
   private editor(scene: OverlaySceneV1, owner: boolean) {
-    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget" && (kind !== "terminal" || owner)).map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
+    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget" && (kind !== "terminal" || (owner && hasScope(this.snapshot.session, "operations:logs:read")))).map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
     const widgetGroups = new Map<string, string[]>();
     const available=[...(this.snapshot.overlayWidgets??[]),...this.discoveredWidgets],seenWidgets=new Set<string>();
     for (const item of available) {
