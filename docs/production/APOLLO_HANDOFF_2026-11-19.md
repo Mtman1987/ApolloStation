@@ -23,15 +23,15 @@ Failed / unknown:
 
 Root cause (likely): one INSERT per row in 500-statement pipelines is too slow for 182k rows.
 
-Fix, on branch `spmt-xp-import-batching` (commit on that branch, not pushed):
+Fix merged to `main` as PR #510 (`60628356`):
 - 100 rows per multi-row INSERT, 20 INSERTs per HTTP request.
 - Log line per request with elapsed seconds.
 - Syntax checked only. Not run against Turso.
 
 Next:
 1. Confirm run `44421403740` ended (timeout or failure). Read its logs.
-2. Merge `spmt-xp-import-batching` to `main`. The workflow runs from `main`.
-3. Rerun with `apply=true`. Compare `spmt_*` counts to the table above.
+2. Done (PR #510 merged). The workflow runs from `main`.
+3. Rerun with `apply=true` after run `44421403740` has ended, so two runs never write the same tables. Compare `spmt_*` counts to the table above.
 4. Delete release `450654585`.
 5. Revoke the leaked GitHub tokens `ghp_CCxq…` and `ghp_EP99…`. Rotate the token in `~/.github-token.env`.
 
@@ -44,7 +44,7 @@ Verified:
 - Apollo node-1 and node-2 share the `hostless.app` site. The SameSite=Lax session cookie should reach app frames. Cookies are not the likely cause.
 - The "unauthorized" text comes from app APIs (`spmt-service` returns `401 {"error":"unauthorized"}` when no bearer token is sent). Likely a second issue once the frame loads.
 
-Branch `shell-app-frame-fix` (from `main`, not pushed):
+Branch `shell-app-frame-fix` → PR #511 (open, not merged, not deployed):
 - `isShellAppFrameRequest(url)`: true when path is `/` and `surface=shell`.
 - For those requests only: `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`. Everything else keeps `DENY` / `'none'`.
 - `tsc -p apps/spacemountain-web --noEmit` passes. Not yet run in a browser and not deployed.
@@ -62,7 +62,14 @@ Next:
 Also noted:
 - The `/v1/session` 403 for anonymous users vs the client's `401` check in `apps/spacemountain-web/src/client.ts` (~line 188). Harmless today, but the client expects 401.
 
-## 3–5. Not started
+## Work order (as of 2026-11-19 00:45 UTC)
+
+1. Launch bug: PR #511 open. Needs deploy approval and a browser check.
+3. AI and TTS fallbacks: not started, scope not defined.
+4. UI tweaks: not started, no specifics.
+2. Bots missing from mtman1987 chat and StreamWeaver OAuth: not started. Blocked on item 1.
+
+## Other not started
 
 - AI and TTS fallbacks (work item 3). Scope not defined.
 - Bots missing from the mtman1987 chat, and StreamWeaver OAuth reachability (work item 2). Depends on the launch fix.
@@ -70,10 +77,10 @@ Also noted:
 - Persistence: `scripts/hostless/start-node.mjs` sets `DATABASE_PATH` under `/tmp`. Needs write-through to Turso and restore on boot.
 - Refresh loop: `watchWorkspace` in `client.ts` polls every 5 s. Needs live logs.
 
-## Branches (local, not pushed)
+## Branches and PRs
 
-- `spmt-xp-import-batching`: importer batching and progress logging.
-- `shell-app-frame-fix`: shell frame headers for `surface=shell`.
+- PR #510 (merged): importer batching and progress logging.
+- PR #511 (open): shell frame headers for `surface=shell`, plus this doc.
 
 ## Files
 
