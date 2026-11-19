@@ -166,3 +166,52 @@ The latest Hostless runtime diagnostics run completed successfully on both nodes
 - [ ] Create/verify the full-history branch archive before any deletion.
 - [ ] Complete donor-origin route acceptance and npm advisory review.
 - [ ] Only after owner validation, run measured optimization and regression checks.
+
+## 6. Final environment walkthrough and pause handoff
+
+**Walkthrough update:** 2026-11-19, after the donor-origin override documentation was merged.
+
+### What was verified in this walkthrough
+
+- Main is at merge commit 18c6dd387bdfc7b939454db9301f58204203d790 for the production donor-origin override guide.
+- docs/production/DONOR_ORIGIN_OVERRIDES.md exists on main. It documents STREAMWEAVER_URL, HEARMEOUT_DONOR_ORIGIN, HEARMEOUT_VOICE_BRIDGE_ORIGIN, and SPOTLIGHT_ENDPOINT, intended node placement, and the rule not to remove fallbacks until the Apollo route is proven healthy.
+- The handoff branch is based on current main (zero commits behind at this walkthrough) and adds the final handoff plus the foundation donor-sweep report. It adds no runtime code relative to current main.
+- PR #530 remains open and draft. PR #528 remains open and draft.
+- The maintained topology and production guide specify Hostless Node 1 and Node 2 only. Node 3 is not an approved deployment target.
+- The production path explicitly separates CI, deployment, and live acceptance. A green check is not proof of a live release.
+
+### Environment access limitation
+
+This walkthrough had GitHub repository access only. No connected Hostless runtime, Rotator terminal, or live node health/log interface was available. Therefore this pass did not inspect live process state, deployed SHAs, environment-variable presence, domain routing, database connections, or browser behavior. No deployment, restart, workflow dispatch, secret change, database write, or recovery import was performed.
+
+The last recorded Hostless snapshot in this handoff remains the 15:05 UTC evidence in section 1. It is historical evidence, not a fresh status check. In that snapshot Node 1 was still reporting SQLite WAL and SPMT_ORIGIN was not configured; Node 1/2 deployment completion and final read-back were not proven. Recheck both nodes before relying on those values or declaring a release complete.
+
+### Remaining work — resume in this order
+
+1. **Confirm the two-node release.** Inspect the latest main-branch Hostless run and exact commit. Confirm Node 1 and Node 2 both deployed the intended SHA, then verify each node's readiness, domain routing, and cross-node service calls. A partial Node 1 success is not a successful release.
+2. **Verify owner browser acceptance on Node 1.** Test a fresh normal browser session and incognito: sign-in/bridge recovery, workspace load, app catalog, app launch, reload, sign-out/sign-in, mobile layout, and absence of a blank shell or duplicate login-refresh chrome.
+3. **Finish PR #528 acceptance.** Its latest recorded CI was green on head 88780e9944d48a7ce39d684f57865bb58e118de6; the remaining gate is the real owner browser path on Node 1. Keep it draft until that passes. Use the existing signed Apollo session; do not add a second terminal login or restore a made-up tenant secret/header.
+4. **Prove runtime persistence, not just staging.** The 5,748 recovery rows (16 Nebula + 5,732 StreamWeaver) are already verified in the recorded recovery/staging evidence. Do not replay or re-apply them. Separately prove which adapter the live SPMT and app services actually use, that durable writes/read-backs survive a fresh process and restart, and that backup, isolated restore, integrity, tenant ownership, and rollback work. Turso staging/preflight is not proof that every runtime store has switched to Turso.
+5. **Apply and verify donor-origin overrides.** Set the documented variables only in the appropriate protected Hostless app configuration. Confirm each exact route returns a healthy response from the intended Apollo service before removing any Fly fallback from source. The documentation merge did not configure Hostless variables or prove any route live.
+6. **Complete the remaining runtime parity.** Verify real Twitch/Discord OAuth and provider connections; Chat Gateway reconnect/dedupe/leases; StreamWeaver commands/personas/rewards and audible speech; Nebula games/Tag/Quackverse/Mosaic generation; DSH publishing/media delivery; and HearMeOut playback plus bidirectional Discord audio. Offline tests and code presence do not satisfy these checks.
+7. **Finish the supporting service ports.** Integrate and rehearse Restream Control in the Node 2 process map. Replace Companion/MountainView donor release-asset URLs with Apollo-owned signed artifacts. Migrate remaining Sprite/Fly execution-target defaults and the HearMeOut legacy-worker adapter only after replacement behavior and acceptance tests exist.
+8. **Review dependencies and performance after correctness.** Capture a fresh npm audit --json, identify the exact affected dependency paths, and remediate narrowly with compatibility tests. The previously reported two high-severity advisories are not a current audit result. Profile hot paths only after live acceptance and capture a comparable baseline.
+9. **Archive branches safely.** Preserve the eight named recovery-candidate branches in section 1. Create and verify a full-history Git bundle or equivalent external archive before deleting anything. The 52-branch inventory is not a source archive; no branch deletion is approved by this handoff.
+10. **Keep the docs synchronized.** Update docs/CURRENT_STATE.md only when new deployment, persistence, or browser evidence is verified. Do not create another parallel status document for each small issue.
+
+### Explicitly not done in this walkthrough
+
+- No Node 1 or Node 2 deploy/redeploy/restart.
+- No recovery import or replay of the 5,748 already verified rows.
+- No secret values read, copied, or changed.
+- No Hostless environment overrides configured or asserted healthy.
+- No branch deletion or full-history archive claimed.
+- No merge of PR #528 or PR #530.
+- No removal of Fly/Sprite compatibility code without a verified replacement.
+
+### PR and resume pointers
+
+- [PR #528 — owner-only diagnostic terminal](https://github.com/Mtman1987/ApolloStation/pull/528): draft; recorded CI green; owner browser acceptance pending.
+- [PR #530 — final cleanup and handoff](https://github.com/Mtman1987/ApolloStation/pull/530): draft; handoff and foundation donor-sweep documentation.
+- [Main commit — donor-origin override guide](https://github.com/Mtman1987/ApolloStation/commit/18c6dd387bdfc7b939454db9301f58204203d790): merged.
+- [Current production path](../PRODUCTION_PATH.md), [current state](../CURRENT_STATE.md), and [donor-origin overrides](DONOR_ORIGIN_OVERRIDES.md) remain the maintained operating references.
