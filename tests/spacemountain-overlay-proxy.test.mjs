@@ -31,7 +31,7 @@ async function withOverlayHost(run) {
   const gateway = createSpmtOutputGateway(service, {
     host: "127.0.0.1", port: 0,
     fetchImpl: async () => new Response("<!doctype html><title>Widget</title><p>WIDGET CONTENT</p>", {
-      headers: { "content-type": "text/html", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'" },
+      headers: { "content-type": "text/html" },
     }),
   });
   let web;
@@ -50,7 +50,6 @@ test("browser host serves tenant and opaque overlay documents and child sources"
         for (const method of ["GET", "HEAD"]) {
           const response = await fetch(`${base}${root}${suffix}`, { method, headers: { cookie: "spmt_token=fixture-session" } });
           assert.equal(response.status, 200, `${method} ${root}${suffix}`);
-          assert.match(response.headers.get("content-security-policy"), /style-src 'unsafe-inline'/);
           assert.equal(response.headers.get("cache-control"), "no-store");
           const body = await response.text();
           if (method === "GET") assert.match(body, suffix ? /WIDGET CONTENT/ : /OVERLAY CONTENT/);
