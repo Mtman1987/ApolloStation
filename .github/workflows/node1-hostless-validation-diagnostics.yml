@@ -1,0 +1,54 @@
+name: Node 1 Hostless validation diagnostics
+
+on:
+  push:
+    branches:
+      - diagnostics/node1-hostless-validation
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-rejected-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read failed deployment details (read-only)
+        env:
+          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          const token = process.env.HOSTLESS_TOKEN;
+          if (!token) throw new Error("HOSTLESS_TOKEN is unavailable to this diagnostic workflow.");
+          const url = "https://api.hostless.cloud/v1/apps/apollo-node-1/deployments/6aff43345195e28a6170e32e";
+          const response = await fetch(url, {
+            headers: { Authorization: token, Accept: "application/json" },
+            signal: AbortSignal.timeout(15000)
+          });
+          const body = await response.text();
+          let data;
+          try { data = body ? JSON.parse(body) : {}; }
+          catch { data = { unparsedResponse: body.slice(0, 1200) }; }
+          if (!response.ok) {
+            const message = data?.message ?? data?.error ?? `HTTP ${response.status}`;
+            throw new Error(`Hostless read-only deployment lookup failed: ${message}`);
+          }
+          const allowed = new Set([
+            "id", "status", "state", "stage", "phase", "currentStage",
+            "failureReason", "error", "message", "validationErrors",
+            "errors", "configErrors", "reason", "detail", "details",
+            "code", "field", "path", "limit", "failedStep", "step",
+            "outcome", "createdAt", "updatedAt", "finishedAt"
+          ]);
+          function pick(value, depth = 0) {
+            if (depth > 5 || value == null) return value;
+            if (Array.isArray(value)) return value.slice(0, 30).map(v => pick(v, depth + 1));
+            if (typeof value !== "object") return value;
+            const out = {};
+            for (const [key, child] of Object.entries(value)) {
+              if (allowed.has(key)) out[key] = pick(child, depth + 1);
+            }
+            return out;
+          }
+          console.log(JSON.stringify(pick(data), null, 2));
+          NODE
