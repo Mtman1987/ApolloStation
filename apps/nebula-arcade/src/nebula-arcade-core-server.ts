@@ -182,7 +182,7 @@ function sceneInput(body: Record<string, unknown>): { id: string; name: string; 
 }
 function requireSceneId(value: string): void { if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value)) throw new SandboxError(400, "sceneId is invalid"); }
 function applyHeaders(response: ServerResponse, nonce: string) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; frame-src 'self'; base-uri 'none'; form-action 'self'`);
+  
   response.setHeader("referrer-policy", "no-referrer"); response.setHeader("x-content-type-options", "nosniff"); response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
 }
 function requireSameOrigin(request: IncomingMessage) { const origin = request.headers.origin; const host = request.headers.host; if (!origin || !host) throw new SandboxError(403, "A same-origin browser request is required"); let parsed: URL; try { parsed = new URL(origin); } catch { throw new SandboxError(403, "Origin is invalid"); } if (parsed.host !== host) throw new SandboxError(403, "Cross-origin mutation is blocked"); }
