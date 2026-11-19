@@ -33,8 +33,8 @@ function reportBrowserDiagnostic(type: string, detail: Record<string, unknown> =
       build: document.documentElement.dataset.buildSha ?? "unknown",
       userAgent: navigator.userAgent.slice(0, 240),
       // Names only: values (including session tokens) are deliberately never read.
-      localStorageKeys: browserStorageKeyNames(window.localStorage),
-      sessionStorageKeys: browserStorageKeyNames(window.sessionStorage),
+      localStorageKeys: browserStorageKeyNames("local"),
+      sessionStorageKeys: browserStorageKeyNames("session"),
       ...Object.fromEntries(Object.entries(detail).map(([key, value]) => [key, typeof value === "string" ? scrubBrowserDiagnostic(value) : value])),
     };
     browserDiagnosticQueue.push(entry);
