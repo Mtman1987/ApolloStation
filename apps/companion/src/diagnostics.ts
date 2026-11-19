@@ -1,7 +1,15 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export interface CompanionDiagnosticsSnapshotV1 {\n  schemaVersion: 1;\n  snapshotId: string;\n  source: "apollo-companion";\n  mode: "debug" | "verbose";\n  capturedAt: string;\n  states: Record<string, unknown>;\n  logs: unknown[];\n}\n\nconst SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
+export interface CompanionDiagnosticsSnapshotV1 {
+  schemaVersion: 1;
+  snapshotId: string;
+  source: "apollo-companion";
+  mode: "debug" | "verbose";
+  capturedAt: string;
+  states: Record<string, unknown>;
+  logs: unknown[];
+}n\nconst SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
 const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 const QUERY_SECRET_PATTERN = /([?&](?:access_token|refresh_token|id_token|token|api_key|apikey|key|signature|jwt)=)[^&\s"'<>]+/gi;
 const BEARER_PATTERN = /(\bBearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi;
