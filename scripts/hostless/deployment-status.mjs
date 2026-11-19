@@ -10,7 +10,7 @@ const FAILURE = new Set([
 ]);
 
 export function normalizeHostlessDeploymentStatus(value) {
-  return String(value ?? "unknown").trim().toLowerCase().replace(/[\\s-]+/g, "_");
+  return String(value ?? "unknown").trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
 
 export function isHostlessDeploymentSuccessful(value) {
