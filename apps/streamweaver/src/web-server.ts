@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { renderAvatarStudioPage } from "./avatar-studio.js";
 import {streamWeaverTikTokBrowserJs} from "./tiktok-client.js";
 import {streamWeaverCheckinRoleBrowserJs} from "./checkin-role-client.js";
@@ -75,7 +74,6 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
   const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
   return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
     if (request.method === "GET" && ["/avatar-studio", "/apps/streamweaver/avatar-studio"].includes(url.pathname)) {
-      const nonce = randomBytes(18).toString("base64");
       response.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
