@@ -19,6 +19,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Stellar Core](../apps/stellar-core/README.md) — AI job execution, hosted provider chain, private context, research, speech and privacy.
 - [SpaceMountain](../apps/spacemountain/README.md) — shell state, workspace, app frames, OverlayBay, Simulation Rooms and universal appearance.
 - [Reference App](../apps/reference-app/README.md) — non-production example of SPMT settings, embed bridge, app widgets and job contracts.
+- [Restream Control Service](../services/restream-control/README.md) — private browser-control receiver; Node 2 integration remains pending.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
