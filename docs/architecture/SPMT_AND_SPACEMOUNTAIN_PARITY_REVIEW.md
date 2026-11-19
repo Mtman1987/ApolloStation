@@ -1,6 +1,6 @@
 # SPMT.live + SpaceMountain.live — Apollo parity review
 
-Status: source review and acceptance checklist; not a claim that either app is fully ported or production-accepted.
+Status: source review and acceptance checklist; Apollo-owned equivalents are implemented in the listed owners, while production acceptance remains gated by Node 1/2 smoke evidence.
 Donors:
 - `Mtman1987/spmt-live` — shared identity/platform backend.
 - `Mtman1987/spacemountain-live` — user-facing Command Bridge and workspace shell.
@@ -37,6 +37,8 @@ The immediate objective is to make these two foundations boring and dependable, 
 | App-specific bots, workers, media, game mechanics | StreamWeaver / HearMeOut / DSH / Nebula Arcade | Preserve app ownership; SPMT supplies identity, events, scopes and shared account contracts only. |
 
 ## SPMT.live review
+
+Apollo's canonical token-validation contract is `GET /v1/auth/token/introspect`, backed directly by `@spmt/auth-core`; the shared SDK exposes it as `SpmtClient.introspectAuthToken()`. Apollo-owned apps should use this contract rather than validating an Apollo session against `spmt.live` or maintaining a second JWT/session validator. The response is limited to active state, immutable actor identity, scopes, tenant mode/IDs, and session ID; it never returns token or refresh material.
 
 ### Existing capabilities to preserve
 
