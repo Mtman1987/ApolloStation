@@ -30,7 +30,7 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
       username: "mtman1987",
       displayName: "Apollo Owner",
       password: "owner-test-password-12345",
-      tenantIds: [],
+      tenantIds: ["stale-tenant-link"],
     });
     service.control.registerTenant({
       tenantId: "recovered-owner-tenant",
