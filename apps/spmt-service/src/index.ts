@@ -675,7 +675,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           if (!donorId || !donorUsername) return failed("spmt_identity_unavailable");
           const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
           if (!resolved.ok) return failed(resolved.status === 403 ? "workspace_not_linked" : "identity_unavailable");
-          const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
+          const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: donorSessionScopes({ username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }), tenantIds: resolved.tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           response.writeHead(302, {
             location: new URL("/", publicBaseUrl).toString(),
