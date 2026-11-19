@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createSpmtService } from "../apps/spmt-service/dist/index.js";
+import { createSpmtService } from "../dist/index.js";
 
 test("verified owner sign-in recovers an active owned tenant missing from the profile link list", async () => {
   const directory = mkdtempSync(join(tmpdir(), "apollo-owner-session-recovery-"));
