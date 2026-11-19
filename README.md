@@ -1,72 +1,106 @@
-# ApolloStation
+# SPMT Ecosystem — ApolloStation
 
-ApolloStation is the implementation monorepo for the SPMT Ecosystem Core and the SpaceMountain application platform.
+ApolloStation is the source monorepo for the SPMT Ecosystem: the shared platform, SpaceMountain shell, first-party applications, runtime services, developer interfaces, and operational tooling.
 
-## Status
+This repository is the implementation—not a donor-app collection or a collection of deployment-specific copies. Product capabilities should be implemented once behind shared contracts, composed into the applications that need them, and kept independently testable.
 
-The project is no longer a speculative rebuild blueprint. The shared platform, application contracts, product ports, test suite, Review/Release Sprite workflow, and migration tooling are implemented in this repository. Blue production remains authoritative until each production cohort passes its migration and rollback gates.
+## Start here
 
-On 2026-08-30 the architecture documentation was reset around what the system actually became. Earlier debate ledgers, proposed topologies, milestone wiring notes, and phase plans remain available in Git history and donor evidence, but they no longer govern implementation.
+| If you are… | Read |
+|---|---|
+| New to the ecosystem | [Ecosystem overview](docs/README.md) |
+| Building or changing the platform | [Architecture](docs/ARCHITECTURE.md), [application contracts](docs/APP_CONTRACTS.md), [shared surface and developer contract](docs/SURFACE_AND_DEVELOPER_CONTRACT.md) |
+| Working on a specific application | The application README under `apps/<application>/README.md` |
+| Working on a shared package | The package README under `packages/<package>/README.md` |
+| Working on deployment or runtime operations | [Production path](docs/PRODUCTION_PATH.md), [current state](docs/CURRENT_STATE.md), and the relevant runbook under `docs/` |
+| Working on development tooling | [Development tools index](docs/development/README.md) |
+| Reviewing historical donor material | [Archive manifest](docs/archive/evidence/MANIFEST.md) |
+| Reviewing quarantined legacy files | [Temporary cleanup archive](mt-delete-me-archive/README.md) |
 
-Historical evidence from the 2026-08-30 baseline (see the cleanup report for current validation):
+## Ecosystem at a glance
 
-- the complete offline acceptance battery passed 571/571 tests;
-- the main offline checklist completed 69/69 requirements;
-- the current runtime code tree was promoted to the protected Release Sprite;
-- the ecosystem-core Stage 1 rehearsal passed health, registry, identity persistence, workspace persistence, supervised restart, and recovery-to-ready checks with outbound integrations disabled;
-- no production tenant, DNS route, provider connection, or Blue authority has been moved by those tests.
+- **SPMT authority** — canonical identity, sessions, tenants, app registry and installs, scopes and grants, shared workspace/profile facts, usage/entitlements, provider credential grants, jobs/events, and audit/runtime contracts.
+- **SpaceMountain** — public product entry point, shell, workspace, app discovery/launch, shared navigation and visual integration.
+- **First-party applications** — Commlink, Companion, Discord Stream Hub, HearMeOut, Mission Control, MountainView, Nebula Arcade, Stellar Core, and StreamWeaver.
+- **Supporting services** — Chat Gateway and the isolated Restream control service.
+- **Shared packages** — versioned contracts, authority/auth, app foundation, runtime, SDK, UI, data adapters, execution, recovery, operations, CLI, and MCP.
+- **Development and operations tools** — build/test/validation, browser checks, migration and persistence audits, release checks, diagnostics, and Hostless node entrypoints.
 
-## Product model
+The repository currently uses npm workspaces across `packages/*` and `apps/*`. TypeScript project references build the shared packages and application projects in dependency order.
 
-- **SPMT** is the identity, policy, shared-data, developer, entitlement, usage, and authorization authority.
-- **SpaceMountain** is the public front door, shell, workspace, and app host.
-- **Stellar Core** is the persona-neutral AI execution system; Stella is the default SPMT Community Assistant.
-- **Chat Gateway** is the provider-neutral live-chat connection layer.
-- **Mission Control** is the owner/operator surface for runtime evidence and bounded operations.
-- **Commlink, Discord Stream Hub, StreamWeaver, HearMeOut, MountainView, Companion, Nebula Arcade, Stellar Core, and Mission Control** are registered applications rather than hardcoded exceptions.
-- First-party applications use the same catalog, launch, scope, SDK/API/event/job, AppFrame, and lifecycle contracts available to approved third-party applications. SpaceMountain ownership changes publisher trust and granted scopes, not launch plumbing.
+## Runtime and deployment model
 
-## Documentation
+Apollo's current deployment target is **Hostless Node 1 and Node 2**. Node 3 is not part of the active deployment topology; its former workload is being consolidated across the two supported nodes. Do not add a Node 3 dependency or restore a retired hosting/donor platform as part of routine development.
 
-[Documentation index](docs/README.md) · [Production cleanup](docs/production/READINESS_CLEANUP_2026-09-06.md)
+- **Node 1:** canonical SPMT authority and SpaceMountain shell/workspace responsibilities.
+- **Node 2:** Chat Gateway and the co-located StreamWeaver/Nebula provider-runtime chain.
+- **Shared persistence:** use the configured canonical remote database authority and the documented app-private storage boundaries. Do not silently substitute an unmounted local database in production.
+- **Operational boundary:** application code does not receive unrestricted infrastructure credentials. Runtime management and diagnostics must use the repository's supported, scoped interfaces.
 
-Read these documents in order:
+Exact process membership, environment names, health checks, and deployment steps belong in the maintained Hostless operations documentation—not in assumptions embedded in application code. Check the live workflow and current configuration before changing placement.
 
-1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the current architecture and the decisions that survived implementation.
-2. [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — evidence-backed implementation and rehearsal status.
-3. [docs/PRODUCTION_PATH.md](docs/PRODUCTION_PATH.md) — the practical path from the current state to Blue retirement.
-4. [docs/APP_CONTRACTS.md](docs/APP_CONTRACTS.md) — mandatory rules for first- and third-party apps, workers, data, URLs, lifecycle, and surfaces.
-5. `docs/PRODUCT_UI.md` — detailed visual/surface behavior.
-6. `docs/SPRITES_SANDBOX_HANDOFF.md` — Review/Release Sprite mechanics.
-7. `docs/MAIN_OFFLINE_TEST_CHECKLIST.md` — the offline acceptance procedure/evidence.
+## Repository layout
 
-`docs/architecture/` contains implementation notes for individual verticals. `docs/donor-audits/` and `docs/archive/evidence/raw/` are migration/history evidence, not governing architecture.
+| Path | Responsibility |
+|---|---|
+| `apps/` | User-facing applications, platform services, and application workers |
+| `packages/contracts/` | Shared versioned contracts and schemas |
+| `packages/*` | Reusable platform capabilities and adapters |
+| `services/` | Isolated supporting services with their own runtime boundary |
+| `scripts/` | Build, audit, migration, validation, release, and operator tooling |
+| `tests/` | Cross-package, application, contract, integration, and regression tests |
+| `config/` | Versioned runtime, capability, rollout, and ownership configuration |
+| `.github/workflows/` | CI, validation, deployment, diagnostics, and scheduled automation |
+| `docs/` | Maintained architecture, contracts, product guides, runbooks, and development references |
+| `mt-delete-me-archive/` | Temporary quarantine for reviewed obsolete documentation and files |
 
-## Permanent public names
+## Development quick start
 
-`spmt.live` remains the SPMT platform/core identity. `spacemountain.live` remains the public ecosystem front door. SpaceMountain-owned apps use stable owned launch names such as:
+Requirements: Node.js compatible with the repository's TypeScript/ESM toolchain, npm, and Python 3 where a specific helper script requires it. Use the Node version pinned or declared by the current project/workflow configuration; do not guess a different runtime.
 
-- `commlink.spacemountain.live`
-- `companion.spacemountain.live`
-- `discordstreamhub.spacemountain.live`
-- `hearmeout.spacemountain.live`
-- `missioncontrol.spacemountain.live`
-- `mountainview.spacemountain.live`
-- `nebula.spacemountain.live`
-- `stellar.spacemountain.live`
-- `streamweaver.spacemountain.live`
+```bash
+npm ci
+npm run build
+npm run typecheck
+npm test
+```
 
-Those names are permanent product addresses. The infrastructure behind them may move. A hostname never grants app trust by itself.
+Useful focused commands:
 
-## Governing rules
+```bash
+npm run test:offline       # build + test suite with external network blocked
+npm run validate:local    # repository-local validation entrypoint
+npm run release:audit     # validate the versioned production rollout manifest
+npm run cutover:audit     # inspect live-slice cutover prerequisites
+npm run persistence:audit # inventory tracked SQLite usage references
+npm run nebula:check      # Nebula release validation
+```
 
-1. One shared fact has one canonical authority.
-2. App-private durable state is allowed when it is genuinely product-private; it is not a competing answer to an SPMT shared fact.
-3. First-party apps dogfood the public developer platform instead of using private shortcuts.
-4. Stable owned URLs identify our products; hosting-provider URLs are implementation details.
-5. Deployment boundaries follow workload behavior, security, failure, and scaling needs rather than brand names.
-6. Blue remains available until the corresponding Green capability/app passes live proof and rollback.
-7. No two runtimes may simultaneously own writable/responding authority for the same tenant/provider/channel.
-8. Provider credentials, infrastructure credentials, and app trust are scope/identity decisions, never URL decisions.
-9. Recovery outcomes are mandatory; a particular recovery product name or hosting vendor is not.
-10. If implementation evidence disproves this architecture, change this architecture explicitly rather than preserving an obsolete plan for consistency.
+Do not treat a successful build, offline test suite, source audit, or CI workflow as proof of live provider acceptance or production deployment. Report each evidence class separately. For production changes, preserve the existing deployment, recovery, and rollback process.
+
+## Engineering standards
+
+1. **One authority per shared fact.** Apps consume shared facts through versioned SPMT contracts; app-private state remains owned by its application.
+2. **Keep boundaries explicit.** Tenant, user/delegation, caller app, scope, capability, and correlation context must be validated at service boundaries.
+3. **Prefer shared implementation.** Fix reusable platform behavior in the owning package instead of cloning it into multiple apps.
+4. **Keep runtime paths lean.** Avoid duplicate bundles, redundant dependencies, repeated initialization, unnecessary polling, unbounded caches, and synchronous heavy work on request paths.
+5. **Make background work durable and observable.** Use the established job/outbox/retry contracts where appropriate; return accepted job identifiers rather than claiming asynchronous work has completed.
+6. **Treat persistence deliberately.** Every durable store needs an owner, schema/migration policy, retention, size boundary, backup, restore, and integrity checks.
+7. **Keep secrets out of source and logs.** Use configured secret injection and redact diagnostics before persistence or publication.
+8. **Preserve application identity.** Shared shell, navigation, settings, and design tokens should be consistent without flattening each app's own product purpose and artwork.
+9. **Remove code with evidence.** Confirm imports, runtime composition, dynamic loading, scripts, tests, and workflows before deleting a module or asset.
+10. **Document what runs today.** Dated reports are evidence snapshots, not current operating instructions. Update the canonical README/runbook when behavior changes.
+
+## Documentation policy
+
+The root README is the ecosystem entry point. The docs index links to the current architecture and operating references. Each maintained app, shared package, service, and major development tool should have one focused README that explains its purpose, ownership, dependencies, entrypoints, configuration, data, commands, tests, operational behavior, and failure modes.
+
+Historical reports remain traceable but must not compete with current instructions. Reviewed obsolete material is moved—never silently discarded—to `mt-delete-me-archive/` with original paths and a manifest. Permanent deletion happens only after the owner has copied and verified the archive in the storage repository.
+
+## Status and evidence
+
+The authoritative operational status is maintained in [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) and the active deployment workflows/configuration. Older dated documents are historical evidence only. Never infer that an app is live, deployed, or fully functional from the presence of code or a passing offline test.
+
+## License and third-party notices
+
+Retain upstream license and attribution files with the assets or packages they govern. Repository cleanup must not remove required notices.
