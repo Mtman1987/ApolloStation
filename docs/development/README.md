@@ -99,6 +99,11 @@ Browser setup and app-specific browser checks live in scripts/. Companion's OBS 
 
 scripts/agents/ contains Python helpers for bootstrap, OpenAI runner inspection, chat, and tests. Optional Python tools should not be required for normal app runtime or the standard TypeScript build.
 
+## Detailed guides
+
+- [Persistence audits and migrations](persistence-and-migrations.md) — SQLite inventory, Turso transfers, recovery archive imports, dry-run/apply semantics and restore gates.
+- [Hostless runtime tooling](../../scripts/hostless/README.md) — two-node process composition and deployment script boundaries.
+
 ## Safety rules
 
 - Never print or commit secret values.
