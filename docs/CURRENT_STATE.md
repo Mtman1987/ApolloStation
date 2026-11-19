@@ -1,172 +1,148 @@
-# Current State
+# ApolloStation current state
 
-Updated: 2026-11-19
+Updated: 2026-11-19  
+Repository: Mtman1987/ApolloStation  
+Purpose: concise, evidence-labelled operating snapshot. This file supersedes older status summaries; dated handoffs in the quarantine archive are historical records only.
 
-This file records what is implemented and what has actually been proven. It does not restate the architecture or historical debate.
+## 1. Product and repository
 
-## Repository and release state
+ApolloStation is the SPMT Ecosystem implementation monorepo. It contains shared platform packages, SPMT authority/service code, the SpaceMountain shell, first-party applications, supporting workers/services, migration and operations tools, and tests.
 
-- ApolloStation is the implementation monorepo for the current Green system.
-- `main` is the active release line.
-- The runtime/source tree promoted for the first protected production rehearsal was commit `c21f42d922cf552c3aade2c9d2f059122a2907fd`, which is source-tree-identical to the tested catalog-portability implementation commit `6184f6785f0e55ddc6e832ce14c079aaea4f3782`.
-- The 2026-08-30 architecture reset that followed changes documentation only; it does not invalidate the runtime evidence below. Future code/runtime changes require new acceptance evidence rather than editing this file to chase the latest branch SHA.
-- Review and Release Sprite deployment paths remain private and checkpointed.
+The root npm workspace includes packages/* and apps/*. The source tree also contains the isolated Restream control service under services/.
 
-## Apollo sign-in (2026-11-19)
+### Product applications
 
-- Working: SPMT bridge JSON sign-in on `apollo-node-1`. Browser sessions are HMAC-signed and survive restarts and deploys.
-- Not working yet: automatic "Sign in with SPMT" (PKCE). Live spmt.live does not run the code that knows the `apollo-node-1` client, and the spmt-live Fly deploy is blocked by billing.
-- Full handoff: [APOLLO_AUTH_HANDOFF_2026-11-19](production/APOLLO_AUTH_HANDOFF_2026-11-19.md).
+- SpaceMountain — public ecosystem shell, workspace, app catalog and launch host.
+- SPMT Service — identity/session, shared authority, registry, grants and platform APIs.
+- Commlink — ecosystem communication surface over shared SPMT messaging/history and Chat Gateway.
+- Companion — local device/OBS execution and pairing surface.
+- Discord Stream Hub — Discord community, moderation, publishing and live worker workflows.
+- HearMeOut — synchronized watch/media rooms and voice/RTC workflows.
+- Mission Control — owner/operator diagnostics, logs, approvals and bounded operations; the Apollo terminal belongs in the Apollo operator surface, not a Rotator donor.
+- MountainView — companion/device-facing product surface.
+- Nebula Arcade — games, Chat Tag, Quackverse and game/overlay runtime.
+- Stellar Core — persona-neutral AI execution; Stella is the default public community assistant.
+- StreamWeaver — streaming automation, chat commands, personas, rewards and provider workflows.
+- Chat Gateway — provider-neutral live connection and message normalization service.
 
-## Offline acceptance
+See the application and package indexes in the root README and docs index. Individual READMEs are being added and verified in the repository hygiene work.
 
-The authoritative offline battery passed:
+## 2. Runtime and deployment
 
-- 571 tests passed;
-- 0 failed;
-- 0 skipped;
-- external networking was blocked by the offline guard;
-- focused identity/security, shell/UI, Chat Gateway, StreamWeaver, Nebula Arcade, Discord Stream Hub, HearMeOut, fleet/monetization, and cutover-contract groups all passed;
-- the supervised local sandbox started the complete ten-app catalog, persisted a disposable user/workspace, restarted, and returned the same identity, catalog, and durable state;
-- the completed offline checklist contains 69/69 checked requirements with no requirement removed.
+The active Hostless topology is two nodes:
 
-## Release Sprite Stage 1 rehearsal
+- **Node 1:** SPMT authority and SpaceMountain shell/workspace, with the locally composed web and supporting app surfaces configured by the release workflow.
+- **Node 2:** Chat Gateway with the co-located StreamWeaver and Nebula provider-runtime chain.
 
-The first protected production-rehearsal stage passed on the Release Sprite with providers/outbound integrations disabled.
+Node 3 is not an active deployment target. Its dedicated app-creation workflow, bootstrap script, and npm command have been removed on the cleanup branch. The Hostless release workflow still has a historical three-node filename, but its current deployment matrix contains Node 1 and Node 2. Do not rename it without updating all dispatchers, tests, path filters, and references.
 
-Proven:
+Fly.io, Sprites, and the donor Rotator are not Apollo production dependencies. Do not add new runtime requirements for them. The Rotator donor is retired; operator terminal and controls are intended to live inside Apollo.
 
-- exact deployed build identity;
-- SPMT liveness/readiness;
-- canonical ten-app registry;
-- disposable identity creation;
-- workspace mutation;
-- supervised service restart;
-- identity persistence across restart;
-- tenant persistence across restart;
-- workspace persistence across restart;
-- registry persistence across restart;
-- recovery to healthy service after restart;
-- a pre-rehearsal Sprite checkpoint.
+### Deployment evidence boundary
 
-Not attempted:
+The repository's Hostless release workflow contains validation and node deployment stages. A passing typecheck or offline test is not a deployment. A successful workflow dispatch is not a successful deployment. A Node 1 result does not certify Node 2.
 
-- production tenant migration;
-- provider traffic;
-- DNS movement;
-- Blue shutdown;
-- production data authority transfer.
+The latest working context for this cleanup reports unresolved Node 1 shell/sign-in behavior and a failed Node 2 deployment attempt. A full green two-node production release and end-to-end owner acceptance have not been established by this document. Check the latest Actions run, exact commit SHA, deployment logs, and live browser result before making a stronger claim.
 
-## Application platform
+## 3. Owner sign-in and shell
 
-The catalog registration refactor is implemented. First-party and third-party apps now preserve a complete publisher-supplied HTTPS launch URL through the same catalog contract. SpaceMountain ownership changes publisher policy/scopes, not URL plumbing.
+The current owner recovery path uses the SPMT bridge JSON flow. The anonymous session endpoint intentionally rejects unauthenticated requests; the browser must visibly present the SPMT bridge recovery gate rather than leave the user with a blank shell.
 
-Permanent first-party subdomain names have been reserved under `spacemountain.live`, but DNS targets have not been moved to Green production infrastructure yet.
+The sign-in recovery change is on PR #526, branch fix/node1-auth-gate-fallback-2026-11-19. Its typecheck, full test suite, and offline parity checks passed in the latest reported PR validation. It has not been treated as a production fix until merged, deployed, and verified in a real browser.
 
-## Shared platform implementation
+Automatic SPMT PKCE sign-in remains distinct from bridge JSON recovery. Do not weaken the sign-in gate to hide an app-frame or session propagation defect.
 
-Implemented foundations include:
+## 4. Persistence and data ownership
 
-- SPMT identity/session/service authorization;
-- provider-link authority and unlink/revocation behavior;
-- app registry/install/grant contracts;
-- workspace/theme/background/dock authority;
-- canonical XP/shared reward contracts;
-- shared jobs with leases, fencing, retries, dead letters, cancellation and metering;
-- provider credential authority and short-lived grant broker;
-- app settings and bounded app-private SQLite foundation;
-- Commlink mail/live-history contracts;
-- overlay widget registration and opaque output grants;
-- runtime/operations evidence contracts;
-- CLI and MCP adapters over the same scoped operations;
-- Account usage/plan/profile separation from app Settings;
-- Stellar Core hosted Qwen job path and Companion eligibility/fallback contract;
-- AppFrame/EmbedBridge and shared surface/layout contracts.
+- SPMT is the canonical authority for cross-app/shared facts.
+- Product apps may own bounded private durable state where it is genuinely product-specific.
+- Caches, staging, scratch, and retry/outbox records must be explicitly classified and must not silently become authorities for shared facts.
+- The configured remote Turso database is part of the current persistence direction. Do not assume a local /tmp SQLite path is durable across Hostless restarts.
+- Every authoritative dataset needs an owner, schema/migration policy, backup, integrity check, restore proof, retention policy, and a single-writer/reconciliation plan.
+- Never copy secrets into source, documentation, diagnostics, or chat.
 
-## Product status
+The owner XP import to shared Turso was verified against the export counts in the November 19 handoff. That proves the named import tables/counts only; it does not prove every app database or every product dataset has completed migration.
 
-### Chat Gateway
+## 5. Product capability status
 
-Implemented provider-neutral message, connection supervision, dedupe, cursor/reconnect, consumer delivery and SPMT provider-grant behavior. Green currently exercises it without production provider connections. Controlled concurrent live-provider proof remains.
+Code presence and offline tests do not equal live-provider acceptance. Treat the following as work areas, not blanket production certifications.
 
-### StreamWeaver
+| Product | Implemented foundation | Acceptance still required |
+|---|---|---|
+| SpaceMountain | Shell, workspace, app catalog, app frames, shared UI and integrated gateway | Owner sign-in, blank-screen recovery, real app launch/session propagation, mobile browser smoke |
+| SPMT Service | Identity/session, authority, app registry, grants, shared facts and provider authorization | Live owner acceptance, durable recovery/restore and cross-node service identity proof |
+| Chat Gateway | Provider-neutral connections, normalization, dedupe, cursor/reconnect and consumer delivery | Real provider OAuth/connections, reconnect and tenant-isolation acceptance |
+| StreamWeaver | Commands, personas, rewards, provider consumer and worker composition | Live Twitch/Discord workflows, Kokoro/TTS audibility, persistence/restart and owner acceptance |
+| Nebula Arcade | Game hub, Tag, Quackverse, game actions/widgets and provider integration foundation | Live provider/channel discovery, game/reward behavior, restart/restore and tenant acceptance |
+| Discord Stream Hub | Web surface, worker, publishing/outbox and community workflow foundation | Effective runtime configuration, guest/media lifecycle, Discord/Twitch delivery and restart/restore |
+| HearMeOut | Rooms, membership, playback/queue, media jobs and voice/RTC contracts | Real media decoding/playback, synchronized controls, late join/reconnect, Discord audio and durable restore |
+| Stellar Core | Shared persona-neutral AI execution and speech integration foundations | Hosted provider configuration, real response/TTS acceptance, usage and failure/fallback behavior |
+| Companion / MountainView | Pairing, device identity and bounded local execution contracts | Actual device/OBS installation and local hardware acceptance |
+| Mission Control | Owner-scoped operational evidence, logs and bounded controls foundation | Apollo-native terminal integration, live log retrieval and owner operation acceptance |
 
-Donor-backed commands, economy, persona settings, owner summon behavior, memory boundaries, Chat Gateway consumption and durable provider reply handling are implemented and tested offline. Live provider cohorts and donor data reconciliation remain. It is intentionally one of the last broad migrations because duplicate output has high blast radius.
+## 6. AI and speech
 
-### Nebula Arcade
+There is no local Qwen model provisioned for Apollo. Do not launch or wait for Qwen. Stella uses the existing configured hosted OpenAI integration when its credential is available. AI availability must not block the rest of Apollo.
 
-Twenty-game hub, Tag runtime, Quackverse and other retained game functionality, command collision routing, overlays, gameplay showcase/GIF contracts, banners, XP/events and provider-consumer plumbing are implemented/tested. Live provider/presence/OBS and production data reconciliation remain. It is intentionally late in rollout because it has many tenants and active output paths.
+Kokoro and other speech providers are separate from text AI. A configured voice is not accepted until audible output is verified in the actual browser/provider path. No paid voice should be silently selected.
 
-### Discord Stream Hub
+## 7. Validation commands
 
-Live monitoring, spotlight rotation, Discord publishing/outbox behavior, community/points-related paths and supervised worker composition are implemented/tested with provider traffic disabled. Live provider/config reconciliation remains.
+From repository root:
 
-### HearMeOut
+    npm ci
+    npm run build
+    npm run typecheck
+    npm test
+    npm run test:offline
 
-Room/media durable authority, membership/invitations/presence, playback/queue behavior, LiveKit grant core, media worker/job path and voice-bridge contracts are implemented/tested. Live LiveKit/Discord/provider transport and migration of actual Blue durable state remain.
+Additional audits:
 
-Current Blue donor reality discovered during preflight:
+    npm run release:audit
+    npm run cutover:audit
+    npm run persistence:audit
+    npm run nebula:check
 
-- `hearmeout-main` is a Fly app with a 3 GB `/data` volume;
-- `hmo-dj-worker` is a separate Fly app with a 10 GB `/data` volume;
-- both old configs contain `*.fly.dev` URLs;
-- those old volumes are migration sources to classify, not automatically the new architecture.
+Record the exact commit, command, exit status, and artifact/log location. Label evidence accurately:
 
-No Blue HearMeOut stop/restart/deploy mutation was performed by the aborted preflight branch.
+- build/typecheck — compile correctness;
+- unit/offline tests — deterministic local behavior;
+- structural audits — configuration and source inventory;
+- workflow success — automation completed, inspect job details;
+- deployment success — exact app/node revision deployed;
+- live acceptance — owner/browser/provider behavior verified.
 
-### MountainView and Companion
+## 8. Current stop conditions
 
-Public device identity/pairing/revoke/job contracts and bounded local execution path are implemented/tested. Real hardware/OBS/installer and production Xbox/device proof remain.
+Do not expand the production cohort while any of these remain unexplained:
 
-### Stellar Core / Stella
+- owner cannot sign in or reaches a blank shell;
+- Node 1 and Node 2 are not both deployed from the intended commit;
+- duplicate provider consumers or duplicate output;
+- tenant crossover or identity collision;
+- shared-fact data drift or competing writable authorities;
+- lost or unrecoverable durable state;
+- provider credential exposure;
+- a required live workflow is represented only by fixtures/offline tests;
+- rollback is not defined for the capability being moved;
+- runaway cost or unbounded resource use.
 
-Hosted Qwen job execution, worker readiness, usage accounting, retention/export/delete behavior and Companion fallback eligibility are implemented in Green. Provider/model placement remains policy/configuration rather than a permanent topology guarantee.
+## 9. Documentation maintenance
 
-### Mission Control / Rotator
+This is the single current status summary. Do not add another dated handoff for every small issue. Put durable architecture and developer instructions in their canonical guides; put short-lived execution evidence in the relevant PR/Actions artifacts. Archive superseded reports in mt-delete-me-archive with a manifest, and update this file only when verified state changes.
 
-Runtime policies, fleet decision contracts, operations logs, coder handoff and deterministic lifecycle logic are implemented/tested. Production infrastructure mutation remains disabled until explicitly enabled after live inventory and rehearsal.
 
-## Data model as implemented
+## 10. Residual donor and infrastructure references
 
-The old statement “one database” is not accurate enough.
+The following source references remain and are not safe to delete as if they were unused. They are active compatibility paths or release links that need a proper Apollo-owned replacement:
 
-Current rule:
+- HearMeOut still defines HEARMEOUT_DONOR_DEFAULT_ORIGIN as the old hearmeout-main Fly origin. The Lounge bridge uses it. Replace the bridge with an Apollo-owned internal HearMeOut route and explicit Hostless origin before removing the fallback.
+- Nebula Mosaic generation still defaults STREAMWEAVER_URL to the old StreamWeaver Fly origin. Replace it with the Apollo-owned StreamWeaver generation service and explicit configuration before removing the fallback.
+- SpaceMountain Web's Companion and MountainView download routes still point to historical installer/APK assets in StreamWeaver and Rotator donor releases. Move the signed artifacts and release workflow into Apollo-owned storage before changing the URLs.
+- Stellar Core and other worker paths still accept legacy sprite/fly execution-target values; some startup defaults still choose sprite. Hostless must explicitly select the supported hosted target until the shared enum/default migration is completed.
+- HearMeOut's legacy-worker adapter is still imported by the current web host for voice bridge/persona audio. It is a bounded migration dependency, not dead code. Remove it only after the bridge and persona audio worker are native to Apollo and bidirectional audio acceptance passes.
+- The Fly-specific Companion diagnostics snapshot contract and file naming were replaced with an Apollo-owned generic snapshot contract; the active diagnostics handler and redaction behavior were preserved.
 
-- SPMT owns cross-app/shared facts;
-- each app may own bounded private durable datasets;
-- caches/staging/outboxes/scratch are explicitly non-canonical;
-- workers do not become authorities merely because they have disk;
-- no app may silently fall back to a private competing store for a shared SPMT fact.
+- Restream Control Service code exists and StreamWeaver has a client contract, but the service is not currently started by the Hostless Node 2 process map. Its previous Node 3/Oracle deployment guide has been replaced; Node 2 integration and owner rehearsal remain pending.
 
-The shared SQLite/app-foundation utilities standardize correctness but do not imply one physical database file for all products.
-
-## Production information still required
-
-Before broad cutover, capture and classify current Blue/live reality for each cohort:
-
-- running compute/processes and actual health;
-- volumes and dataset contents/owners;
-- database schema/version/counts where authoritative;
-- provider connections and credential ownership;
-- public routes/callbacks/OBS links;
-- actual load/concurrency and cost;
-- rollback action and time;
-- data migration/reconciliation proof.
-
-Do not copy stale donor documentation into production decisions when live evidence is available.
-
-## Current stop conditions
-
-Do not expand a production cohort when any of these are unexplained:
-
-- tenant crossover;
-- duplicate bot/game/community output;
-- duplicate awards/actions;
-- shared-fact data drift;
-- identity collision;
-- lost/unrecoverable durable state;
-- provider credential leakage;
-- an app writing a shared fact outside SPMT authority;
-- an untested rollback for the capability being moved;
-- runaway cost or scaling;
-- a public permanent URL reverting to an infrastructure-provider identity.
+These items are recorded in the owning app READMEs and architecture/release guides. No new production dependency on Fly, Sprites, or the retired Rotator donor is approved.

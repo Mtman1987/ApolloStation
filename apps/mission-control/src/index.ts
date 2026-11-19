@@ -5,12 +5,12 @@ export const manifest = assertAppModuleManifestV1({
   manifestVersion: "spmt.app-manifest/v1",
   id: "mission-control",
   name: "Mission Control",
-  description: "Owner-scoped operational evidence, Rotator fleet controls, Coder jobs, approvals, checkpoints, and deployments.",
-  capabilities: ["operations", "rotator", "coder", "evidence", "approvals", "checkpoints", "deployments"],
+  description: "Owner-scoped operational evidence, workload controls, Coder jobs, approvals, checkpoints, and deployments.",
+  capabilities: ["operations", "runtime", "coder", "evidence", "approvals", "checkpoints", "deployments"],
   surfaces: ["shell", "standalone"],
   requiredScopes: ["operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
   eventTypes: ["operations.coder.job.created.v1", "operations.coder.job.completed.v1"],
-  integration: { identity: "connected", events: "connected", operations: "native", rotator: "declared" },
+  integration: { identity: "connected", events: "connected", operations: "native" },
   workers: [],
 } satisfies AppModuleManifestV1);
 

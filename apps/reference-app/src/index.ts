@@ -24,7 +24,7 @@ export const REFERENCE_APP_SETTINGS: AppSettingsDefinitionV1 = {
 };
 
 export function submitReferenceJob(client: SpmtClient, input: { tenantId: string; userId: string; idempotencyKey: string; correlationId: string; executionTarget?: ExecutionTargetV1; meteredResource?: MeteredResourceV1 }) {
-  const executionTarget = input.executionTarget ?? "sprite";
+  const executionTarget = input.executionTarget ?? "hosted";
   return client.createExecutionJob(input.tenantId, {
     ownerAppId: "reference-app",
     capabilityId: "reference-app.integration-conformance",

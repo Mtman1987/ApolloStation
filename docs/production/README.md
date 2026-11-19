@@ -1,30 +1,20 @@
-# ApolloStation production and parity handoffs
+# Production and release documentation
 
-## Start here
+This directory contains only maintained operational references. Dated execution reports and issue-specific handoffs are historical evidence and are preserved in the repository quarantine archive.
 
-[Apollo handoff — 2026-11-19](APOLLO_HANDOFF_2026-11-19.md): SPMT XP → Turso import status, the SSO app-launch fix (branch `shell-app-frame-fix`), and open items.
+## Current operating sources
 
-[Current Hostless continuation — 2026-11-04](APOLLO_HOSTLESS_CONTINUATION_2026-11-04.md)
+- [Current Apollo state](../CURRENT_STATE.md) — verified implementation, two-node deployment status, owner sign-in, persistence boundaries, and acceptance gaps.
+- [Production path](../PRODUCTION_PATH.md) — risk-ordered release, recovery, and cutover policy.
+- [Production rollout manifest](../../config/production-rollout.v1.json) — machine-checked rollout state.
+- [Hostless release workflow](../../.github/workflows/hostless-three-node-deploy.yml) — historical filename; current matrix is Node 1 and Node 2.
+- [Development tooling index](../development/README.md) — canonical validation, migration, and operator commands.
 
-Read the linked three-node/runtime/database plans. Main already contains the Hostless portability foundation and isolated Oracle Restream receiver. Preserve one canonical authority and Node 2's Chat Gateway/StreamWeaver/Nebula co-location. Durable external storage and measured free-account capacity remain release blockers. Fetch current `main` before resuming.
+## Maintained technical references
 
-Historical media Oracle [41713920282](https://github.com/Mtman1987/ApolloStation/actions/runs/41713920282) is now inspected: **1,468 passed / 0 failed**, all four shards COMPLETE at **ebcf466**. This is not validation of later main changes or deployment. See the [media continuation](APOLLO_MEDIA_PROXY_CONTINUATION_2026-11-03.md).
+- [Stella AI provider chain](AI_PROVIDER_CHAIN.md) — provider selection and failover behavior; verify current model/secret configuration before relying on any provider.
+- [StreamWeaver local Kokoro TTS snapshot](STREAMWEAVER_LOCAL_KOKORO_TTS_2026-11-04.md) — retained implementation evidence pending consolidation into the StreamWeaver application README.
 
-## Earlier November 3 snapshot (historical)
+## Historical records
 
-[Repo-first continuation — 2026-11-03](APOLLO_PARITY_CONTINUATION_RUNABLE_2026-11-03.md)
-
-- Private Xtream HLS authorization fix: PR #385, merged at `43df67a`.
-- Full build/typecheck and 46 targeted tests passed locally on fetched remote source.
-- Baseline Oracle report at `069c6dd`: 1,456 passed, zero failures; all four shards complete.
-- Oracle run [41710521401](https://github.com/Mtman1987/ApolloStation/actions/runs/41710521401) later recorded 1,458 passes / 3 failures from stale HLS cache assertions. PR #386 repaired those assertions; the newer report above has zero findings.
-- [Tested upload workflow repair patch](patches/parity-artifact-upload-20261103.patch) is preserved on `main`; applying the active workflow change still requires workflow-write permission.
-
-## Earlier snapshots
-
-- [November 3 follow-up](APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md): nightly three-donor provenance and historical workflow blocker.
-- [November 3 architecture handoff](APOLLO_PARITY_HANDOFF_2026-11-03.md): implementation paths and production boundaries.
-- [October 25 parity handoff](APOLLO_PARITY_HANDOFF_2026-10-25.md): earlier scope and approved package order.
-
-Older snapshots are evidence at their recorded SHAs, not current statuses.
-Apps remain offline. Fixture/CI success is not live-provider acceptance or production readiness.
+Older handoffs, provider canaries, data inventories, cutover snapshots, issue-specific test reports, branch inventories, and one-off patches have been moved to [the repository quarantine archive](../../mt-delete-me-archive/MANIFEST.md). They are not current deployment instructions.

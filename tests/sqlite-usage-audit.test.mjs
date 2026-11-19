@@ -12,7 +12,7 @@ const head = "a".repeat(40);
 test("SQLite audit separates runtime, tests, donor evidence and tooling", () => {
   for (const path of ["apps/spmt-service/src/server.ts", "packages/authority-sqlite/src/index.ts", "services/restream-control/src/server.js"]) assert.equal(classifyPath(path), "runtime");
   for (const path of ["tests/sqlite.test.mjs", "apps/demo/tests/server.cjs", "packages/example/src/example.spec.ts", "services/demo/fixtures/sql.js"]) assert.equal(classifyPath(path), "test");
-  assert.equal(classifyPath("docs/archive/evidence/raw/spmt-live/src/db.ts"), "evidence");
+  assert.equal(classifyPath("mt-delete-me-archive/legacy-docs/docs/archive/evidence/raw/spmt-live/src/db.ts"), "evidence");
   assert.equal(classifyPath("donors/demo/tests/db.js"), "evidence");
   assert.equal(classifyPath("scripts/audit-sqlite-usage.mjs"), "tooling");
 });
@@ -22,7 +22,7 @@ test("runtime-only output excludes evidence but retains transparent scope totals
     `${head}:apps/demo/src/db.ts:7:import { DatabaseSync } from 'node:sqlite';`,
     `${head}:apps/demo/src/db.ts:8:const path = env.DATABASE_PATH;`,
     `${head}:tests/demo.test.mjs:9:DatabaseSync`,
-    `${head}:docs/archive/evidence/raw/demo/db.js:4:DatabaseSync`,
+    `${head}:mt-delete-me-archive/legacy-docs/docs/archive/evidence/raw/demo/db.js:4:DatabaseSync`,
     `${head}:scripts/example.mjs:2:DATABASE_PATH`,
   ].join("\n");
   const all = buildReport(head, output);
