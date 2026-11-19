@@ -65,8 +65,8 @@ jobs:
               git('push', '--atomic', ...leases, 'origin', ...deletions);
             }
           }
-          const remaining = git('ls-remote', '--heads', 'origin').split('\\n').filter(Boolean).map(line => line.split(/\\s+/)[1]);
-          const summary = `Cleanup complete. Eligible: ${pending.length}. Dry run: ${dryRun}. Remaining heads: ${remaining.join(', ')}.\\n`;
+          const remaining = git('ls-remote', '--heads', 'origin').split('\n').filter(Boolean).map(line => line.split(/\s+/)[1]);
+          const summary = `Cleanup complete. Eligible: ${pending.length}. Dry run: ${dryRun}. Remaining heads: ${remaining.join(', ')}.\n`;
           console.log(summary);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
           if (!dryRun && remaining.some(ref => reviewed.has(ref))) throw new Error('A reviewed branch still exists');
