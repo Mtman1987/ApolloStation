@@ -95,7 +95,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
-    applySecurityHeaders(response, nonce, isShellAppFrameRequest(request.url));
+    applySecurityHeaders(response, nonce);
     let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
@@ -118,9 +118,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.setHeader("cross-origin-resource-policy","cross-origin"); response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && (url.pathname === "/simulation-rooms/arcade" || url.pathname === "/assets/nebula-arcade/widget-stage.js" || url.pathname.startsWith("/assets/nebula-arcade/widgets/"))) {
         if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
-        response.removeHeader("x-frame-options");
+
         const widget=url.pathname.startsWith("/assets/");
-        response.setHeader("content-security-policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'"+(widget?"; sandbox allow-scripts":""));
+        response.setHeader("content-security-policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; base-uri 'none'"+(widget?"; sandbox allow-scripts":""));
         if(!widget)return html(response,200,renderNebulaArcadeStage(true));
         const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||"";
         return [...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id)?html(response,200,renderNebulaGameWidget(id)):textResponse(response,404,"Not found","text/plain","no-store");
@@ -129,8 +129,8 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         if (url.pathname === "/simulation-rooms/tag/client.js") return textResponse(response, 200, NEBULA_TAG_OVERLAY_CLIENT_JS, "text/javascript; charset=utf-8", "no-store");
         if (url.pathname === "/simulation-rooms/tag/styles.css") return textResponse(response, 200, NEBULA_TAG_OVERLAY_CSS, "text/css; charset=utf-8", "no-store");
         if (url.pathname === "/simulation-rooms/tag") {
-          response.removeHeader("x-frame-options");
-          response.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'");
+
+          response.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'");
           return html(response, 200, renderNebulaTagOverlayHtml(true).replaceAll("/v1/nebula-arcade/tag/overlay", "/simulation-rooms/tag"));
         }
       }
@@ -139,26 +139,26 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
-        response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src 'self' https: data:; media-src 'self' https:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
+
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src 'self' https: data:; media-src 'self' https:; base-uri 'none'; form-action 'self'; object-src 'none'`);
         return html(response, 200, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><title>Simulation Rooms</title><style>html,body{margin:0;height:100%;background:#080d18;color:#eff4ff;font:14px system-ui}#simulation-rooms-root{box-sizing:border-box;height:100%;overflow:auto;padding:12px}</style><script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/spacemountain/simulation-rooms":"/assets/spacemountain/simulation-rooms-ui.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js"}}</script><script type="module" src="/assets/web/simulation-rooms-client.js" nonce="${nonce}"></script></head><body><main id="simulation-rooms-root">Opening Simulation Rooms…</main></body></html>`);
       }
       if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
         const surface = url.searchParams.get("surface") === "shell" ? "shell" : "standalone";
         const page = renderBoundedAppPage(url.pathname, buildSha, nonce, surface);
         if (!page) return textResponse(response, 404, "Not found", "text/plain; charset=utf-8", "no-store");
-        response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
+
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; base-uri 'none'; object-src 'none'`);
         return html(response, 200, page);
       }
       if (request.method === "GET" && url.pathname === "/avatar-studio") {
-        response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://three.ws https://storage.googleapis.com ws: wss: blob:; worker-src 'self' blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
+
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://three.ws https://storage.googleapis.com ws: wss: blob:; worker-src 'self' blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; base-uri 'none'; object-src 'none'`);
         return html(response, 200, renderAvatarStudioPage(nonce));
       }
       if (request.method === "GET" && url.pathname === "/workspace/overlay") {
-        response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'`);
+
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; base-uri 'none'`);
         return html(response, 200, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Personal overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent;color-scheme:only light}iframe{width:100%;height:100%;border:0;pointer-events:none;background:transparent;color-scheme:only light}iframe[hidden]{display:none}</style></head><body><iframe data-overlay-frame title="Personal overlay" hidden></iframe><script type="module" nonce="${nonce}" src="/assets/web/personal-overlay-client.js"></script></body></html>`);
       }
       if (request.method === "GET" && url.pathname === "/apps/commlink") {
@@ -167,7 +167,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/auth/callback") return textResponse(response, 410, "This SPMT OAuth callback has been retired. Sign in through the existing Apollo account flow.", "text/plain; charset=utf-8", "no-store");
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
         if (url.searchParams.get("surface") === "workspace-service") {
-          response.removeHeader("x-frame-options");
+
           response.setHeader("content-security-policy", String(response.getHeader("content-security-policy")).replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
         }
         return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
@@ -467,9 +467,9 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   };
   if(media){for(const name of ["content-range","accept-ranges","content-disposition","x-content-type-options","cross-origin-resource-policy","access-control-allow-origin","access-control-expose-headers"]){const value=upstream.headers.get(name);if(value)responseHeaders[name]=value;}if(method==="HEAD")responseHeaders["content-length"]=upstream.headers.get("content-length")??"0";}
   if (overlay) {
-    response.removeHeader("x-frame-options");
-    responseHeaders["content-security-policy"] = upstream.headers.get("content-security-policy") ?? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'";
-    for (const name of ["x-frame-options", "referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
+
+    responseHeaders["content-security-policy"] = upstream.headers.get("content-security-policy") ?? "default-src 'none'; style-src 'unsafe-inline'";
+    for (const name of ["referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders[name] = value;
     }
@@ -490,8 +490,8 @@ function overlayOutputPath(pathname: string) {
 }
 
 function transparentOverlayResponse(response: ServerResponse, status: number) {
-  response.removeHeader("x-frame-options");
-  response.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'");
+
+  response.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'");
   return html(response, status, '<!doctype html><meta charset="utf-8"><title>Overlay unavailable</title><style>html,body{margin:0;background:transparent}</style>');
 }
 
@@ -504,7 +504,7 @@ async function proxyNebulaArcade(response: ServerResponse, request: IncomingMess
   const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request);
   const upstream = await fetchImpl(`${origin}${pathname}${url.search}`, { method, headers, ...(body ? { body } : {}), redirect: "manual", signal: AbortSignal.timeout(10000) });
   const encoded = await limitedResponseBody(upstream);
-  response.removeHeader("x-frame-options");
+
   response.removeHeader("content-security-policy");
   const upstreamBuild = upstream.headers.get("x-spmt-build-sha");
   if (upstreamBuild && /^[a-f0-9]{40}$/.test(upstreamBuild)) response.setHeader("x-spmt-build-sha", upstreamBuild);
@@ -512,7 +512,7 @@ async function proxyNebulaArcade(response: ServerResponse, request: IncomingMess
     "content-type": upstream.headers.get("content-type") ?? "application/octet-stream",
     "content-length": encoded.byteLength,
     "cache-control": upstream.headers.get("cache-control") ?? "no-store",
-    "content-security-policy": upstream.headers.get("content-security-policy") ?? "default-src 'none'; frame-ancestors 'self'",
+    "content-security-policy": upstream.headers.get("content-security-policy") ?? "default-src 'none'",
     "x-content-type-options": "nosniff",
   });
   response.end(encoded);
@@ -554,25 +554,15 @@ function browserProxyAllowed(method: string, pathname: string) {
 // Shipyard launches apps into the shell's own iframe as `<launchUrl>?surface=shell`.
 // When an app's launchUrl is the shell root, that response must be frameable by this
 // same origin, or the iframe is blocked and shows a broken image.
-function isShellAppFrameRequest(rawUrl: string | undefined) {
-  try {
-    const url = new URL(rawUrl ?? "/", "http://spacemountain.local");
-    return (url.pathname === "/" || SHELL_APP_PATHS.has(url.pathname)) && url.searchParams.get("surface") === "shell";
-  } catch {
-    return false;
-  }
-}
-
-function applySecurityHeaders(response: ServerResponse, nonce: string, shellFrame = false) {
-  const frameAncestors = shellFrame ? "'self'" : "'none'";
+function applySecurityHeaders(response: ServerResponse, nonce: string) {
   // The SpaceMountain shell embeds first-party apps hosted on Node 2.
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self' https://apollo-node-2.hostless.app; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${frameAncestors}; object-src 'none'`);
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self' https://apollo-node-2.hostless.app; font-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
   response.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("x-content-type-options", "nosniff");
-  response.setHeader("x-frame-options", shellFrame ? "SAMEORIGIN" : "DENY");
+
 }
 
 function requireSameOrigin(request: IncomingMessage) {
