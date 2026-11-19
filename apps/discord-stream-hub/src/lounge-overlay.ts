@@ -39,7 +39,7 @@ export class DshLoungeOverlayWeb {
   private overlay(response: ServerResponse, url: URL) {
     let tenantId: string; try { tenantId = tenant(url); } catch (error) { response.writeHead(400, { "content-type": "text/plain; charset=utf-8" }); response.end(safe(error)); return; }
     const endpoint = `/apps/discord-stream-hub/api/lounge/state?tenant=${encodeURIComponent(tenantId)}`;
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors *" });
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'" });
     response.end(renderOverlay(endpoint));
   }
 
@@ -71,7 +71,7 @@ export class AsyncDshLoungeOverlayWeb {
   private overlay(response:ServerResponse,url:URL){
     let tenantId:string;try{tenantId=tenant(url);}catch(error){response.writeHead(400,{"content-type":"text/plain; charset=utf-8"});response.end(safe(error));return;}
     const endpoint=`/apps/discord-stream-hub/api/lounge/state?tenant=${encodeURIComponent(tenantId)}`;
-    response.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-security-policy":"default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors *"});
+    response.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-security-policy":"default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'"});
     response.end(renderOverlay(endpoint));
   }
   private async state(response:ServerResponse,url:URL){
