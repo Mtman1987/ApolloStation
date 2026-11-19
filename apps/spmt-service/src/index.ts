@@ -211,6 +211,15 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const OWNER_SPMT_USERNAME = "mtman1987";
   const OWNER_DISCORD_ID = "767875979561009173";
   const OWNER_TWITCH_ID = "94371378";
+  // Only the canonical SPMT owner receives the existing owner diagnostics scopes.
+  // This reuses the signed Apollo session; it creates no second credential or login.
+  const OWNER_DIAGNOSTIC_SCOPES = ["operations:logs:read", "overlay:outputs:write"] as const;
+  const donorSessionScopes = (donor: { username: string; discordId?: unknown; twitchId?: unknown }) => {
+    const isSystemOwner = donor.username.trim().toLowerCase() === OWNER_SPMT_USERNAME
+      || donor.discordId === OWNER_DISCORD_ID
+      || donor.twitchId === OWNER_TWITCH_ID;
+    return isSystemOwner ? [...USER_SCOPES, ...OWNER_DIAGNOSTIC_SCOPES] : USER_SCOPES;
+  };
   const resolveDonorWorkspace = (donor: { id: string; username: string; discordId?: unknown; twitchId?: unknown }): DonorWorkspace => {
     const donorUsername = donor.username.trim().toLowerCase();
     const donorDiscordId = typeof donor.discordId === "string" ? donor.discordId.trim() : "";
@@ -270,7 +279,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     if (!donorId || !donorUsername) return undefined;
     const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
     if (!resolved.ok) return undefined;
-    const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
+    const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: donorSessionScopes({ username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }), tenantIds: resolved.tenantIds });
     return auth.issueBrowserSession(issued.accessToken).accessToken;
   };
 
@@ -599,7 +608,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
           if (!resolved.ok) return json(response, resolved.status, resolved.body);
           const { profile, tenantIds } = resolved;
-          const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
+          const issued = auth.issueHumanSession({ userId: profile.userId, scopes: donorSessionScopes({ username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }), tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           return json(response, 200, {
             authenticated: true,
@@ -666,7 +675,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           if (!donorId || !donorUsername) return failed("spmt_identity_unavailable");
           const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
           if (!resolved.ok) return failed(resolved.status === 403 ? "workspace_not_linked" : "identity_unavailable");
-          const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
+          const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: donorSessionScopes({ username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }), tenantIds: resolved.tenantIds });
           const browser = auth.issueBrowserSession(issued.accessToken);
           response.writeHead(302, {
             location: new URL("/", publicBaseUrl).toString(),
@@ -729,7 +738,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             });
             if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
 
-            const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
+            const issued = auth.issueHumanSession({ userId: profile.userId, scopes: donorSessionScopes({ username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }), tenantIds });
             const browser = auth.issueBrowserSession(issued.accessToken);
             return json(response, 200, { profile, tenantIds }, { "set-cookie": browserSessionCookie(browser.accessToken) });
           } catch {

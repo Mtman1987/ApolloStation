@@ -29,6 +29,7 @@ export class OverlayBayParityController {
   private dragging = false;
   private saveMessage = "All changes saved";
   private output: "public" | "personal" = "public";
+  private terminalOutput = new Map<string, string>();
 
   constructor(private readonly root: HTMLElement, snapshot: SpaceMountainShellSnapshotV1) {
     this.snapshot = snapshot;
@@ -84,7 +85,7 @@ export class OverlayBayParityController {
   }
 
   private editor(scene: OverlaySceneV1, owner: boolean) {
-    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget").map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
+    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget" && (kind !== "terminal" || (owner && hasScope(this.snapshot.session, "operations:logs:read") && isTenantOwner(this.snapshot.session, this.snapshot.tenantId)))).map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
     const widgetGroups = new Map<string, string[]>();
     const available=[...(this.snapshot.overlayWidgets??[]),...this.discoveredWidgets],seenWidgets=new Set<string>();
     for (const item of available) {
@@ -114,6 +115,7 @@ export class OverlayBayParityController {
     if (["text","alert","ticker","links","weather"].includes(source.kind)) return `<strong>${esc(String(config.text ?? source.name))}</strong>`;
     if (source.kind === "nebula") { const ids = strings(config.gameIds); return `<strong>${ids.length} game${ids.length === 1 ? "" : "s"}</strong><span>${esc(String(config.mode ?? "simultaneous"))}</span>`; }
     if (source.kind === "widget") return `<strong>${esc(String(config.widgetId ?? "App widget"))}</strong>`;
+    if (source.kind === "terminal") return `<pre class="ob-terminal-preview">${esc(this.terminalOutput.get(source.id) ?? "APOLLO DIAGNOSTICS\\nOwner-only · read-only · awaiting refresh")}</pre>`;
     return `<strong>${esc(source.name)}</strong>`;
   }
 
@@ -131,6 +133,7 @@ export class OverlayBayParityController {
     if (["text","alert","ticker","links","weather"].includes(source.kind)) return `<label>Content<textarea data-ob-config="text" rows="4">${esc(String(config.text ?? ""))}</textarea></label>${source.kind === "alert" ? `<button type="button" data-ob-test-alert>Test alert</button>` : ""}`;
     if (source.kind === "nebula") return this.nebulaEditor(source);
     if (source.kind === "widget") return `<p>Renderer: ${esc(String(config.appId ?? ""))} / ${esc(String(config.widgetId ?? ""))}</p>`;
+    if (source.kind === "terminal") return `<p>Owner-only, read-only diagnostics using the existing Apollo session. No shell commands or app runtime dependency.</p><button type="button" data-ob-terminal-refresh="${esc(source.id)}">Refresh diagnostics</button><p data-ob-terminal-state role="status">${this.terminalOutput.has(source.id) ? "Diagnostics loaded." : "Refresh to load service health and recent operational logs."}</p>`;
     return `<p>This source is capability-backed. Capture or bridge permission is granted at runtime; Overlay Bay owns its position, visibility, interaction, opacity, parallax, and layering.</p>`;
   }
 
@@ -183,6 +186,41 @@ export class OverlayBayParityController {
     bay.querySelector<HTMLElement>("[data-ob-copy]")?.addEventListener("click", () => this.copySource(bay));
     bay.querySelector<HTMLElement>("[data-ob-remove]")?.addEventListener("click", () => this.removeSource(bay));
     bay.querySelector<HTMLElement>("[data-ob-test-alert]")?.addEventListener("click", () => void this.testAlert(bay).catch(showError));
+    bay.querySelectorAll<HTMLElement>("[data-ob-terminal-refresh]").forEach(node => node.addEventListener("click", () => void this.refreshTerminal(node.dataset.obTerminalRefresh ?? "", bay)));
+  }
+
+  private async refreshTerminal(sourceId: string, bay: HTMLElement) {
+    const source = this.activeScene()?.sources.find(item => item.id === sourceId && item.kind === "terminal");
+    if (!source || !hasScope(this.snapshot.session, "overlay:outputs:write") || !hasScope(this.snapshot.session, "operations:logs:read") || !isTenantOwner(this.snapshot.session, this.snapshot.tenantId)) return;
+    const state = bay.querySelector<HTMLElement>("[data-ob-terminal-state]");
+    if (state) state.textContent = "Reading Apollo service health and operational logs…";
+    try {
+      const [healthResponse, logsResponse] = await Promise.all([
+        fetch("/health/ready", { credentials: "same-origin", cache: "no-store" }),
+        fetch("/v1/operations/logs/owner?limit=30", { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } }),
+      ]);
+      const health = await safeJson(healthResponse);
+      const logs = await safeJson(logsResponse);
+      if (!healthResponse.ok) throw new Error(`Service health unavailable (${healthResponse.status}).`);
+      if (!logsResponse.ok) throw new Error(`Operational logs unavailable (${logsResponse.status}).`);
+      const healthRecord = record(health);
+      const entries = Array.isArray(logs) ? logs.slice(0, 30) : [];
+      const lines = [
+        `APOLLO DIAGNOSTICS  ${new Date().toLocaleString()}`,
+        `Health: ${String(healthRecord?.ready === true ? "READY" : healthRecord?.state ?? "UNKNOWN")}`,
+        `Build: ${String(record(healthRecord?.web)?.buildSha ?? record(healthRecord?.spmt)?.buildSha ?? "not reported")}`,
+        `Recent operational logs: ${entries.length}`,
+        "─".repeat(54),
+        ...entries.map((raw) => { const item = record(raw); return `${String(item?.occurredAt ?? item?.recordedAt ?? "")} [${String(item?.level ?? "info").toUpperCase()}] ${String(item?.sourceAppId ?? "system")} · ${String(item?.kind ?? "event")}`; }),
+      ];
+      this.terminalOutput.set(sourceId, lines.join("\n"));
+      if (state) state.textContent = `Updated ${new Date().toLocaleTimeString()} · ${entries.length} log entries`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Diagnostics could not be loaded.";
+      this.terminalOutput.set(sourceId, `APOLLO DIAGNOSTICS\nUnavailable: ${message}\n\nYour apps are unaffected.`);
+      if (state) state.textContent = message;
+    }
+    this.render(bay);
   }
 
   private async discoverWidgets(bay:HTMLElement){
@@ -308,6 +346,7 @@ export class OverlayBayParityController {
 function gridLayers(gameIds: string[], styles: Record<string, unknown>) { const columns = Math.ceil(Math.sqrt(gameIds.length)); const rows = Math.ceil(gameIds.length / columns); const width = 100 / columns; const height = 100 / rows; return gameIds.map((gameId, index) => ({ gameId, enabled: true, zIndex: index, x: (index % columns) * width, y: Math.floor(index / columns) * height, width, height, opacity: 1, style: ["compact","minimal"].includes(String(styles[gameId])) ? String(styles[gameId]) : "full" })); }
 function numberField(key: string, label: string, value: number, min: number, max: number) { return `<label>${label}<input data-ob-field="${key}" type="number" min="${min}" max="${max}" step=".5" value="${value}"></label>`; }
 function hasScope(value: unknown, scope: string) { const scopes = record(value)?.scopes; return Array.isArray(scopes) && scopes.includes(scope); }
+function isTenantOwner(value: unknown, tenantId: string) { const roles = record(value)?.tenantRoles; return Boolean(tenantId && record(roles)?.[tenantId] === "owner"); }
 function record(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
 function numeric(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
