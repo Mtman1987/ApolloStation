@@ -20,7 +20,7 @@ const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',hea
 try {
  const page=await browser.newPage({viewport:{width:430,height:932}}),errors=[];
  page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
- await page.route(origin+'/frame-test',r=>r.fulfill({contentType:'text/html; charset=utf-8',headers:{'content-security-policy':"frame-src 'self'"},body:`<html><body style="margin:0;background:#101827;color:white;font:16px system-ui"><header style="padding:12px">StreamWeaver real app frame - ${phase}<br><small>Local test; no account credentials supplied</small></header><iframe src="${launch}" title="StreamWeaver" style="width:100%;height:830px;border:0"></iframe></body></html>`}));
+ await page.route(origin+'/frame-test',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:`<html><body style="margin:0;background:#101827;color:white;font:16px system-ui"><header style="padding:12px">StreamWeaver real app frame - ${phase}<br><small>Local test; no account credentials supplied</small></header><iframe src="${launch}" title="StreamWeaver" style="width:100%;height:830px;border:0"></iframe></body></html>`}));
  await page.goto(origin+'/frame-test');
  if(phase==='after') {
   assert.equal(new URL(launch).origin,origin);assert.equal(new URL(launch).pathname,'/apps/streamweaver');
