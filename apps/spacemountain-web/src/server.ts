@@ -136,6 +136,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms/streamweaver") {
 
+        response.setHeader("content-security-policy", STREAMWEAVER_WIDGET_CSP.replace(/;\\s*frame-ancestors\\s+[^;]+/i, ""));
         return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
