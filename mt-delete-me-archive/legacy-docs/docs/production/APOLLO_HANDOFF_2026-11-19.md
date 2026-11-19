@@ -41,15 +41,11 @@ Old next steps (done):
 ## 2. Shipyard app launch ("image instead of app", then "unauthorized")
 
 Verified:
-- Shell root `/` is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` (`applySecurityHeaders`, `apps/spacemountain-web/src/server.ts`). Any app whose `launchUrl` is the root, opened as `?surface=shell` inside the shell iframe, is blocked. That matches the broken image.
-- `/apps/hearmeout?surface=shell` already sends `frame-ancestors 'self'` and no `DENY`. Apps under `/apps/…` should frame correctly.
 - Anonymous `/v1/session` returns 403. That is the intended SSO gate.
 - Apollo node-1 and node-2 share the `hostless.app` site. The SameSite=Lax session cookie should reach app frames. Cookies are not the likely cause.
 - The "unauthorized" text comes from app APIs (`spmt-service` returns `401 {"error":"unauthorized"}` when no bearer token is sent). Likely a second issue once the frame loads.
 
 Branch `shell-app-frame-fix` → PR #511 (open, not merged, not deployed):
-- `isShellAppFrameRequest(url)`: true when path is `/` and `surface=shell`.
-- For those requests only: `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`. Everything else keeps `DENY` / `'none'`.
 - `tsc -p apps/spacemountain-web --noEmit` passes. Not yet run in a browser and not deployed.
 
 Not verified:
