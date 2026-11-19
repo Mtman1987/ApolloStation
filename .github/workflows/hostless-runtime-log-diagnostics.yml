@@ -195,8 +195,14 @@ jobs:
             for p, repl in patterns: s = re.sub(p, repl, s)
             return s
           out = ['## '+node+' diagnostics — run '+run_id, '']
+          budget = 48000
           for f in files:
-            if f.exists(): out += ['### '+f.name, '```text', redact(f.read_text(errors='replace')[:12000]), '```', '']
+            if not f.exists() or budget <= 0: continue
+            content = redact(f.read_text(errors='replace'))
+            excerpt = content[:min(6000, budget)]
+            out += ['### '+f.name, '```text', excerpt, '```', '']
+            budget -= len(excerpt)
+          out += ['[Issue comment excerpts are bounded; the complete sanitized collection is in the workflow artifact.]']
           pathlib.Path('agent-summary.md').write_text('\n'.join(out))
           PY
           gh issue comment 517 --repo "$REPOSITORY" --body-file agent-summary.md
