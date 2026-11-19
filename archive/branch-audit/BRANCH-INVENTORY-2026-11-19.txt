@@ -1,60 +1,88 @@
-APOLLOSTATION BRANCH INVENTORY
-Captured: 2026-11-19
-Repository: https://github.com/Mtman1987/ApolloStation
-Default branch: main
+ApolloStation branch inventory — refreshed 2026-11-19 14:42 UTC
+Repository: Mtman1987/ApolloStation
+Source: GitHub branches API (52 results; complete response)
 
-IMPORTANT
-This is an inventory, not a source-code backup. Branch names alone do not preserve branch contents. Do not delete a branch on the assumption that this file contains its code. Before deletion, create a Git bundle, patch series, or immutable Git ref/tag for the branch head.
+Total branches: 52
+No branches were deleted during this cleanup.
 
-BRANCHES
-audit/foundation-donor-final-sweep
-chore/repo-hygiene-docs-audit-2026-11-19
-ci/hmo-media-browser-in-shard4
-ci/hostless-gated-three-node-deploy
-ci/run-full-validation-before-merge
-debug/lounge-direct-test-request
-diagnostics/apollo-launch-20260912
-diagnostics/hmo-cutover-install-20260912
-diagnostics/hmo-cutover-runtime-20260912
-docs/hmo-handoff
-feat/apollo-mtfixit-end-to-end
-feat/dsh-discord-chat-xp-awards
-feat/dsh-mtfixit-intake-turso-followup
-feat/dsh-mtfixit-intake-turso-store
-feat/dsh-owner-xp-adjustments
-feat/hmo-xtream-watch-catalog
-feat/nebula-game-runtime-turso-store
-feat/nebula-quackverse-trading-core
-feat/oracle-core-runtime-image
-feat/owner-diagnostic-terminal
-feat/recovered-json-manifest-verification
-feat/stellar-kokoro-self-hosted-tts
-feat/streamweaver-stella-lounge-host-20261103
-feature/manual-spmt-token-handoff
-feature/turso-live-runtime-smoke
-fix/avatar-head-fit-and-face-validation
-fix/hearmeout-radio-family-parity-20261025
-fix/hmo-bridge-directory-persona-transport
-fix/hmo-discord-bridge-picker
-fix/hmo-live-room-parity
-fix/hmo-youtube-startup-fastpath
-fix/hostless-deploy-api-polling
-fix/hostless-three-node-readiness
-fix/keentools-discord-cdn-reconstruction
-fix/nebula-bang-spmt-prefix
-fix/nebula-canonical-identity-20261025
-fix/nebula-owner-twitch-autowire
-fix/node1-discord-dm-reset-token
-fix/node3-explicit-free-20261105
-fix/oracle-media-tool-install-timeouts
-fix/overlay-bay-home-navigation
-fix/supervisor-sigterm-clean-exit
-hostless-node3-bootstrap
-migration/nebula-network-caller-inventory
-node3-bootstrap-free
-parity/dsh-raid-train-slots
-port/streamweaver-restream-golive-parity
-spmt/hostless-control-plane-foundation
-test/hmo-youtube-single-av-proof
+Current branches:
+- audit/foundation-donor-final-sweep
+- chore/repo-hygiene-docs-audit-2026-11-19
+- ci/hmo-media-browser-in-shard4
+- ci/hostless-gated-three-node-deploy
+- ci/run-full-validation-before-merge
+- debug/lounge-direct-test-request
+- diagnostics/apollo-launch-20260912
+- diagnostics/hmo-cutover-install-20260912
+- diagnostics/hmo-cutover-runtime-20260912
+- docs/apollo-final-handoff-2026-11-19
+- docs/apollo-final-handoff-current-main-2026-11-19
+- docs/hmo-handoff
+- feat/apollo-mtfixit-end-to-end
+- feat/dsh-discord-chat-xp-awards
+- feat/dsh-mtfixit-intake-turso-followup
+- feat/dsh-mtfixit-intake-turso-store
+- feat/dsh-owner-xp-adjustments
+- feat/hmo-xtream-watch-catalog
+- feat/nebula-game-runtime-turso-store
+- feat/nebula-quackverse-trading-core
+- feat/oracle-core-runtime-image
+- feat/owner-diagnostic-terminal
+- feat/recovered-json-manifest-verification
+- feat/stellar-kokoro-self-hosted-tts
+- feat/streamweaver-stella-lounge-host-20261103
+- feature/manual-spmt-token-handoff
+- feature/turso-live-runtime-smoke
+- fix/avatar-head-fit-and-face-validation
+- fix/hearmeout-radio-family-parity-20261025
+- fix/hmo-bridge-directory-persona-transport
+- fix/hmo-discord-bridge-picker
+- fix/hmo-live-room-parity
+- fix/hmo-youtube-startup-fastpath
+- fix/hostless-deploy-api-polling
+- fix/hostless-three-node-readiness
+- fix/keentools-discord-cdn-reconstruction
+- fix/nebula-bang-spmt-prefix
+- fix/nebula-canonical-identity-20261025
+- fix/nebula-owner-twitch-autowire
+- fix/node1-discord-dm-reset-token
+- fix/node3-explicit-free-20261105
+- fix/oracle-media-tool-install-timeouts
+- fix/overlay-bay-home-navigation
+- fix/supervisor-sigterm-clean-exit
+- hostless-node3-bootstrap
+- main
+- migration/nebula-network-caller-inventory
+- node3-bootstrap-free
+- parity/dsh-raid-train-slots
+- port/streamweaver-restream-golive-parity
+- spmt/hostless-control-plane-foundation
+- test/hmo-youtube-single-av-proof
 
-TOTAL: 48 branches including main.
+Branches retained for open PRs:
+- chore/repo-hygiene-docs-audit-2026-11-19 — PR #527, validation pending
+- feat/owner-diagnostic-terminal — PR #528, draft
+- docs/apollo-final-handoff-current-main-2026-11-19 — PR #530, draft
+
+Closed/superseded PR branches intentionally left untouched pending full-history archive:
+- spmt/hostless-control-plane-foundation — PR #518 closed in favor of #525
+- audit/foundation-donor-final-sweep — PR #520 superseded by #530
+- docs/apollo-final-handoff-2026-11-19 — PR #529 superseded by #530
+
+Eight recovery candidates explicitly preserved (no deletion without individual review):
+- feat/nebula-game-runtime-turso-store
+- feature/turso-live-runtime-smoke
+- feat/stellar-kokoro-self-hosted-tts
+- feat/hmo-xtream-watch-catalog
+- feat/dsh-mtfixit-intake-turso-followup
+- port/streamweaver-restream-golive-parity
+- feat/recovered-json-manifest-verification
+- feat/oracle-core-runtime-image
+
+Archive/deletion status:
+- Git bundle or equivalent full-history archive: NOT CREATED/VERIFIED.
+- Branch deletion: NOT PERFORMED.
+- .github/workflows/cleanup-merged-branches.yml is now workflow_dispatch-only and dry-run by default.
+- Earlier automatic cleanup run reported Deleted: 0.
+- Do not treat this text inventory as a source-code archive.
+- Rotator CLI/GitHub branch-delete and workflow-dispatch actions were not connected in the current ChatGPT session; use an authorized connected Rotator/GitHub CLI path to complete archival and deletion.
