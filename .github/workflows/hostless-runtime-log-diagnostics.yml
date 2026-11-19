@@ -211,7 +211,8 @@ jobs:
 
       - name: Redact every diagnostic artifact before upload
         if: always()
-        run: node scripts/sanitize-diagnostics.mjs hostless-diagnostics
+        run: |
+          if [ -d hostless-diagnostics ]; then node scripts/sanitize-diagnostics.mjs hostless-diagnostics; else echo "No diagnostic directory to upload."; fi
 
       - name: Upload diagnostic logs
         if: always()
