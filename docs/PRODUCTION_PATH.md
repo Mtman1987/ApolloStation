@@ -1,267 +1,192 @@
-# Production Path
+# Apollo production and release path
 
-Updated: 2026-09-12
+Updated: 2026-11-19  
+Purpose: define the safe path from the current Apollo source tree to a verified Hostless two-node release. This is a release policy, not a claim that production is already accepted.
 
-This is the current migration and rollout plan. It replaces the original phase-number-heavy operations plan. The goal is to move from a fully tested Green codebase to production without either freezing ourselves behind obsolete assumptions or skipping safety evidence that still matters.
+## 1. Non-negotiable principles
 
-## Principles
+1. ApolloStation is the source of truth for Apollo code and release configuration.
+2. The active production target is Hostless Node 1 and Node 2 only.
+3. Do not deploy to Fly.io, Sprites, or the retired Rotator donor.
+4. Do not add Node 3. Split required work explicitly across Node 1 and Node 2.
+5. SPMT owns cross-app/shared facts; each app owns its private product data.
+6. No production data move without verified backup, integrity, restore, reconciliation, and rollback.
+7. No provider credential or infrastructure secret in source, browser code, diagnostics, logs, or chat.
+8. A green CI run is not a deployment. A deployment is not live acceptance.
 
-1. Move by **risk and dependency**, not by brand order or old batch numbers.
-2. Blue remains available until the moved capability/app has a proven rollback.
-3. One writable/responding authority exists for a tenant/provider/channel at a time.
-4. Shared facts migrate to SPMT authority; app-private facts migrate to the owning app authority; caches/temp data are rebuilt.
-5. Permanent owned URLs stay stable while hosting can move underneath them.
-6. A low-risk canary does not wait for unrelated high-risk work, but it cannot skip recovery/data/provider prerequisites it actually depends on.
-7. Production infrastructure policy is measured and replaceable; no vendor is architecture by itself.
+## 2. Active topology
 
-## Where we are now
+| Node | Responsibility | Release evidence required |
+|---|---|---|
+| Node 1 | SPMT authority, SpaceMountain integrated web host, owner sign-in and workspace | exact deployed SHA, readiness, owner browser sign-in, app catalog/launch, session continuity |
+| Node 2 | Chat Gateway and co-located StreamWeaver/Nebula provider runtime | exact deployed SHA, worker readiness, provider/tenant configuration, no duplicate consumers, restart/reconnect |
 
-The older counts below describe the August baseline. Current operational state is recorded in `docs/CURRENT_STATE.md` and the machine-checked `config/production-rollout.v1.json`; source inventory is not an independent production authority. Dated continuation handoffs are preserved in the repository quarantine archive and must not be treated as current status.
+The canonical Hostless workflow is currently named .github/workflows/hostless-three-node-deploy.yml. Its filename is historical; its deployment matrix targets Node 1 and Node 2. Do not rename it until all workflow dispatches, tests, filters, links and automation references are updated together.
 
-Completed:
+## 3. Current release gate
 
-- current donor/live functionality has been ported into ApolloStation to the accepted offline-parity level;
-- 571/571 offline tests pass;
-- the completed offline checklist is 69/69;
-- first-party app launch registration now uses the same catalog contract as third-party apps;
-- permanent `*.spacemountain.live` app names are reserved;
-- current `main` is promoted to the protected Release Sprite;
-- ecosystem-core rehearsal Stage 1 passed with outbound/provider access disabled.
+Before any production deploy:
 
-We are now at **production inventory and controlled live integration preparation**.
+1. Validate the intended branch and exact commit.
+2. Run npm ci, build, typecheck, full tests, and offline tests.
+3. Run the production rollout and persistence/cutover audits.
+4. Confirm required configuration is present by variable name and validation result only; never print secret values.
+5. Confirm Node 1/Node 2 workload placement and the expected app/service list.
+6. Verify persistence authority and recovery assumptions for every changed service.
+7. Require all required validation jobs to pass before deploy jobs become eligible.
+8. Deploy only the changed/approved nodes through the canonical workflow.
+9. Verify deployed commit SHA and health on each node separately.
+10. Run owner/browser and real provider acceptance for the affected capability.
 
-The machine-checked rollout state lives in `config/production-rollout.v1.json`. Run
-`npm run release:audit` before changing public exposure, production authority, or
-Blue-retirement state. The manifest intentionally distinguishes an isolated public
-Apollo preview from moving any production writer or provider output.
+A PR check that skips deployment is validation only. A workflow run that deploys Node 1 but fails Node 2 is not a successful two-node release.
 
-## Step 1 — refresh production inventory
+## 4. Owner entry and shell acceptance
 
-Before moving any app, capture the live reality that matters to that app and the shared services it uses.
+The owner must be able to open spacemountain.live, reach the SPMT bridge sign-in gate when no session exists, complete the supported sign-in path, and reach the workspace without a blank screen.
 
-For each Blue app/process record:
+Acceptance includes:
 
-- provider/hosting app name and region;
-- machine/process count and resources;
-- persistent volumes and attachment;
-- actual dataset names, approximate sizes and owner classification;
-- public URLs/callbacks/browser sources;
-- current provider/socket relationships;
-- current health/readiness route;
-- deployment/restart/stop commands;
-- rollback method;
-- current cost where available.
+- initial page works in normal and incognito browser sessions;
+- anonymous session rejection shows the visible SPMT bridge recovery path;
+- owner session maps to the correct user and tenant;
+- app catalog loads and each permitted app launch resolves to the correct first-party route;
+- navigation, workspace, dock profile, and universal appearance settings persist;
+- no duplicate login-refresh bar or conflicting shell chrome;
+- browser diagnostics are retrievable and redact session/token values;
+- mobile viewport has usable scrolling and no clipped primary controls.
 
-This inventory is read-only. It does not copy volumes or change credentials.
+Do not weaken authorization to make the signed-out shell appear to work.
 
-## Step 2 — classify data instead of cloning old volumes
+## 5. Persistence and recovery gate
 
-For every Blue dataset classify each item into one of these destinations:
+The repository contains SQLite-backed domain stores and asynchronous Turso/libSQL components. Do not assume every app has migrated to remote storage merely because a Turso database or migration helper exists.
 
-| Classification | Destination |
-|---|---|
-| SPMT shared fact | canonical SPMT authority via migration/reconciliation |
-| app-private durable authority | bounded owning-app store |
-| durable media bytes | object/media store or explicitly owned durable storage |
-| cache | rebuild or rewarm |
-| staging/temp | discard |
-| outbox/retry that still matters | reconcile/complete or migrate with idempotency |
-| historical evidence only | read-only archive/retention copy |
+For every authoritative dataset, record:
 
-Do not migrate an old volume merely because it exists.
+- owning service/app and tenant scope;
+- effective production adapter and exact database destination;
+- schema and migration version;
+- single-writer/lease behavior;
+- source and target counts/checksums;
+- backup artifact and integrity result;
+- restore into an isolated destination and post-restore checks;
+- restart/redeploy persistence test;
+- rollback/reconciliation procedure.
 
-For HearMeOut specifically, inventory `hearmeout-main` and `hmo-dj-worker` volumes before deciding what survives. Room/member/playback private authority is not the same thing as HLS/music cache or temporary worker files.
+Local /tmp paths are ephemeral. They are acceptable only for explicitly disposable staging/cache state, never as a silent fallback for required durable production data.
 
-## Step 3 — choose and prove current production storage/recovery shape
+## 6. Provider and app acceptance
 
-Do not blindly recreate the provisional `spmt-vault` topology from the original blueprint.
+Provider-backed capabilities must be tested with the actual configured service credentials and an approved test tenant/channel. Offline mocks prove local behavior only.
 
-For every authoritative store that will receive production writes, prove:
+### Chat Gateway
 
-- exactly who owns writes;
-- independent recovery point(s);
-- integrity verification;
-- isolated restore;
-- writer fencing or equivalent split-brain prevention;
-- rollback/failback appropriate to that storage technology;
-- retention and off-provider/off-account copy for critical shared authority.
+- connection records and SPMT provider grants resolve for the intended tenant;
+- Twitch/Discord/Kick/YouTube/TikTok connections start and reconnect;
+- cursors and dedupe prevent replay/duplicate messages;
+- consumer leases/fencing prevent duplicate workers and duplicate output;
+- Commlink, StreamWeaver, Nebula, and DSH receive only their registered events.
 
-If the simplest safe implementation is a dedicated recovery deployable, use it. If a managed/network store plus verified backups is safer and simpler, use that. The requirement is recoverability, not loyalty to an old diagram.
+### StreamWeaver
 
-## Step 4 — establish permanent public routing
+- owner command, persona, reward, and provider workflows work through the Apollo worker;
+- hosted Kokoro speech is audible in the browser/provider path;
+- command output and event rewards are idempotent;
+- settings, persona, and provider state survive restart/restore.
 
-The reserved product addresses are the stable public identities:
+### Nebula Arcade
 
-- `commlink.spacemountain.live`
-- `companion.spacemountain.live`
-- `discordstreamhub.spacemountain.live`
-- `hearmeout.spacemountain.live`
-- `missioncontrol.spacemountain.live`
-- `mountainview.spacemountain.live`
-- `nebula.spacemountain.live`
-- `stellar.spacemountain.live`
-- `streamweaver.spacemountain.live`
+- game/Tag/Bingo/Quackverse behavior is verified in the real runtime;
+- provider events and rewards reach the correct tenant/channel;
+- Mosaic/art generation uses Apollo-owned configured services, not a retired donor endpoint;
+- game state and art metadata survive restart/restore.
 
-Before moving traffic:
+### Discord Stream Hub
 
-1. choose the production front door/ingress that can terminate these domains;
-2. attach custom domains/certificates there;
-3. route each hostname to its current Green target;
-4. set Apollo catalog launch URLs to the owned names;
-5. update OAuth/browser-source/external callback configuration deliberately;
-6. keep DNS TTL low during migration;
-7. verify every route before switching Blue authority.
+- worker configuration and mounted runtime are effective;
+- Discord/Twitch publishing, guest lifecycle and generated-media delivery work;
+- role/reward receipts are attributable and idempotent;
+- restart/restore does not duplicate bot output.
 
-The target behind a hostname may be Sprite, Fly, another provider, or a gateway to a wakeable worker. The public address does not change when the implementation moves.
+### HearMeOut
 
-## Step 5 — controlled provider rehearsal
+- configured-provider playback decodes and plays in the actual browser;
+- pause/resume/seek remain synchronized;
+- late join and reconnect recover the correct playback state;
+- Discord audio is heard by both sides where intended;
+- voice/RTC and media worker paths survive restart/restore.
 
-Provider/live integration proof is done before tenant cutover where possible.
+## 7. Operator and terminal acceptance
 
-Use scoped test/owner tenants and prove:
+Operator actions live in Apollo and use SPMT identity, owner scopes, typed operations, logs, audit events and bounded execution.
 
-- correct credential grant and refresh behavior;
-- two-tenant isolation;
-- reconnect/cursor resume;
-- dedupe/replay protection;
-- revoked credentials become reauthorization-required rather than infinite retry;
-- no provider credential is persisted in jobs/logs/URLs;
-- output is fenced so test proof cannot speak for unrelated tenants.
+The terminal must be an Apollo-owned backend and an OverlayBay frame/panel. A frame alone is not an implementation. Before enabling it, define:
 
-For chat/output systems, observation/shadow mode is preferred before speaking.
+- allowlisted commands/actions and per-action scope;
+- owner confirmation for mutations;
+- session lifetime, cancellation, idle timeout and concurrency;
+- output byte limits, streaming backpressure and redaction;
+- filesystem/process boundaries;
+- audit and correlation records;
+- rollback or compensating action for writes.
 
-## Step 6 — rollout order
+No Rotator donor process, Fly control API, arbitrary shell, environment dump, secret retrieval, or unrestricted host filesystem access is acceptable.
 
-The current preferred order is based on blast radius, not the original implementation batch order.
+## 8. Rollout order
 
-### A. Ecosystem core — already started
+1. **Foundation:** Node 1 shell/sign-in, SPMT authority, workspace/app launch, retrievable diagnostics.
+2. **Node 2 service chain:** Chat Gateway readiness and configuration, then StreamWeaver/Nebula worker acceptance.
+3. **Media/voice:** HearMeOut playback/RTC and Discord audio acceptance.
+4. **Community workflows:** Discord Stream Hub publishing, Nebula games/rewards, StreamWeaver commands/rewards.
+5. **Operator surface:** Apollo terminal, logs, approval and bounded controls.
+6. **Broader onboarding:** only after tenant isolation, data ownership, provider grants, backup/restore and rollback are proven.
 
-Stage 1 passed on Release Sprite with outbound disabled.
+The order can change only when dependency evidence justifies it. Do not delay a safe owner-first release for cosmetic polish or unrelated donor parity.
 
-Next core work:
+## 9. Rollback
 
-- live production inventory;
-- current storage/recovery decision and proof;
-- permanent public ingress/routing;
-- provider-grant live rehearsal where needed;
-- Mission Control/Rotator observation against live infrastructure before mutation authority.
+### Runtime rollback
 
-### B. HearMeOut — first real app canary
+- retain the last known-good image/revision and deployment metadata;
+- stop rollout when any required node fails validation or readiness;
+- restore the last known-good node revision through the canonical workflow;
+- verify both node health and app-to-app connectivity;
+- preserve sanitized logs and exact SHA evidence.
 
-Why first: fewer tenants are simultaneously active, outages are more visible/contained, and accidental output does not broadcast into hundreds of channels the way bot/game systems can.
+### Data rollback
 
-Required before Green becomes authoritative:
+- do not reverse a migration by guessing or restoring into a live writer;
+- stop or fence writers;
+- restore a verified backup into an isolated destination;
+- compare counts, checksums, schema versions and ownership;
+- reconcile any writes made after the backup;
+- switch authority only after owner approval and recorded evidence.
 
-- classify Blue main/worker volumes;
-- migrate only real private authority/durable media;
-- connect LiveKit/Discord/provider grants to a controlled room/account;
-- prove room/media state persistence and worker scaling;
-- prove Blue restart/rollback path;
-- move the permanent `hearmeout.spacemountain.live` route;
-- observe;
-- stop Blue compute only after proof, retaining rollback data.
+## 10. Current blockers and evidence
 
-### C. Discord Stream Hub
+The current state summary is docs/CURRENT_STATE.md. At the time of this update:
 
-Begin read/observe/shadow where practical. Compare Green decisions to Blue before broad Discord publishing. Then enable one controlled output path, verify no duplicate embed/shoutout/spotlight actions across restart, and expand.
+- Node 1 shell/sign-in recovery still requires live owner browser acceptance.
+- Node 2 deployment/provider-worker readiness is not yet proven as part of one green two-node release.
+- The actual SPMT runtime persistence adapter must be verified against the intended remote database; SQLite-backed services and /tmp fallbacks remain a concern.
+- Residual Fly donor origins and Sprite/Fly execution-target defaults remain in source and require coordinated replacement.
+- Real provider/media/voice acceptance remains distinct from offline tests.
+- Apollo-native terminal backend and OverlayBay integration remain to be completed.
 
-### D. Remaining lower-blast-radius services
+Do not convert any of these into a green status by changing documentation alone. Update the relevant implementation, tests, workflow and evidence.
 
-Move bounded components such as MountainView/Companion/cloud helpers and operational pieces when their specific hardware/provider gates are satisfied. Do not bundle unrelated workloads merely to finish a “phase.”
+## 11. Reporting format
 
-### E. Nebula Arcade — late
+For every release or recovery result, record:
 
-Nebula has many tenants and active chat/game output. It requires strict single-authority fencing.
+- repository and branch;
+- exact commit SHA;
+- workflow/run URL and conclusion;
+- Node 1 result and deployed SHA;
+- Node 2 result and deployed SHA;
+- health/readiness and persistence/restart evidence;
+- owner browser journey result;
+- real provider/media acceptance result;
+- rollback state.
 
-Progression:
-
-```text
-listen/shadow
--> owner/test tenant output
--> second tenant
--> restart/reconnect/replay proof
--> small tenant cohort
--> broader cohorts
-```
-
-Verify no duplicate commands, rotations, replies, XP, game events or overlay output.
-
-### F. StreamWeaver — last broad migration
-
-StreamWeaver has the highest spam/automation blast radius because it can answer, execute commands, route personas, manage local currency, trigger shoutouts/actions and respond across many tenants.
-
-Progression:
-
-```text
-listen only
--> owner-only commands on one tenant
--> normal chat on one tenant
--> second tenant
--> restart/reconnect test
--> small cohort
--> broader cohorts
-```
-
-Blue and Green must never both respond for the same tenant/channel during an ownership switch.
-
-## Step 7 — workload scaling proof
-
-Scaling is proven per workload, not per app brand.
-
-Examples:
-
-- provider sockets: unique-consumer lease and reconnect fencing;
-- queue/media workers: queue depth, leases, drain, retry and idle stop;
-- room/session workers: explicit session lease/TTL/cleanup;
-- AI pools: queue/capacity/latency/cost bounds;
-- Xbox: isolated session lifecycle;
-- Companion: local worker lease and device ownership.
-
-The operations controller remains dry-run/observe until its adapter and rollback for a workload are proven. Then enable production mutation one workload at a time, within configured minimum/maximum/cost bounds.
-
-## Step 8 — cohort and observation rules
-
-After an app/capability canary passes:
-
-1. owner/test tenant;
-2. second distinct tenant;
-3. small trusted cohort;
-4. broader percentage cohort where applicable;
-5. remaining tenants.
-
-The observation window should match actual activity. A fixed seven-day wait is not automatically useful for every low-volume capability, while a high-volume bot may reveal duplicate behavior in minutes. Require enough real activity to test the failure modes that matter.
-
-## Step 9 — rollback
-
-Every cutover has two rollback dimensions:
-
-### Route/runtime rollback
-
-Can traffic/output return to Blue quickly without two active speakers/writers?
-
-### Data rollback/reconciliation
-
-Can writes accepted while Green was primary be preserved/replayed/reconciled without overwriting newer truth?
-
-If either answer is unknown, the cohort is not ready to move.
-
-## Step 10 — Blue retirement
-
-Only after the corresponding observation and rollback gates:
-
-- stop old compute first;
-- keep old volumes/databases read-only for the approved retention window;
-- keep source history in GitHub/archive long enough to investigate migration defects;
-- remove old OAuth/callback/provider registrations only after zero-use proof;
-- delete old resources after recovery/rollback retention is no longer needed.
-
-## Immediate next actions from 2026-08-30
-
-1. Finish a read-only live infrastructure/data inventory, beginning with HearMeOut and the shared SPMT/SpaceMountain authorities it depends on.
-2. Decide the **current** canonical SPMT storage/recovery production implementation from actual data size/load and provider capabilities.
-3. Decide the always-available production ingress/custom-domain layer for the reserved app hostnames.
-4. Rehearse provider credentials/connections with owner/test tenants under output fencing.
-5. Run HearMeOut as the first controlled app canary.
-6. Continue with DSH, lower-risk services, Nebula Arcade, then StreamWeaver.
-
-No step above authorizes broad Blue shutdown or DNS movement until its prerequisites are explicitly proven.
+Use explicit labels: tested, validated, deployed, and live-accepted are different states.
