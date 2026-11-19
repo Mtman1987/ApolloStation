@@ -175,7 +175,7 @@ The latest Hostless runtime diagnostics run completed successfully on both nodes
 
 - Main is at merge commit 18c6dd387bdfc7b939454db9301f58204203d790 for the production donor-origin override guide.
 - docs/production/DONOR_ORIGIN_OVERRIDES.md exists on main. It documents STREAMWEAVER_URL, HEARMEOUT_DONOR_ORIGIN, HEARMEOUT_VOICE_BRIDGE_ORIGIN, and SPOTLIGHT_ENDPOINT, intended node placement, and the rule not to remove fallbacks until the Apollo route is proven healthy.
-- The handoff branch is based on current main (zero commits behind at this walkthrough) and adds the final handoff plus the foundation donor-sweep report. It adds no runtime code relative to current main.
+- The handoff branch was zero commits behind main when first checked. Main subsequently advanced by two commits updating only the archived branch-audit inventory text; the handoff branch is now two commits behind and should be refreshed before merge. Its current diff adds the handoff, foundation donor-sweep report, and production index link; no runtime code changes are included.
 - PR #530 remains open and draft. PR #528 remains open and draft.
 - The maintained topology and production guide specify Hostless Node 1 and Node 2 only. Node 3 is not an approved deployment target.
 - The production path explicitly separates CI, deployment, and live acceptance. A green check is not proof of a live release.
