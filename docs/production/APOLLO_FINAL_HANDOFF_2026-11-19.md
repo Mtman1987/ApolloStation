@@ -22,13 +22,13 @@ Do not interpret a green build as proof of production behavior. Keep code change
 - [x] Runs manifest validation as a dry run; only an explicit manual `apply=true` reaches the write step.
 - [x] No recovery import was re-run. The previously verified 5,748-row import remains the accepted evidence.
 
-**Commit:** `d18385a55d62d8761ed433594cf7bd7417d9f76a`.
+**Commits:** recovery workflow `d18385a55d62d8761ed433594cf7bd7417d9f76a`; manual-only branch cleanup `8be04030358ba750fe03fb556f3d199329d66218`.
 
 ### 2. PR #527 repository hygiene — compile fix pushed; validation pending
 
 - [x] Kept the broad hygiene/docs work on `chore/repo-hygiene-docs-audit-2026-11-19`.
 - [x] Repaired `apps/companion/src/diagnostics.ts`: the snapshot interface had literal escaped newline characters embedded in the TypeScript source.
-- [x] Pushed one focused repair commit: `8d2b82ad518d0160bde994d54f6ea79a7bb55cbf`.
+- [x] Pushed two corrective commits: `8d2b82ad518d0160bde994d54f6ea79a7bb55cbf` and `5cfe22d035c00ca798247636cfeee720a210a589`. The first repaired the interface but left escaped newline sequences elsewhere; the second normalized the entire source file after CI exposed the remaining line-12 parse error.
 - [ ] Wait for the complete PR validation, Discord parity, Restream validation, and Hostless release checks.
 - [ ] Merge only when all required checks are green and the PR diff has been reviewed against current main.
 
@@ -75,11 +75,13 @@ The audit distinguishes code-level equivalents from live acceptance. The key rem
   - `port/streamweaver-restream-golive-parity`
   - `feat/recovered-json-manifest-verification`
   - `feat/oracle-core-runtime-image`
+- [x] Changed `.github/workflows/cleanup-merged-branches.yml` to manual dispatch only, with dry-run enabled by default; pushes to main can no longer delete branch refs automatically.
+- [x] Confirmed the prior cleanup run reported `Deleted: 0`; no branches were removed by that run.
 - [ ] Create and verify a Git bundle or equivalent full-history archive before deleting any branch.
 - [ ] Delete only branches proven obsolete after the archive is verified.
 - [ ] Keep main and branches belonging to intentional open PRs.
 
-No branch has been deleted. The connected GitHub actions available in this session expose branch search/create/update, but not branch deletion or a workflow-dispatch action; the Rotator CLI/MCP tools described in its documentation are not connected in this session. The GitHub read API also cannot create a Git bundle. Do not substitute an inventory text file for a source archive, and do not claim archive/delete completion until verified.
+No branch has been deleted in this cleanup. The connected GitHub actions available in this session expose branch search/create/update, but not branch deletion, tag creation, or a workflow-dispatch action; the Rotator CLI/MCP tools described in its documentation are not connected in this session. The GitHub read API also cannot create a Git bundle. Do not substitute an inventory text file for a source archive, and do not claim archive/delete completion until verified.
 
 ### 7. Final green audit — pending
 
@@ -103,6 +105,7 @@ No branch has been deleted. The connected GitHub actions available in this sessi
 6. **Documentation:** retain one professional root README, app READMEs, developer/operations indexes, and a clearly labelled `mt-delete-me-archive` for historical material pending review. Avoid restoring stale handoff notes into active docs.
 7. **Workflow hygiene:** distinguish failed validation from cancelled/superseded runs and transient infrastructure errors. Retry only genuinely failed jobs after the underlying issue is fixed.
 8. **Security:** never expose secrets in logs, browser bundles, source, PR text, diagnostic artifacts, or chat. Keep the terminal diagnostic-only, not an app execution surface.
+9. **Dependency audit:** the PR validation install reported two high-severity npm advisories. Capture the full `npm audit --json` details and update only affected direct/transitive dependencies with compatibility tests; do not use `npm audit fix --force` as a blanket cleanup.
 
 ### Acceptance before optimization
 
@@ -127,7 +130,7 @@ After acceptance, profile the build and runtime, remove redundant work, optimize
 ## Evidence references
 
 - Recovery workflow commit: `d18385a55d62d8761ed433594cf7bd7417d9f76a`
-- Companion diagnostics compile fix: `8d2b82ad518d0160bde994d54f6ea79a7bb55cbf`
+- Companion diagnostics source repair: `5cfe22d035c00ca798247636cfeee720a210a589`
 - Merged sanitizer PR: [#525](https://github.com/Mtman1987/ApolloStation/pull/525)
 - Merged sign-in bridge-gate PR: [#526](https://github.com/Mtman1987/ApolloStation/pull/526)
 - Hygiene PR: [#527](https://github.com/Mtman1987/ApolloStation/pull/527)
