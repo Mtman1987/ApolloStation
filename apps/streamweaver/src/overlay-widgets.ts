@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { OverlayWidgetManifestV1 } from "@spmt/contracts";
 
 export const STREAMWEAVER_WIDGETS = Object.freeze({
