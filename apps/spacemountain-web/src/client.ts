@@ -783,8 +783,9 @@ function showAuth(detail: string) {
 }
 
 function showSessionUnavailable(detail: string) {
-  if (!currentPrincipal) { authView.hidden = true; shellView.hidden = true; }
-  setStatus(`SPMT is temporarily unavailable; your signed-in session was retained. ${detail}`, "error");
+  // Never strand the browser with both views hidden when session restoration fails.
+  // Keep the login/recovery UI available and show the actual failure detail.
+  showAuth(`SPMT session restoration failed. Your saved session was not cleared. ${detail}`);
 }
 
 function parsePrincipal(value: Record<string, unknown>): Principal {
