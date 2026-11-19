@@ -96,7 +96,7 @@ Do not interpret a green build or a populated recovery staging table as proof of
 - [ ] Complete the live owner-terminal browser check.
 - [ ] Complete the full-history branch archive, then delete only confirmed trash branches.
 
-**Important deployment evidence (15:05 UTC snapshot):**
+**Important deployment evidence (15:12 UTC snapshot):**
 
 - Node 1 app `apollo-node-1` reported `UPDATING`. New deployment `6aff0e9ac0e8a79ec57e28aa` was at `BUILD_STARTED`; the older deployment `6aff00cbc0e8a79ec57d234c` was still active. Its health endpoint was ready, but reported `buildSha: dev` and `authority-storage: sqlite:wal`. Safe configuration reported `SPMT_ORIGIN` not configured.
 - Node 2 app `apollo-node-2` reported `UPDATING`. New deployment `6aff0eb7a8f48b734523ad50` was at `DEPLOYMENT_STARTED`; its health endpoint reported the StreamWeaver app ready; safe configuration reported `SPMT_ORIGIN` configured, with the value redacted.
@@ -121,7 +121,7 @@ Do not interpret a green build or a populated recovery staging table as proof of
 4. Some worker paths still default to Sprite execution.
 5. HearMeOut's worker adapter still supports Fly/Sprite rather than the Hostless hosted target.
 6. Restream Control exists but is not yet part of the Node 2 process composition.
-7. Node 1 still has a `/tmp` SQLite fallback; the 15:05 health snapshot reported SQLite WAL rather than Turso authority.
+7. Node 1 still has a `/tmp` SQLite fallback; the 15:12 health snapshot reported SQLite WAL rather than Turso authority.
 8. SpaceMountain Web and SPMT Service still transitively depend on heavy app packages; optimize after acceptance with measured profiling.
 9. PR validation reported two high-severity npm advisories. Capture `npm audit --json` and remediate only the affected dependencies with compatibility tests; do not use `npm audit fix --force`.
 
