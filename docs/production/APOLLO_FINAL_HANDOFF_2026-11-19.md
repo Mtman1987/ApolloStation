@@ -2,71 +2,71 @@
 
 **Audit date:** 2026-11-19  
 **Repository:** `Mtman1987/ApolloStation`  
-**Purpose:** one coordinated pre-handoff cleanup and codebase readiness record. This is not a production certification.
+**Purpose:** one coordinated pre-handoff cleanup and current readiness record. This is not a production certification.
 
-## Current result
+The owner's estimate is that functional completion is above 90%. The remaining work is concentrated in deployment proof, durable runtime persistence, live browser acceptance, branch archival, a small number of donor-origin fallbacks, and post-acceptance optimization.
 
-The repository is in the final acceptance-and-hardening phase. The owner's estimate is that functional completion is above 90%; remaining work is concentrated in validation, live browser/device acceptance, deployment proof, archive/branch hygiene, and post-validation optimization.
+Do not interpret a green build or a populated recovery staging table as proof of production behavior. Do not replay the already verified recovery import.
 
-Do not interpret a green build as proof of production behavior. Keep code changes small, preserve the two-node Hostless topology, and do not replay already-imported recovery data.
+## 1. Ordered cleanup sequence
 
-## Ordered cleanup sequence and status
-
-### 1. Recovery workflow defaults — completed on main
+### 1. Recovery workflow defaults — complete on main
 
 - [x] Removed the push trigger that could automatically apply recovery data.
-- [x] Kept workflow_dispatch as the only trigger.
-- [x] Changed the `apply` input default to `false`.
-- [x] Accepts both `recovered-json-manifest*.jsonl` and `recovered-json-manifest*.jsonl.gz`.
+- [x] Kept `workflow_dispatch` as the only trigger.
+- [x] Set `apply` default to `false`.
+- [x] Supports `recovered-json-manifest*.jsonl` and `recovered-json-manifest*.jsonl.gz`.
 - [x] Fails closed unless exactly one supported manifest is selected.
-- [x] Runs manifest validation as a dry run; only an explicit manual `apply=true` reaches the write step.
-- [x] No recovery import was re-run. The previously verified 5,748-row import remains the accepted evidence.
+- [x] Dry-run validation precedes the explicit manual write step.
+- [x] Did not re-run the import. The existing 5,748-row import remains the accepted evidence: 16 Nebula + 5,732 StreamWeaver.
 
-**Commits:** recovery workflow `d18385a55d62d8761ed433594cf7bd7417d9f76a`; manual-only branch cleanup `8be04030358ba750fe03fb556f3d199329d66218`; retired Sprite/Fly workflow archive `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`.
+**Main commit:** `d18385a55d62d8761ed433594cf7bd7417d9f76a`.
 
-### 2. PR #527 repository hygiene — compile fix pushed; validation pending
+### 2. PR #527 repository hygiene — merged green
 
-- [x] Kept the broad hygiene/docs work on `chore/repo-hygiene-docs-audit-2026-11-19`.
-- [x] Repaired `apps/companion/src/diagnostics.ts`: the snapshot interface had literal escaped newline characters embedded in the TypeScript source.
-- [x] Pushed two corrective commits: `8d2b82ad518d0160bde994d54f6ea79a7bb55cbf` and `5cfe22d035c00ca798247636cfeee720a210a589`. The first repaired the interface but left escaped newline sequences elsewhere; the second normalized the entire source file after CI exposed the remaining line-12 parse error.
-- [ ] Wait for the complete PR validation suite. On the latest repair head, Hostless two-node release, Discord parity, Nebula parity, and Restream validation have passed; the full offline regression suite is still running.
-- [ ] Merge only when all required checks are green and the PR diff has been reviewed against current main.
+- [x] Repaired `apps/companion/src/diagnostics.ts` after CI exposed literal escaped newline characters in the TypeScript source.
+- [x] Restored `docs/donor-audits/app-code-parity.v1.json` at its active path; the audit and tests still consume it.
+- [x] Updated the parity capability registry to resolve historical donor reports from `mt-delete-me-archive/legacy-docs/`.
+- [x] Retired the Node 3 app-creation workflow, bootstrap script, and package command.
+- [x] Restricted Hostless account diagnostics to Node 1 and Node 2.
+- [x] Rebuilt the root README and app/development-tool documentation; preserved old material in the quarantine archive.
+- [x] Changed the reference app's default execution target from legacy Sprite to hosted.
+- [x] All five required checks passed on the rebased head: main validation, Hostless release validation, Discord parity, Nebula parity, and Restream validation.
+- [x] Merged as `ec06baa46bca01539c6820a64b59dbdfc00b80bf`.
 
-**Rule:** if any required validation remains red, keep #527 open and do not merge.
+### 3. Diagnostic sanitizer — complete
 
-### 3. Diagnostic sanitizer — #525 merged; #518 closed
+- [x] PR #525 is merged on main.
+- [x] Safe query parameters are preserved while secret query values are redacted.
+- [x] PGP/PEM private-key blocks are redacted.
+- [x] Diagnostic artifact uploads fail closed when sanitization fails.
+- [x] Main tests cover safe query preservation, private-key redaction, and unsupported artifact handling.
+- [x] Closed #518 because it duplicated older/weaker sanitizer work.
 
-- [x] Confirmed PR #525 is merged to main.
-- [x] Main sanitizer preserves safe query parameters while redacting secret query values.
-- [x] Main sanitizer redacts PEM and PGP private-key blocks.
-- [x] Main diagnostic artifact workflows gate uploads on successful sanitization.
-- [x] Tests on main cover safe query preservation, PGP/PEM redaction, and unsupported binary artifact handling.
-- [x] Closed #518 because its sanitizer implementation duplicates the now-merged #525 implementation and is older/weaker.
-- [ ] Reopen a narrowly scoped follow-up only if a concrete missing sanitizer case is found in current main.
+### 4. Owner diagnostic terminal — implemented in draft PR #528
 
-### 4. Owner diagnostic terminal — #528 remains draft
+- [x] Terminal uses the existing same-origin signed Apollo session; no separate login or invented secret.
+- [x] Removed `x-spmt-tenant` from the terminal request.
+- [x] Added `/v1/operations/logs/owner`, deriving tenant scope from the signed session's owner roles and `operations:logs:read`.
+- [x] Only the canonical SPMT owner identity receives the existing diagnostics scopes during the normal bridge/callback session issuance.
+- [x] The endpoint returns allow-listed metadata only: ID, tenant, source app, level, kind, and timestamps. It omits summaries, details, labels, reporter IDs, and app payload data.
+- [x] Member and service identities are denied by tests.
+- [x] All three checks passed on the latest-main rebased head `88780e9944d48a7ce39d684f57865bb58e118de6`: Apollo validation, Hostless PR validation, and StreamWeaver parity.
+- [ ] Keep draft until the owner verifies the browser path on Node 1. If the existing browser session predates the new scopes, refresh the existing sign-in once; there is no terminal-specific login.
 
-- [x] Terminal source is proposed as a read-only Overlay Bay source.
-- [ ] Remove the obsolete client-side tenant-header dependency by changing the server/API contract to derive the active tenant from the validated Apollo session/shell.
-- [ ] Keep access owner-only, read-only, bounded to health and operational logs, and free of arbitrary shell commands, environment dumps, secrets, or app-user data.
-- [ ] Add tests proving session identity, owner authorization, tenant selection, bounded output, and denial for non-owner sessions.
-- [ ] Re-run full validation; retain draft status until those tests and the user-facing browser path are ready.
+**Architecture note:** other application API routes still use `x-spmt-tenant` as a workspace selector. It is not an authentication secret. The terminal no longer uses it and its server-side scope comes from the signed session.
 
-**Important architecture note:** current `PlatformApiAdapter` reads `x-spmt-tenant` as a tenant selector and then authorizes the bearer session against that tenant. The header is not itself an authentication secret. Do not merely remove it from the browser request: first move tenant selection to the validated session/shell boundary and prove the server-side behavior. No new token or parallel login should be introduced.
-
-### 5. Donor parity sweep — reviewed and refreshed for current main
+### 5. Donor parity sweep — carried into this handoff
 
 - [x] Reviewed #520's foundation donor findings for Rotator, SPMT.live, and SpaceMountain.live.
-- [x] Rebased the documentation content by recreating it from current main in this handoff branch.
-- [x] Updated the shell sign-in note for merged PR #526 and the terminal note for draft PR #528.
-- [ ] Merge this documentation only after the current-main handoff notes have been reviewed.
+- [x] Recreated the donor sweep against current main in this handoff branch.
+- [x] Included the merged sign-in bridge-gate work from #526 and the owner-terminal work from #528.
+- [x] Closed #520; its useful findings are preserved in this handoff.
 
-The audit distinguishes code-level equivalents from live acceptance. The key remaining foundation gaps are the Apollo-owned coder worker execution lifecycle, Hostless Node 1/2 health and recovery evidence, durable persistence/backup/restore proof, cross-app identity/workspace isolation, shell sign-in browser acceptance, Companion/MountainView route coverage, and mobile/desktop interaction proof.
+### 6. Branch archive and cleanup — safe defaults; archival/deletion still pending
 
-### 6. Branch archive and cleanup — inventory refreshed; destructive work not performed
-
-- [x] Refreshed the visible branch inventory: 50 branches were returned, including main.
-- [x] Preserved the eight named recovery candidates for explicit review:
+- [x] Refreshed the branch inventory on main: 52 branches, including main.
+- [x] Preserved the eight recovery candidates for individual review:
   - `feat/nebula-game-runtime-turso-store`
   - `feature/turso-live-runtime-smoke`
   - `feat/stellar-kokoro-self-hosted-tts`
@@ -75,70 +75,91 @@ The audit distinguishes code-level equivalents from live acceptance. The key rem
   - `port/streamweaver-restream-golive-parity`
   - `feat/recovered-json-manifest-verification`
   - `feat/oracle-core-runtime-image`
-- [x] Changed `.github/workflows/cleanup-merged-branches.yml` to manual dispatch only, with dry-run enabled by default; pushes to main can no longer delete branch refs automatically.
-- [x] Archived the retired Sprite/Fly authenticated terminal workflow under `.github/archived-workflows/` and removed it from active workflows.
-- [x] Confirmed the prior cleanup run reported `Deleted: 0`; no branches were removed by that run.
-- [ ] Create and verify a Git bundle or equivalent full-history archive before deleting any branch.
-- [ ] Delete only branches proven obsolete after the archive is verified.
-- [ ] Keep main and branches belonging to intentional open PRs.
+- [x] Made `.github/workflows/cleanup-merged-branches.yml` manual-only with dry-run enabled by default.
+- [x] Made `.github/workflows/consolidate-reviewed-branches.yml` manual-only with dry-run enabled by default.
+- [x] The earlier cleanup run reported `Deleted: 0`.
+- [ ] Create and verify a full-history Git bundle or equivalent archive before deleting any branch.
+- [ ] Delete only individually reviewed obsolete branches after the archive is verified.
+- [ ] Keep main and intentional open-PR branches.
 
-No branch has been deleted in this cleanup. The connected GitHub actions available in this session expose branch search/create/update, but not branch deletion, tag creation, or a workflow-dispatch action; the Rotator CLI/MCP tools described in its documentation are not connected in this session. The GitHub read API also cannot create a Git bundle. Do not substitute an inventory text file for a source archive, and do not claim archive/delete completion until verified.
+**No branches have been deleted. No full-history bundle has been created or verified.** The branch inventory text is not a source-code archive. The connected GitHub actions in this session expose branch search/create/update but not branch deletion, tag creation, or workflow dispatch. The Rotator CLI/MCP actions described in its documentation are not connected here. Do not claim archive/delete completion until a real bundle or equivalent is verified.
 
-### 7. Final green audit — pending
+### 7. Final acceptance — partially complete
 
-- [ ] No open red PRs intended to be kept.
-- [ ] Recovery workflow remains manual-only and dry-run by default.
-- [ ] Latest main validation, Hostless release, diagnostics, Discord, Nebula, and Restream checks are green.
-- [ ] Confirm Node 1 and Node 2 deployment commits and health; Node 3 is retired.
-- [ ] Verify sign-in in normal and incognito browser sessions, reload, sign-out, and bridge recovery.
-- [ ] Verify Turso connectivity and durable data ownership on both production nodes.
-- [ ] Produce a concise deployment-readiness report with exact commit SHAs and evidence links.
+- [x] Main Oracle release validation passed on commit `18c6dd387bdfc7b939454db9301f58204203d790`.
+- [x] Hostless runtime diagnostic snapshots were collected; both node log-snapshot jobs succeeded.
+- [x] The Hostless release workflow was hardened in `9e9a1601bd268be1992e3b94e899efe233763f86`: PR runs have separate concurrency groups, main typecheck is mandatory, the commit-message validation bypass is removed, and workflow-only edits no longer trigger production deploys.
+- [x] The #527 merge's Hostless release passed typecheck and both Node 1/2 shared-Turso preflights. Both preflights saw the same database and all 5,748 staged records.
+- [ ] Confirm Node 1 and Node 2 deployment completion and domain/read-back health. The first main release run was cancelled before read-back because PR validation shared the old main-release concurrency group.
+- [ ] Verify signed-in browser behavior in normal and incognito sessions, including reload, sign-out, and bridge recovery.
+- [ ] Prove durable runtime persistence and backup/restore on both production nodes.
+- [ ] Complete the live owner-terminal browser check.
+- [ ] Complete the full-history branch archive, then delete only confirmed trash branches.
 
-## Additional codebase review findings
+**Important deployment evidence (15:05 UTC snapshot):**
 
-### Keep the next changes focused
+- Node 1 app `apollo-node-1` reported `UPDATING`. New deployment `6aff0e9ac0e8a79ec57e28aa` was at `BUILD_STARTED`; the older deployment `6aff00cbc0e8a79ec57d234c` was still active. Its health endpoint was ready, but reported `buildSha: dev` and `authority-storage: sqlite:wal`. Safe configuration reported `SPMT_ORIGIN` not configured.
+- Node 2 app `apollo-node-2` reported `UPDATING`. New deployment `6aff0eb7a8f48b734523ad50` was at `DEPLOYMENT_STARTED`; its health endpoint reported the StreamWeaver app ready.
+- The GitHub deploy jobs were cancelled before final deployment read-back. Hostless may have continued the accepted deployment requests, but the available snapshot does not prove completion. Do not report either deployment as successful yet.
+- The 5,748 rows are in the Turso recovery staging table. They do **not** prove the application runtime has switched to Turso authority; Node 1 still reported SQLite WAL at the time of the snapshot.
 
-1. **Do not optimize before correctness.** First get the full validation suite green and capture baseline build/test timings. Then optimize only measured hot paths.
-2. **Persistence boundary:** preserve one canonical owner per data domain. Keep SQLite local/cache use explicit and Turso remote authority deliberate; do not perform broad storage rewrites during this cleanup.
-3. **Tenant and session context:** avoid parallel auth headers or client-invented tenant authority. The validated Apollo session and selected workspace should be the source of truth.
-4. **Diagnostics:** keep sanitizer fail-closed, avoid printing raw logs to Actions consoles, and cap output/size.
-5. **Hostless topology:** Node 1 and Node 2 only. Remove leftover Node 3 scripts/workflow references only after checking the hygiene PR diff and all runtime manifests.
-6. **Documentation:** retain one professional root README, app READMEs, developer/operations indexes, and a clearly labelled `mt-delete-me-archive` for historical material pending review. Avoid restoring stale handoff notes into active docs.
-7. **Workflow hygiene:** distinguish failed validation from cancelled/superseded runs and transient infrastructure errors. Retry only genuinely failed jobs after the underlying issue is fixed.
-8. **Security:** never expose secrets in logs, browser bundles, source, PR text, diagnostic artifacts, or chat. Keep the terminal diagnostic-only, not an app execution surface.
-9. **Dependency audit:** the PR validation install reported two high-severity npm advisories. Capture the full `npm audit --json` details and update only affected direct/transitive dependencies with compatibility tests; do not use `npm audit fix --force` as a blanket cleanup.
-10. **Retired infrastructure:** the only active workflow found that explicitly woke a Sprite and verified Fly CLI/auth was archived, not executed. The remaining `FLY_API_TOKEN` references in sandbox code are denylist guards that reject infrastructure credentials; they are not live Fly API calls and should stay until sandbox policy is deliberately redesigned.
-11. **Donor-origin fallbacks:** the owner added `docs/production/DONOR_ORIGIN_OVERRIDES.md`. Set the documented Hostless overrides for Mosaic, HearMeOut, and Spotlight before deleting source-level Fly fallbacks; verify each target is healthy on its exact route first.
+## 2. Final codebase review
 
-### Acceptance before optimization
+### Safe cleanup already completed
 
-- Full build/typecheck and required tests green.
-- PR checks green on the exact reviewed commit.
-- Node 1/2 release and health proof on the exact deployed commit.
-- Sign-in/session and cross-app smoke tests complete.
-- Recovery import count/hash evidence retained without replay.
-- Backup/restore and rollback path documented and rehearsed.
+- The obsolete Sprite/Fly authenticated terminal workflow was moved to `.github/archived-workflows/`; it is no longer an active workflow. Main commit: `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`.
+- Node 3 creation tooling was removed by #527. The historical workflow filename `hostless-three-node-deploy.yml` remains because path filters and tests still reference it; its deployment matrix targets Node 1 and Node 2 only.
+- The remaining `HOSTLESS_NODE3_TOKEN` reference in secret-exclusion logic is a defensive guard against propagating a stale secret, not a Node 3 deploy target.
+- Remaining `FLY_API_TOKEN` references in sandbox policy are denylist guards, not live Fly API calls.
+- The active machine-readable parity manifest was kept out of the historical archive; the registry points to archived donor reports only.
 
-After acceptance, profile the build and runtime, remove redundant work, optimize high-cost paths, and rerun the same correctness suite to prove no regressions.
+### Live migration debt — document and verify before deleting
 
-## Handoff checklist for the next operator
+1. HearMeOut Lounge bridge still has a donor Fly origin.
+2. Nebula Mosaic generation still has an old StreamWeaver Fly origin fallback.
+3. Companion/MountainView download routes still reference donor release assets.
+4. Some worker paths still default to Sprite execution.
+5. HearMeOut's worker adapter still supports Fly/Sprite rather than the Hostless hosted target.
+6. Restream Control exists but is not yet part of the Node 2 process composition.
+7. Node 1 still has a `/tmp` SQLite fallback; the 15:05 health snapshot reported SQLite WAL rather than Turso authority.
+8. SpaceMountain Web and SPMT Service still transitively depend on heavy app packages; optimize after acceptance with measured profiling.
+9. PR validation reported two high-severity npm advisories. Capture `npm audit --json` and remediate only the affected dependencies with compatibility tests; do not use `npm audit fix --force`.
 
-- [ ] Review this PR and the refreshed donor sweep.
-- [ ] Finish #527 validation; merge only green.
-- [ ] Keep #528 draft until the tenant/session authority is corrected and tested.
-- [ ] Finish Git bundle/archive and branch deletion using a connected, authorized Rotator/GitHub CLI path.
-- [ ] Run the final main Actions and Node 1/2 acceptance audit.
-- [ ] Only then start measured optimization.
+The owner added [DONOR_ORIGIN_OVERRIDES.md](DONOR_ORIGIN_OVERRIDES.md) with Hostless environment overrides for Mosaic, HearMeOut, and Spotlight. Apply and verify those exact routes before deleting source-level donor fallbacks. A configured origin is not proof of live parity.
 
-## Evidence references
+## 3. Explicit next steps
 
-- Owner-authored Hostless donor-origin overrides: [DONOR_ORIGIN_OVERRIDES.md](DONOR_ORIGIN_OVERRIDES.md)
+1. Verify the Hostless deployment IDs and live health/read-back for Node 1 and Node 2. If still incomplete, rerun the validated main release after confirming the new concurrency policy is active.
+2. Resolve the runtime persistence boundary: Turso staging is not the same as the application using Turso as its authority store. Keep backup/restore and rollback proof.
+3. Validate sign-in and the owner diagnostic terminal in the Node 1 browser. No terminal-specific login is allowed.
+4. Apply and test the documented Hostless donor-origin overrides; only then remove source fallbacks.
+5. Create and verify a full-history Git bundle; only then delete individually reviewed trash branches. Preserve all eight recovery candidates.
+6. Capture the full npm advisory report and fix only verified dependency issues.
+7. After the owner validates and baseline timings are captured, profile and optimize measured hot paths. Re-run the same correctness suite.
 
-- Recovery workflow commit: `d18385a55d62d8761ed433594cf7bd7417d9f76a`
-- Companion diagnostics source repair: `5cfe22d035c00ca798247636cfeee720a210a589`
-- Manual-only branch cleanup: `8be04030358ba750fe03fb556f3d199329d66218`
-- Retired Sprite/Fly workflow archive: `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`
-- Merged sanitizer PR: [#525](https://github.com/Mtman1987/ApolloStation/pull/525)
-- Merged sign-in bridge-gate PR: [#526](https://github.com/Mtman1987/ApolloStation/pull/526)
-- Hygiene PR: [#527](https://github.com/Mtman1987/ApolloStation/pull/527)
-- Owner terminal draft: [#528](https://github.com/Mtman1987/ApolloStation/pull/528) (all CI green; live browser acceptance pending)
+## 4. Evidence and PRs
+
+- Recovery workflow: `d18385a55d62d8761ed433594cf7bd7417d9f76a`
+- Branch cleanup manual/dry-run: `8be04030358ba750fe03fb556f3d199329d66218`
+- Sprite/Fly workflow archive: `6091c1cdbe12c1a821712b2c2ed7742da1c7fd30`
+- Hostless release concurrency/mandatory validation: `9e9a1601bd268be1992e3b94e899efe233763f86`
+- #527 hygiene merge: `ec06baa46bca01539c6820a64b59dbdfc00b80bf`
+- Owner donor-origin override guidance: `18c6dd387bdfc7b939454db9301f58204203d790`
+- Sanitizer: [PR #525](https://github.com/Mtman1987/ApolloStation/pull/525), merged.
+- Sign-in bridge gate: [PR #526](https://github.com/Mtman1987/ApolloStation/pull/526), merged.
+- Repository hygiene: [PR #527](https://github.com/Mtman1987/ApolloStation/pull/527), merged green.
+- Owner diagnostic terminal: [PR #528](https://github.com/Mtman1987/ApolloStation/pull/528), draft; CI green, browser acceptance pending.
+- Consolidated cleanup and donor sweep: [PR #530](https://github.com/Mtman1987/ApolloStation/pull/530), draft.
+- #518, #520, and #529 are closed/superseded.
+
+## 5. Handoff checklist
+
+- [x] Recovery workflow is manual-only and dry-run by default.
+- [x] #525/#526 are merged; #527 is merged green.
+- [x] #528 is implemented and CI-green as a draft.
+- [x] Branch inventories and open-PR review are refreshed on main.
+- [ ] Verify Node 1/2 deployment completion and runtime Turso authority.
+- [ ] Complete browser acceptance for sign-in and owner diagnostics.
+- [ ] Create/verify the full-history branch archive before any deletion.
+- [ ] Complete donor-origin route acceptance and npm advisory review.
+- [ ] Only after owner validation, run measured optimization and regression checks.
