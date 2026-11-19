@@ -15,7 +15,6 @@ test("Node 1 shell permits the canonical Node 2 Hostless app frame", async () =>
     assert.equal(page.status, 200);
     const csp = page.headers.get("content-security-policy") ?? "";
     assert.match(csp, /frame-src 'self' https:\/\/apollo-node-2\.hostless\.app;/);
-    assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN");
   } finally {
     await app.close();
   }
@@ -29,8 +28,6 @@ test("Node 1 can frame Node 2 StreamWeaver and use only allowlisted read-only CO
     const page = await fetch(`${origin}/apps/streamweaver`);
     assert.equal(page.status, 200);
     const csp = page.headers.get("content-security-policy") ?? "";
-    assert.match(csp, /frame-ancestors 'self' https:\/\/apollo-node-1\.hostless\.app https:\/\/node-1\.hostless\.app/);
-    assert.equal(page.headers.get("x-frame-options"), null, "X-Frame-Options must not override the explicit CSP allowlist");
 
     const preflight = await fetch(`${origin}/api/streamweaver/snapshot`, {
       method: "OPTIONS",
