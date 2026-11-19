@@ -143,4 +143,6 @@ The following source references remain and are not safe to delete as if they wer
 - HearMeOut's legacy-worker adapter is still imported by the current web host for voice bridge/persona audio. It is a bounded migration dependency, not dead code. Remove it only after the bridge and persona audio worker are native to Apollo and bidirectional audio acceptance passes.
 - The unused CompanionFlySnapshotV1 type was removed after repository-wide reference search found no consumers.
 
+- Restream Control Service code exists and StreamWeaver has a client contract, but the service is not currently started by the Hostless Node 2 process map. Its previous Node 3/Oracle deployment guide has been replaced; Node 2 integration and owner rehearsal remain pending.
+
 These items are recorded in the owning app READMEs and architecture/release guides. No new production dependency on Fly, Sprites, or the retired Rotator donor is approved.
