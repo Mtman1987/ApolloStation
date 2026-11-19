@@ -8,14 +8,14 @@ const MAX_FILE_BYTES = 32 * 1024 * 1024;
 export function redactDiagnosticText(input) {
   let value = String(input);
   const patterns = [
-    [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\\s\\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/g, "[REDACTED PRIVATE KEY]"],
-    [/(authorization\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s"';,]+/gi, "$1[REDACTED]"],
-    [/(set-cookie|cookie)\\s*[:=]\\s*[^\\r\\n]+/gi, "$1: [REDACTED]"],
-    [/([?&](?:access_token|refresh_token|id_token|token|api_key|key|secret|code)=)[^&#\\s]+/gi, "$1[REDACTED]"],
-    [/(?<![A-Za-z0-9_-])(["']?(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|passwd|api[_-]?key|session[_-]?key|client[_-]?secret|webhook[_-]?key|private[_-]?key)["']?\\s*[:=]\\s*["']?)[^\\s,;&"'<>]+/gi, "$1[REDACTED]"],
+    [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/g, "[REDACTED PRIVATE KEY]"],
+    [/(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s"';,]+/gi, "$1[REDACTED]"],
+    [/(set-cookie|cookie)\s*[:=]\s*[^\r\n]+/gi, "$1: [REDACTED]"],
+    [/([?&](?:access_token|refresh_token|id_token|token|api_key|key|secret|code)=)[^&#\s]+/gi, "$1[REDACTED]"],
+    [/(?<![A-Za-z0-9_-])(["']?(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|passwd|api[_-]?key|session[_-]?key|client[_-]?secret|webhook[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s,;&"'<>]+/gi, "$1[REDACTED]"],
     [/(?:hlk_[a-z0-9_]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|xox[baprs]-[a-z0-9-]{12,}|sk-[a-z0-9_-]{12,})/gi, "[REDACTED TOKEN]"],
-    [/(eyJ[a-z0-9_-]{10,}\\.)[a-z0-9_-]{10,}(?:\\.[a-z0-9_-]{10,})?/gi, "[REDACTED JWT]"],
-    [/\\bAKIA[0-9A-Z]{16}\\b/g, "[REDACTED AWS KEY]"],
+    [/(eyJ[a-z0-9_-]{10,}\.)[a-z0-9_-]{10,}(?:\.[a-z0-9_-]{10,})?/gi, "[REDACTED JWT]"],
+    [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED AWS KEY]"],
   ];
   for (const [pattern, replacement] of patterns) value = value.replace(pattern, replacement);
   return value;
