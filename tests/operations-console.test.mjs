@@ -189,6 +189,8 @@ test("owner diagnostics logs derive tenant scope from the signed session without
     assert.ok(Array.isArray(allowed.body));
     assert.ok(allowed.body.some((item) => item.id === published.log.id));
     assert.ok(allowed.body.every((item) => item.tenantId === "tenant-a"));
+    assert.deepEqual(Object.keys(allowed.body[0]).sort(), ["id", "kind", "level", "occurredAt", "recordedAt", "sourceAppId", "tenantId"]);
+    assert.equal(allowed.body.some((item) => "summary" in item || "detail" in item || "reporterId" in item || "labels" in item), false);
 
     env.authority.ensureUser("member-c");
     const memberToken = env.auth.issueHumanSession({
