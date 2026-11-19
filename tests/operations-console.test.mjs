@@ -174,3 +174,44 @@ test("connected coder queues the exact bounded evidence through API, CLI, and MC
     assert.equal(read.result.structuredContent[0].runtimeJobId, "rotator-job-1");
   } finally { cleanup(env); }
 });
+
+
+test("owner diagnostics logs derive tenant scope from the signed session without a tenant header", async () => {
+  const env = setup();
+  try {
+    env.data.registerUser({ userId: "owner-a", username: "owner-a", displayName: "Owner A", password: "fixture-password-owner-a", tenantIds: ["tenant-a"] });
+    const published = await env.appA.publishOperationsLog("tenant-a", { level: "warn", kind: "diagnostics.owner-check", summary: "Node readiness is healthy" }, "owner-diagnostics-1");
+    const allowed = env.api.handle({
+      method: "GET",
+      path: "/v1/operations/logs/owner?limit=30",
+      headers: { authorization: `Bearer ${env.ownerToken}` },
+    });
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
+    assert.ok(Array.isArray(allowed.body));
+    assert.ok(allowed.body.some((item) => item.id === published.log.id));
+    assert.ok(allowed.body.every((item) => item.tenantId === "tenant-a"));
+    assert.deepEqual(Object.keys(allowed.body[0]).sort(), ["id", "kind", "level", "occurredAt", "recordedAt", "sourceAppId", "tenantId"]);
+    assert.equal(allowed.body.some((item) => "summary" in item || "detail" in item || "reporterId" in item || "labels" in item), false);
+
+    env.authority.ensureUser("member-c");
+    env.data.registerUser({ userId: "member-c", username: "member-c", displayName: "Member C", password: "fixture-password-member-c", tenantIds: ["tenant-a"] });
+    const memberToken = env.auth.issueHumanSession({
+      userId: "member-c",
+      scopes: ["operations:logs:read"],
+      tenantIds: ["tenant-a"],
+    }).accessToken;
+    const deniedMember = env.api.handle({
+      method: "GET",
+      path: "/v1/operations/logs/owner?limit=30",
+      headers: { authorization: `Bearer ${memberToken}` },
+    });
+    assert.equal(deniedMember.status, 403);
+
+    const deniedService = env.api.handle({
+      method: "GET",
+      path: "/v1/operations/logs/owner?limit=30",
+      headers: { authorization: `Bearer ${token(env.auth, "app-a")}` },
+    });
+    assert.equal(deniedService.status, 403);
+  } finally { cleanup(env); }
+});
