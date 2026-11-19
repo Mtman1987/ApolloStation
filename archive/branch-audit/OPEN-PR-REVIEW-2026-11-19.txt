@@ -1,38 +1,27 @@
-APOLLOSTATION OPEN PULL REQUEST REVIEW
-Captured: 2026-11-19
-Repository: https://github.com/Mtman1987/ApolloStation
+ApolloStation open PR review — refreshed 2026-11-19 14:42 UTC
 
-PR #518 — Hostless control-plane foundation
-URL: https://github.com/Mtman1987/ApolloStation/pull/518
-Disposition: PRESERVE; DO NOT MERGE YET.
-Validation failures observed in the 2026-11-19 workflow. Security redaction work is worth retaining. Fix failures and rerun checks before merge.
+## Open PRs to retain
+- #527 Repository hygiene: keep; latest branch repair restores the active machine-readable app-code parity manifest after the broad docs archive moved it. Full offline validation is running again; do not merge until every required check is green.
+- #528 Owner diagnostic terminal: keep draft; remove the client-side x-spmt-tenant dependency only together with a server-side change that derives active tenant from the validated Apollo session/shell. Keep read-only, owner-only, bounded; no shell execution.
+- #530 Final Apollo cleanup and handoff record: keep draft; current-main documentation-only handoff and refreshed foundation donor sweep.
 
-PR #520 — Final foundation donor sweep
-URL: https://github.com/Mtman1987/ApolloStation/pull/520
-Disposition: PRESERVE FOR REVIEW.
-Documentation/parity findings may be useful. Branch is behind main and GitHub reported it was not mergeable at inspection. Rebase/review before merge.
+## Closed/superseded
+- #518 closed: diagnostic sanitizer work is superseded by merged #525.
+- #520 closed: donor sweep content carried forward and refreshed in #530.
+- #529 closed: recreated from latest main as #530.
 
-PR #527 — Repository hygiene
-URL: https://github.com/Mtman1987/ApolloStation/pull/527
-Disposition: PRESERVE; DO NOT MERGE YET.
-394 changed files. Validation/typecheck/Discord parity checks failed. TypeScript reported invalid characters in apps/companion/src/diagnostics.ts. Narrow and repair the cleanup before merge.
+## Already merged and verified
+- #525 secure Hostless diagnostic artifacts.
+- #526 signed-out/rejected-session bridge gate.
 
-PR #528 — Owner-only Apollo diagnostic terminal
-URL: https://github.com/Mtman1987/ApolloStation/pull/528
-Disposition: PRESERVE; DO NOT MERGE YET.
-Terminal browser request still uses the legacy x-spmt-tenant header, which conflicts with the agreed session-based approach. Correct authentication and validate before merge.
+## Main commits in this cleanup
+- d18385a55d62d8761ed433594cf7bd7417d9f76a — recovery import workflow manual-only, apply=false by default, supports JSONL and gzip manifests.
+- 8be04030358ba750fe03fb556f3d199329d66218 — branch cleanup workflow manual-only, dry-run default.
+- 6091c1cdbe12c1a821712b2c2ed7742da1c7fd30 — archive obsolete Sprite/Fly terminal workflow and remove active workflow path.
 
-BRANCHES RECOMMENDED FOR FOCUSED REVIEW
-feat/nebula-game-runtime-turso-store
-feature/turso-live-runtime-smoke
-feat/stellar-kokoro-self-hosted-tts
-feat/hmo-xtream-watch-catalog
-feat/dsh-mtfixit-intake-turso-followup
-port/streamweaver-restream-golive-parity
-feat/recovered-json-manifest-verification
-feat/oracle-core-runtime-image
-
-These are review candidates only. This file does not assert that their work is absent from main.
-
-SAFETY
-No PR was merged and no branch was deleted during this audit. Branch deletion requires a verified source backup and comparison against main.
+## Safety rules
+- Never merge a red PR.
+- Do not re-run the already verified 5,748-record recovery import.
+- Do not delete the eight recovery-candidate branches without individual review.
+- Do not delete any branch before a verified Git bundle or equivalent full-history archive exists.
+- Distinguish failed checks from cancelled/superseded runs and transient infrastructure failures.
