@@ -1,11 +1,6 @@
 name: Import recovered JSON manifest to shared Turso
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/import-recovered-json-to-turso.yml"
-      - "scripts/import-recovered-json-manifest-to-turso.mjs"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -17,7 +12,7 @@ on:
         description: "Write the verified redacted recovery manifest into the raw staging table"
         required: true
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -51,21 +46,30 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Download the private recovery release asset
+      - name: Download supported private recovery manifest assets
         run: |
+          set -euo pipefail
           mkdir -p recovery-input
           gh release download "$RECOVERY_RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "recovered-json-manifest.1.jsonl" \
+            --pattern "recovered-json-manifest*.jsonl" \
+            --pattern "recovered-json-manifest*.jsonl.gz" \
             --dir recovery-input
+          mapfile -t manifests < <(find recovery-input -maxdepth 1 -type f \\( -name 'recovered-json-manifest*.jsonl' -o -name 'recovered-json-manifest*.jsonl.gz' \\) -print | sort)
+          if [ "${#manifests[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one supported recovery manifest asset; found ${#manifests[@]}."
+            printf '%s\\n' "${manifests[@]}"
+            exit 1
+          fi
+          echo "RECOVERY_MANIFEST=${manifests[0]}" >> "$GITHUB_ENV"
 
-      - name: Verify manifest checksum and Turso configuration
+      - name: Verify manifest and Turso configuration
         run: |
-          test -s recovery-input/recovered-json-manifest.1.jsonl || {
-            echo "::error::The private release must contain recovered-json-manifest.1.jsonl."
+          set -euo pipefail
+          test -s "$RECOVERY_MANIFEST" || {
+            echo "::error::The selected recovery manifest is empty."
             exit 1
           }
-          echo "4e4385a54daa1e09ceb36bd2694e0c2dd576248a483cd1d4e8abd1ed3ef364f8  recovery-input/recovered-json-manifest.1.jsonl" | sha256sum -c -
           test -n "$TURSO_DATABASE_URL" || {
             echo "::error::Set the single shared TURSO_DATABASE_URL GitHub Actions secret or variable."
             exit 1
@@ -76,8 +80,8 @@ jobs:
           }
 
       - name: Validate manifest without writing
-        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.1.jsonl
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest "$RECOVERY_MANIFEST"
 
       - name: Apply and read back all 5,748 records
-        if: ${{ github.event_name == 'push' || inputs.apply }}
-        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest recovery-input/recovered-json-manifest.1.jsonl --apply
+        if: ${{ inputs.apply == true }}
+        run: node scripts/import-recovered-json-manifest-to-turso.mjs --manifest "$RECOVERY_MANIFEST" --apply
