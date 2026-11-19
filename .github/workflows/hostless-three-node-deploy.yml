@@ -425,7 +425,8 @@ jobs:
           wc -l "logs/$NODE_KEY.ndjson" || true
       - name: Redact runtime log artifacts before upload
         if: ${{ always() }}
-        run: node scripts/sanitize-diagnostics.mjs logs
+        run: |
+          if [ -d logs ]; then node scripts/sanitize-diagnostics.mjs logs; else echo "No runtime log directory to upload."; fi
       - name: Upload log snapshot artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
