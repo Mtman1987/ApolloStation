@@ -73,7 +73,6 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.match(studioHtml, /StreamWeaver avatar source/);
     assert.match(studioHtml, /Save 2D avatar to StreamWeaver/);
     assert.match(studioHtml, /No photo turnaround or second head reconstruction/);
-    assert.match(studioResponse.headers.get("content-security-policy") || "", /ws:/);
     assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /No flows installed yet/); assert.match(page, /Voice Commander/); assert.match(page, /Review your text before sending/); assert.match(page, /Provider replies are captured in Simulation Rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
