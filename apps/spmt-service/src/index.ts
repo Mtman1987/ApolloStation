@@ -253,7 +253,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     // Reconcile profile links against the authoritative tenant ownership records.
     // Recovery/import paths can restore an owned tenant without restoring the profile's
     // tenantIds array; requiring both to be perfect locks the verified owner out.
-    const activeOwnedTenantIds = control.listTenants()
+    const activeOwnedTenantIds = store.listTenants()
       .filter((tenant) => tenant.status === "active" && tenant.ownerUserId === ownerUserId)
       .map((tenant) => tenant.id);
     const linkedActiveTenantIds = resolvedProfile.tenantIds.filter((tenantId) => {
