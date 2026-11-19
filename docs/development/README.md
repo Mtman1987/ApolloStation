@@ -2,6 +2,11 @@
 
 This index covers the repository's supported developer commands and major tool families. Tool-specific READMEs should live beside complex tools when their flags, inputs, outputs, and safeguards warrant a separate guide.
 
+## Entry points
+
+- [Repository scripts index](../../scripts/README.md) — script ownership, safety classes and adding new tools.
+- [Hostless runtime guide](../../scripts/hostless/README.md) — two-node process map and deployment boundaries.
+
 ## Standard local workflow
 
 Run from the repository root:
