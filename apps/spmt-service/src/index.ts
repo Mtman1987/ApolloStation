@@ -204,7 +204,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   // Shared owner resolution for SPMT donor identities: provider links (Discord, then
-  // Twitch), then username. Creates a workspace only when APOLLO_SPMT_BRIDGE_BOOTSTRAP=1.
+  // Twitch), then username. Verified owner identity may bootstrap; non-owners require
+  // an existing workspace unless APOLLO_SPMT_BRIDGE_BOOTSTRAP=1.
   type DonorWorkspace =
     | { ok: true; profile: ReturnType<PlatformDataService["getProfileByUsername"]> & object; tenantIds: string[] }
     | { ok: false; status: number; body: Record<string, unknown> };
@@ -245,11 +246,21 @@ export function createSpmtService(options: SpmtServiceOptions) {
       profile = data.registerUser({ userId, username: donorUsername, displayName: donor.username, password: randomBytes(32).toString("base64url"), tenantIds: [tenantId] });
       installSandboxApps(control, tenantId, options.sandboxApps ?? []);
     }
-    const tenantIds = profile.tenantIds.filter((tenantId) => {
+    // Reconcile profile links against the authoritative tenant ownership records.
+    // Recovery/import paths can restore an owned tenant without restoring the profile's
+    // tenantIds array; requiring both to be perfect locks the verified owner out.
+    const activeOwnedTenantIds = control.listTenants()
+      .filter((tenant) => tenant.status === "active" && tenant.ownerUserId === profile.userId)
+      .map((tenant) => tenant.id);
+    const linkedActiveTenantIds = profile.tenantIds.filter((tenantId) => {
       try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
       catch { return false; }
     });
+    const tenantIds = [...new Set([...linkedActiveTenantIds, ...activeOwnedTenantIds])];
     if (!tenantIds.length) return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." } };
+    if (tenantIds.length !== profile.tenantIds.length || tenantIds.some((tenantId) => !profile.tenantIds.includes(tenantId))) {
+      profile = data.setUserTenants(profile.userId, tenantIds);
+    }
     return { ok: true, profile, tenantIds };
   };
 
