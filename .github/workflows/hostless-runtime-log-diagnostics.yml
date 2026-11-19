@@ -145,6 +145,28 @@ jobs:
           fi
           exit 0
 
+      - name: Publish sanitized agent-readable summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          NODE: ${{ matrix.node }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import re, pathlib
+          files = [pathlib.Path('hostless-diagnostics/summary.txt'), pathlib.Path('hostless-diagnostics/recent-errors.log')]
+          def redact(s):
+            patterns = [(r'(?i)(authorization\\s*[:=]\\s*bearer\\s+)\\S+', r'\\1[REDACTED]'), (r'(?i)(bearer\\s+)\\S+', r'\\1[REDACTED]'), (r'(?i)(cookie|set-cookie)\\s*[:=]\\s*[^\\r\\n]+', r'\\1: [REDACTED]'), (r'(?i)(token|secret|password|passwd|api[_-]?key|session[_-]?key)\\s*[:=]\\s*[^\\s,;]+', r'\\1=[REDACTED]'), (r'(?i)(sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})', '[REDACTED]')]
+            for p, repl in patterns: s = re.sub(p, repl, s)
+            return s
+          out = ['## '+NODE+' diagnostics — run '+RUN_ID, '']
+          for f in files:
+            if f.exists(): out += ['### '+f.name, '```text', redact(f.read_text(errors='replace')[:12000]), '```', '']
+          pathlib.Path('agent-summary.md').write_text('\n'.join(out))
+          PY
+          gh issue comment 517 --repo "$REPOSITORY" --body-file agent-summary.md
+
       - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
