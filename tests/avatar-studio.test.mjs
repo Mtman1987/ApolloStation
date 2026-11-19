@@ -6,7 +6,7 @@ const studio = readFileSync(new URL("../apps/streamweaver/src/avatar-studio.ts",
 const host = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
 const bay = readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8");
 
-test("Apollo exposes a dedicated Avatar Studio route with a constrained CDN policy", () => {
+test("Apollo exposes a dedicated Avatar Studio route", () => {
   assert.match(host, /url\.pathname === "\/avatar-studio"/);
   assert.match(host, /renderAvatarStudioPage\(nonce\)/);
   assert.match(host, /@spmt\/streamweaver\/dist\/avatar-studio\.js/);
