@@ -9,6 +9,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [SPMT Service](../apps/spmt-service/README.md) — identity, shared authority, app catalog, grants, jobs, and provider integrations.
 - [Mission Control](../apps/mission-control/README.md) — owner/operator projections and Apollo-native terminal integration requirements.
 - [Chat Gateway](../apps/chat-gateway/README.md) — provider connections, normalization, grants, consumers, and Node 2 worker operations.
+- [StreamWeaver](../apps/streamweaver/README.md) — commands, personas, rewards, overlays, automation flows, speech, avatars, and media workers.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
