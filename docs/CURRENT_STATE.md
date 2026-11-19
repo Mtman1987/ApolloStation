@@ -130,3 +130,17 @@ Do not expand the production cohort while any of these remain unexplained:
 ## 9. Documentation maintenance
 
 This is the single current status summary. Do not add another dated handoff for every small issue. Put durable architecture and developer instructions in their canonical guides; put short-lived execution evidence in the relevant PR/Actions artifacts. Archive superseded reports in mt-delete-me-archive with a manifest, and update this file only when verified state changes.
+
+
+## 10. Residual donor and infrastructure references
+
+The following source references remain and are not safe to delete as if they were unused. They are active compatibility paths or release links that need a proper Apollo-owned replacement:
+
+- HearMeOut still defines HEARMEOUT_DONOR_DEFAULT_ORIGIN as the old hearmeout-main Fly origin. The Lounge bridge uses it. Replace the bridge with an Apollo-owned internal HearMeOut route and explicit Hostless origin before removing the fallback.
+- Nebula Mosaic generation still defaults STREAMWEAVER_URL to the old StreamWeaver Fly origin. Replace it with the Apollo-owned StreamWeaver generation service and explicit configuration before removing the fallback.
+- SpaceMountain Web's Companion and MountainView download routes still point to historical installer/APK assets in StreamWeaver and Rotator donor releases. Move the signed artifacts and release workflow into Apollo-owned storage before changing the URLs.
+- Stellar Core and other worker paths still accept legacy sprite/fly execution-target values; some startup defaults still choose sprite. Hostless must explicitly select the supported hosted target until the shared enum/default migration is completed.
+- HearMeOut's legacy-worker adapter is still imported by the current web host for voice bridge/persona audio. It is a bounded migration dependency, not dead code. Remove it only after the bridge and persona audio worker are native to Apollo and bidirectional audio acceptance passes.
+- The unused CompanionFlySnapshotV1 type was removed after repository-wide reference search found no consumers.
+
+These items are recorded in the owning app READMEs and architecture/release guides. No new production dependency on Fly, Sprites, or the retired Rotator donor is approved.
