@@ -1,7 +1,6 @@
 import type {StellarSpeechPresence} from "@spmt/stellar-core";
 import { AuthDeniedError } from "@spmt/auth-core";
 import { isStreamWeaverWidget, streamWeaverWidgetSnapshot, renderStreamWeaverWidget, STREAMWEAVER_WIDGET_EVENT_TYPES } from "@spmt/streamweaver/dist/overlay-widgets.js";
-import { createHash } from "node:crypto";
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { ControlService } from "@spmt/control-core";
 
