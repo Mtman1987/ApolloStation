@@ -15,7 +15,7 @@ import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
-import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, validateSpmtServiceOrigin, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { streamWeaverMediaBrowserJs } from "./media-client.js";
