@@ -9,7 +9,9 @@ export interface CompanionDiagnosticsSnapshotV1 {
   capturedAt: string;
   states: Record<string, unknown>;
   logs: unknown[];
-}n\nconst SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
+}
+
+const SECRET_KEY = /(?:authorization|password|secret|token|api[_-]?key|cookie)/i;
 const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 const QUERY_SECRET_PATTERN = /([?&](?:access_token|refresh_token|id_token|token|api_key|apikey|key|signature|jwt)=)[^&\s"'<>]+/gi;
 const BEARER_PATTERN = /(\bBearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi;
@@ -51,7 +53,8 @@ export class CompanionDiagnosticsStore {
   log(message: string, error?: unknown) {
     const now = this.now();
     const detail = error instanceof Error ? error.stack || error.message : error == null ? "" : String(error);
-    const line = `[${now}] ${redactCompanionText(message)}${detail ? `: ${redactCompanionText(detail)}` : ""}\n`;
+    const line = `[${now}] ${redactCompanionText(message)}${detail ? `: ${redactCompanionText(detail)}` : ""}
+`;
     appendFileSync(join(this.directory, `companion-${now.slice(0, 10)}.log`), line, "utf8");
     this.prune("companion-", ".log", this.options.maxLogDays ?? 30);
   }
@@ -80,9 +83,11 @@ export class CompanionDiagnosticsStore {
     const filename = `companion-snapshot-${safeTimestamp(snapshot.capturedAt)}-${suffix}.json`;
     const destination = join(this.directory, filename);
     const temporary = `${destination}.tmp`;
-    writeFileSync(temporary, `${serialized}\n`, { encoding: "utf8", mode: 0o600 });
+    writeFileSync(temporary, `${serialized}
+`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, destination);
-    writeFileSync(join(this.directory, "latest-companion-snapshot.json"), `${serialized}\n`, { encoding: "utf8", mode: 0o600 });
+    writeFileSync(join(this.directory, "latest-companion-snapshot.json"), `${serialized}
+`, { encoding: "utf8", mode: 0o600 });
     this.prune("companion-snapshot-", ".json", this.options.maxSnapshots ?? 30);
     return { filename, path: destination, bytes: Buffer.byteLength(serialized, "utf8"), logCount: snapshot.logs.length, capturedAt: snapshot.capturedAt };
   }
