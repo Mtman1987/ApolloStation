@@ -1,8 +1,5 @@
-# Emergency owner-requested release path: commit message [skip-hostless-validation] skips the full test job; deployment preflight checks remain enabled.
+# Hostless Node 1/2 release. Every production push must pass the typecheck and shared-Turso preflight.
 name: ApolloStation Hostless two-node release
-# Manual trigger fallback: a harmless commit to this workflow file starts the same validated Hostless release on main.
-# Recovery gate: deployment verifies the shared Turso staging table contains all 5,748 verified records.
-# Release re-run after Oracle validation passed on a8cccc85; retain the two-node production gate.
 
 on:
   pull_request:
@@ -37,7 +34,6 @@ on:
       - "scripts/nebula-tenant-discovery.mjs"
       - "scripts/import-staged-nebula-tag-to-turso.mjs"
       - "tests/nebula-tenant-discovery.test.mjs"
-      - ".github/workflows/hostless-three-node-deploy.yml"
   workflow_dispatch:
     inputs:
       deploy:
@@ -50,16 +46,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-release
-  cancel-in-progress: true
+  group: apollo-hostless-release-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Release gate: every push to main (and every AI-triggered dispatch) must pass
-  # the typecheck before any Hostless deployment starts. The emergency
-  # [skip-hostless-validation] commit tag still bypasses this job, as before.
+  # Mandatory release gate: no commit-message or dispatch input can skip typecheck.
   validate:
     name: Typecheck release gate
-    if: ${{ !contains(github.event.head_commit.message || '', '[skip-hostless-validation]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -163,7 +156,7 @@ jobs:
     needs: [detect-deploy-targets, validate]
     if: >-
       ${{ !cancelled() &&
-          (needs.validate.result == 'success' || needs.validate.result == 'skipped') &&
+          needs.validate.result == 'success' &&
           github.ref == 'refs/heads/main' &&
           (needs.detect-deploy-targets.outputs.node1 == 'true' ||
            needs.detect-deploy-targets.outputs.node2 == 'true') &&
