@@ -6,6 +6,7 @@ import { SpmtClient } from "@spmt/sdk";
 import { STELLAR_CHAT_CAPABILITY_ID } from "./contracts.js";
 import type { ExecutionTargetV1 } from "@spmt/contracts";
 import { OpenAiCompatibleChatProvider, OpenAiResponsesChatProvider, StellarChatWorker, createStellarWorkerTokenProvider } from "./worker.js";
+import { buildChatChainFromEnv } from "./chat-chain.js";
 
 const spmtOrigin = process.env.SPMT_ORIGIN ?? "";
 const providerOrigin = process.env.STELLAR_PROVIDER_ORIGIN ?? "";
@@ -15,10 +16,16 @@ const model = process.env.OPENAI_CHAT_MODEL ?? process.env.STELLAR_PROVIDER_MODE
 const executionTargetValue = process.env.STELLAR_EXECUTION_TARGET ?? "sprite";
 if (!(["sprite", "fly", "companion", "hosted"] as const).includes(executionTargetValue as ExecutionTargetV1)) throw new Error("STELLAR_EXECUTION_TARGET is invalid");
 const executionTarget = executionTargetValue as ExecutionTargetV1;
-if (!spmtOrigin || (!openAiKey && !providerOrigin) || credential.length < 32) throw new Error("SPMT_ORIGIN, an inference provider, and a 32+ character STELLAR_WORKER_CREDENTIAL are required");
+if (!spmtOrigin || credential.length < 32) throw new Error("SPMT_ORIGIN and a 32+ character STELLAR_WORKER_CREDENTIAL are required");
 const workerId = process.env.STELLAR_WORKER_ID ?? `stellar-${executionTarget}-${process.pid}`;
 const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getAccessToken: createStellarWorkerTokenProvider({ spmtOrigin, credential }) });
-const provider = openAiKey ? new OpenAiResponsesChatProvider({ apiKey: openAiKey, model }) : new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
+// Failover chain: each slot is skipped unless its key is set. See chat-chain.ts for the order and env names.
+const openAiProvider = openAiKey ? new OpenAiResponsesChatProvider({ apiKey: openAiKey, model }) : undefined;
+const localProvider = providerOrigin ? new OpenAiCompatibleChatProvider({ origin: providerOrigin, model }) : undefined;
+const chain = buildChatChainFromEnv(process.env, { ...(openAiProvider ? { openAi: openAiProvider } : {}), ...(localProvider ? { localProvider } : {}) });
+if (!chain.chain) throw new Error("At least one chat provider must be configured (OPENAI_API_KEY, GEMINI_API_KEY, TOGETHER_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, CLOUDFLARE_API_TOKEN with CLOUDFLARE_ACCOUNT_ID, or STELLAR_PROVIDER_ORIGIN)");
+const provider = chain.chain;
+process.stdout.write(`Stellar chat providers in failover order: ${chain.enabled.join(" -> ")}\n`);
 const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
 const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
 const kokoroUrl = process.env.STELLAR_KOKORO_URL;

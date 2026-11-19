@@ -4,7 +4,7 @@ import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, STELLAR_CHAT_RESULT_KIND } from "./contracts.js";
 
 export interface StellarChatMessageV1 { role: "system" | "user" | "assistant"; content: string; }
-export interface StellarChatCompletionV1 { text: string; finishReason?: string; usage?: { inputTokens?: number; outputTokens?: number } }
+export interface StellarChatCompletionV1 { text: string; finishReason?: string; provider?: string; usage?: { inputTokens?: number; outputTokens?: number } }
 export interface StellarChatProviderV1 { healthy(): Promise<boolean>; complete(messages: StellarChatMessageV1[]): Promise<StellarChatCompletionV1>; }
 
 export class StellarProviderError extends Error {
