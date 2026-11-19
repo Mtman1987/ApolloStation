@@ -3,7 +3,7 @@ ApolloStation open PR review — refreshed 2026-11-19 14:42 UTC
 ## Open PRs to retain
 - #527 Repository hygiene: merged after all five required checks passed on the rebased head. The active machine-readable app-code parity manifest is retained; historical donor reports are referenced from the archive.
 - #528 Owner diagnostic terminal: keep draft; the terminal now uses the signed Apollo session and a dedicated owner-only log endpoint, returning metadata only. All checks passed on the pre-rebase head; validation is rerunning after the latest-main rebase. Keep draft until Node 1 browser acceptance.
-- #530 Final Apollo cleanup and handoff record: keep draft temporarily; it will be recreated from the latest main commit after the release workflow hardening.
+- #530 Final Apollo cleanup and handoff record: keep draft; it now carries the refreshed ordered cleanup, donor sweep, Hostless release cancellation/fix, and verified remaining acceptance gates.
 
 ## Closed/superseded
 - #518 closed: diagnostic sanitizer work is superseded by merged #525.
