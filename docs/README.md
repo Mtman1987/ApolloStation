@@ -10,6 +10,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Mission Control](../apps/mission-control/README.md) — owner/operator projections and Apollo-native terminal integration requirements.
 - [Chat Gateway](../apps/chat-gateway/README.md) — provider connections, normalization, grants, consumers, and Node 2 worker operations.
 - [StreamWeaver](../apps/streamweaver/README.md) — commands, personas, rewards, overlays, automation flows, speech, avatars, and media workers.
+- [Nebula Arcade](../apps/nebula-arcade/README.md) — games, Tag, Bingo, Quackverse, Mosaic, overlays, and provider runtime.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
