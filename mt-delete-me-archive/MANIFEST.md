@@ -15,3 +15,9 @@ Files below were moved from their original locations after reference review. Ori
 | docs/hostless/RESTREAM_NODE3_PORT.md | mt-delete-me-archive/legacy-docs/docs/hostless/RESTREAM_NODE3_PORT.md | Node 3-specific Restream port plan; Node 3 is retired from the active topology. |
 
 Archive first; permanent deletion requires a verified copy in the owner's storage repository.
+
+## Bulk historical evidence move
+
+| Original path | Archive path | Reason |
+|---|---|---|
+| docs/archive/evidence/ (295 files, 678,887 bytes) | mt-delete-me-archive/legacy-docs/docs/archive/evidence/ | Complete captured donor documentation/specification snapshot tree. Retained as historical provenance; not governing product documentation. Directory structure and blob contents were preserved. |
