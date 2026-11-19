@@ -16,6 +16,25 @@ Files below were moved from their original locations after reference review. Ori
 
 Archive first; permanent deletion requires a verified copy in the owner's storage repository.
 
+## Additional production snapshots moved
+
+| Original path | Archive path | Reason |
+|---|---|---|
+| docs/production/APOLLO_AUTH_HANDOFF_2026-11-19.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_AUTH_HANDOFF_2026-11-19.md | Latest sign-in handoff retained as a dated snapshot; current sign-in status is consolidated in docs/CURRENT_STATE.md. |
+| docs/production/APOLLO_HANDOFF_2026-11-19.md | mt-delete-me-archive/legacy-docs/docs/production/APOLLO_HANDOFF_2026-11-19.md | Latest broad handoff retained as a dated snapshot; contains superseded infrastructure assumptions and issue-specific next steps. |
+| docs/production/DSH_MTFIXIT_CODER_INTAKE.md | mt-delete-me-archive/legacy-docs/docs/production/DSH_MTFIXIT_CODER_INTAKE.md | Issue-specific coder intake snapshot. |
+| docs/production/HEARMEOUT_AUTHORITY_2026-09-23.md | mt-delete-me-archive/legacy-docs/docs/production/HEARMEOUT_AUTHORITY_2026-09-23.md | Dated HearMeOut authority snapshot. |
+| docs/production/HEARMEOUT_LIVE_INVENTORY.md | mt-delete-me-archive/legacy-docs/docs/production/HEARMEOUT_LIVE_INVENTORY.md | Dated donor/live inventory; not current Hostless runtime truth. |
+| docs/production/HEARMEOUT_PROVIDER_CANARY_2026-08-30.md | mt-delete-me-archive/legacy-docs/docs/production/HEARMEOUT_PROVIDER_CANARY_2026-08-30.md | Historical provider canary evidence. |
+| docs/production/HMO_DSH_PARITY_IMPLEMENTATION_2026-09-13.md | mt-delete-me-archive/legacy-docs/docs/production/HMO_DSH_PARITY_IMPLEMENTATION_2026-09-13.md | Dated parity implementation report. |
+| docs/production/HMO_SINGLE_VIDEO_TEST_2026-09-14.md | mt-delete-me-archive/legacy-docs/docs/production/HMO_SINGLE_VIDEO_TEST_2026-09-14.md | Issue-specific single-video test report. |
+| docs/production/READINESS_CLEANUP_2026-09-06.md | mt-delete-me-archive/legacy-docs/docs/production/READINESS_CLEANUP_2026-09-06.md | Historical repository cleanup report superseded by this hygiene increment. |
+| docs/production/SPMT_LIVE_INVENTORY.md | mt-delete-me-archive/legacy-docs/docs/production/SPMT_LIVE_INVENTORY.md | Dated SPMT live inventory snapshot. |
+| docs/production/hearmeout-discord-activity-startup-2026-09-10.md | mt-delete-me-archive/legacy-docs/docs/production/hearmeout-discord-activity-startup-2026-09-10.md | Issue-specific Discord Activity startup notes. |
+| docs/production/hearmeout-owner-cutover-2026-09-12.md | mt-delete-me-archive/legacy-docs/docs/production/hearmeout-owner-cutover-2026-09-12.md | Historical owner cutover handoff. |
+| docs/production/branch-consolidation-2026-09-06.json | mt-delete-me-archive/legacy-docs/docs/production/branch-consolidation-2026-09-06.json | Historical branch preservation inventory for the September cleanup. |
+| docs/production/patches/parity-artifact-upload-20261103.patch | mt-delete-me-archive/legacy-docs/docs/production/patches/parity-artifact-upload-20261103.patch | One-off patch snapshot retained for provenance. |
+
 ## Bulk historical evidence move
 
 | Original path | Archive path | Reason |
