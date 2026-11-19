@@ -426,12 +426,8 @@ export function validateSpmtServiceOrigin(value: string) {
   return url.origin;
 }
 
-export function productAppFrameAncestors(origins: readonly string[] = []) {
-  return ["'self'", ...new Set(origins.map(validateSpmtServiceOrigin))].join(" ");
-}
-
-function headers(response: ServerResponse, trustedParentOrigins: readonly string[]) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self'; frame-ancestors ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`);
+export function headers(response: ServerResponse, trustedParentOrigins: readonly string[]) {
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self';  ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`);
   if (trustedParentOrigins.length) response.removeHeader("x-frame-options");
   else response.setHeader("x-frame-options", "SAMEORIGIN");
   response.setHeader("referrer-policy", "no-referrer");
