@@ -2,6 +2,8 @@
 
 ## Start here
 
+[Apollo handoff — 2026-11-19](APOLLO_HANDOFF_2026-11-19.md): SPMT XP → Turso import status, the SSO app-launch fix (branch `shell-app-frame-fix`), and open items.
+
 [Current Hostless continuation — 2026-11-04](APOLLO_HOSTLESS_CONTINUATION_2026-11-04.md)
 
 Read the linked three-node/runtime/database plans. Main already contains the Hostless portability foundation and isolated Oracle Restream receiver. Preserve one canonical authority and Node 2's Chat Gateway/StreamWeaver/Nebula co-location. Durable external storage and measured free-account capacity remain release blockers. Fetch current `main` before resuming.

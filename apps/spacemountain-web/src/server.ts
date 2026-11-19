@@ -93,7 +93,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
-    applySecurityHeaders(response, nonce);
+    applySecurityHeaders(response, nonce, isShellAppFrameRequest(request.url));
     let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
@@ -522,14 +522,27 @@ function browserProxyAllowed(method: string, pathname: string) {
   return false;
 }
 
-function applySecurityHeaders(response: ServerResponse, nonce: string) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`);
+// Shipyard launches apps into the shell's own iframe as `<launchUrl>?surface=shell`.
+// When an app's launchUrl is the shell root, that response must be frameable by this
+// same origin, or the iframe is blocked and shows a broken image.
+function isShellAppFrameRequest(rawUrl: string | undefined) {
+  try {
+    const url = new URL(rawUrl ?? "/", "http://spacemountain.local");
+    return (url.pathname === "/" || url.pathname === "") && url.searchParams.get("surface") === "shell";
+  } catch {
+    return false;
+  }
+}
+
+function applySecurityHeaders(response: ServerResponse, nonce: string, shellFrame = false) {
+  const frameAncestors = shellFrame ? "'self'" : "'none'";
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self' https://spmt.live; frame-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${frameAncestors}; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
   response.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("x-content-type-options", "nosniff");
-  response.setHeader("x-frame-options", "DENY");
+  response.setHeader("x-frame-options", shellFrame ? "SAMEORIGIN" : "DENY");
 }
 
 function requireSameOrigin(request: IncomingMessage) {
