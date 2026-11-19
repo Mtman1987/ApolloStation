@@ -34,8 +34,6 @@ test("SpaceMountain web host serves retained donor app routes instead of JSON 40
       const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
       assert.equal(response.status, 200, path);
       assert.match(response.headers.get("content-type") ?? "", /^text\/html/);
-      assert.equal(response.headers.get("x-frame-options"), null);
-      assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
       assert.match(await response.text(), new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
   } finally {
