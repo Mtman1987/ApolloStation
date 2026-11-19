@@ -17,6 +17,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Companion](../apps/companion/README.md) — paired local device, OBS, media, workflows, diagnostics and updates.
 - [MountainView](../apps/mountainview/README.md) — mobile/wearable pairing, voice routing, QR/camera events and Companion commands.
 - [Stellar Core](../apps/stellar-core/README.md) — AI job execution, hosted provider chain, private context, research, speech and privacy.
+- [SpaceMountain](../apps/spacemountain/README.md) — shell state, workspace, app frames, OverlayBay, Simulation Rooms and universal appearance.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
