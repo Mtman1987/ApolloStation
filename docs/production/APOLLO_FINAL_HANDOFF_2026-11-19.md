@@ -141,4 +141,4 @@ After acceptance, profile the build and runtime, remove redundant work, optimize
 - Merged sanitizer PR: [#525](https://github.com/Mtman1987/ApolloStation/pull/525)
 - Merged sign-in bridge-gate PR: [#526](https://github.com/Mtman1987/ApolloStation/pull/526)
 - Hygiene PR: [#527](https://github.com/Mtman1987/ApolloStation/pull/527)
-- Owner terminal draft: [#528](https://github.com/Mtman1987/ApolloStation/pull/528)
+- Owner terminal draft: [#528](https://github.com/Mtman1987/ApolloStation/pull/528) (all CI green; live browser acceptance pending)
