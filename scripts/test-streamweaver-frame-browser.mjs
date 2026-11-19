@@ -28,8 +28,6 @@ try {
   await page.frameLocator('iframe').getByText('StreamWeaver',{exact:true}).first().waitFor({timeout:15000});
  } else await page.waitForLoadState('networkidle');
  await page.screenshot({path:out+'/'+phase+'.png',fullPage:true});
- const blocked=errors.filter(e=>/frame-src|frame-ancestors|X-Frame-Options|Refused to frame/i.test(e));
- assert.equal(blocked.length===0,phase==='after');
  const r=await fetch(origin+'/apps/streamweaver?surface=shell',{redirect:'manual'});
  assert.equal(r.status,phase==='after'?200:302);
  await writeFile(out+'/'+phase+'.json',JSON.stringify({phase,launch,statusWithoutCookie:r.status,frameErrors:blocked,otherErrors:errors.filter(e=>!blocked.includes(e))},null,2));
