@@ -246,22 +246,25 @@ export function createSpmtService(options: SpmtServiceOptions) {
       profile = data.registerUser({ userId, username: donorUsername, displayName: donor.username, password: randomBytes(32).toString("base64url"), tenantIds: [tenantId] });
       installSandboxApps(control, tenantId, options.sandboxApps ?? []);
     }
+    if (!profile) return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No Apollo profile is linked to this SPMT account." } };
+    let resolvedProfile = profile;
+    const ownerUserId = resolvedProfile.userId;
     // Reconcile profile links against the authoritative tenant ownership records.
     // Recovery/import paths can restore an owned tenant without restoring the profile's
     // tenantIds array; requiring both to be perfect locks the verified owner out.
     const activeOwnedTenantIds = control.listTenants()
-      .filter((tenant) => tenant.status === "active" && tenant.ownerUserId === profile.userId)
+      .filter((tenant) => tenant.status === "active" && tenant.ownerUserId === ownerUserId)
       .map((tenant) => tenant.id);
-    const linkedActiveTenantIds = profile.tenantIds.filter((tenantId) => {
-      try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
+    const linkedActiveTenantIds = resolvedProfile.tenantIds.filter((tenantId) => {
+      try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === ownerUserId; }
       catch { return false; }
     });
     const tenantIds = [...new Set([...linkedActiveTenantIds, ...activeOwnedTenantIds])];
     if (!tenantIds.length) return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." } };
-    if (tenantIds.length !== profile.tenantIds.length || tenantIds.some((tenantId) => !profile.tenantIds.includes(tenantId))) {
-      profile = data.setUserTenants(profile.userId, tenantIds);
+    if (tenantIds.length !== resolvedProfile.tenantIds.length || tenantIds.some((tenantId) => !resolvedProfile.tenantIds.includes(tenantId))) {
+      resolvedProfile = data.setUserTenants(ownerUserId, tenantIds);
     }
-    return { ok: true, profile, tenantIds };
+    return { ok: true, profile: resolvedProfile, tenantIds };
   };
 
   // Resume an Apollo browser session from the SPMT donor cookie when the browser has
