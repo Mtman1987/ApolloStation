@@ -185,7 +185,7 @@ test("owner diagnostics logs derive tenant scope from the signed session without
       path: "/v1/operations/logs/owner?limit=30",
       headers: { authorization: `Bearer ${env.ownerToken}` },
     });
-    assert.equal(allowed.status, 200);
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
     assert.ok(Array.isArray(allowed.body));
     assert.ok(allowed.body.some((item) => item.id === published.log.id));
     assert.ok(allowed.body.every((item) => item.tenantId === "tenant-a"));
