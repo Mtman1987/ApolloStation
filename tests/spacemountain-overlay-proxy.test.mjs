@@ -43,7 +43,7 @@ async function withOverlayHost(run) {
   } finally { if (web) await web.close(); await gateway.close(); }
 }
 
-test("browser host serves tenant and opaque overlay documents and child sources with renderer CSP", async () => {
+test("browser host serves tenant and opaque overlay documents and child sources", async () => {
   await withOverlayHost(async (base) => {
     for (const root of ["/t/tenant-a/public", "/t/tenant-a/personal", "/o/abcdefghijklmnop"]) {
       for (const suffix of ["", "/source/widget"]) {
