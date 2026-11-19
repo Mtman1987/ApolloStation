@@ -679,6 +679,15 @@ export class SpaceMountainShellUi {
 
   private shellLaunchUrl(app: SpaceMountainAppCardV1) {
     const target = new URL(app.launchUrl, typeof window === "undefined" ? "https://spacemountain.live" : window.location.origin);
+    // StreamWeaver lives on Node 2, but its browser surface must use the shell's
+    // Node 1 proxy so frame policies, sessions, and API requests share an origin.
+    if (app.appId === "streamweaver") {
+      const proxy = new URL("/apps/streamweaver", typeof window === "undefined" ? "https://spacemountain.live" : window.location.origin);
+      proxy.search = target.search;
+      proxy.hash = target.hash;
+      proxy.searchParams.set("surface", "shell");
+      return proxy.toString();
+    }
     target.searchParams.set("surface", "shell");
     return target.toString();
   }

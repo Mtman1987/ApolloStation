@@ -185,7 +185,7 @@ test("integrated gateway proxies the full SPMT API for remote workers", async ()
   }
 });
 
-test("integrated gateway sends unauthenticated StreamWeaver launches through SPMT sign-in and preserves same-origin sessions", async () => {
+test("integrated gateway forwards StreamWeaver launches without an extra cookie gate", async () => {
   const web = createIntegratedSpaceMountainWebHost({
     spmtOrigin: "http://127.0.0.1:1",
     greenAppOrigins: { streamweaver: "https://127.0.0.1:1" },
@@ -196,8 +196,9 @@ test("integrated gateway sends unauthenticated StreamWeaver launches through SPM
     await web.listen();
     const base = origin(web.server);
     const unauthenticated = await fetch(`${base}/apps/streamweaver?view=integrations`, { redirect: "manual" });
-    assert.equal(unauthenticated.status, 302);
-    assert.equal(unauthenticated.headers.get("location"), "/?return=%2Fapps%2Fstreamweaver%3Fview%3Dintegrations");
+    assert.equal(unauthenticated.status, 502, "Request reaches the unavailable app upstream instead of redirecting to a blocked login frame");
+    assert.equal(unauthenticated.headers.get("location"), null);
+    assert.equal((await unauthenticated.json()).error, "internal_proxy_unavailable");
     const authenticated = await fetch(`${base}/apps/streamweaver`, { headers: { cookie: "spmt_token=owner-session" } });
     assert.equal(authenticated.status, 502);
     assert.equal((await authenticated.json()).error, "internal_proxy_unavailable");
