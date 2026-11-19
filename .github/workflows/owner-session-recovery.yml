@@ -1,0 +1,35 @@
+name: Owner session recovery focused validation
+
+on:
+  push:
+    branches:
+      - fix/owner-workspace-session-recovery
+    paths:
+      - "apps/spmt-service/**"
+      - "packages/control-core/**"
+      - "apps/spmt-service/tests/**"
+      - ".github/workflows/owner-session-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-session-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build service and project dependencies
+        run: npm run build
+      - name: Run owner session regression tests only
+        run: node --test tests/spacemountain-web.test.mjs apps/spmt-service/tests/owner-session-recovery.test.mjs
