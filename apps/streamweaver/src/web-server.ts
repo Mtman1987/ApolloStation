@@ -70,11 +70,10 @@ export interface StreamWeaverWebServerOptionsV1 { openAiKey?:string; privateAiDr
 
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   // The release supplies the canonical Node 1 origin; also retain the exact Node 1 alias shown by the owner.
-  const trustedParentOrigins = [...new Set([validateSpmtServiceOrigin(options.spmtOrigin), "https://node-1.hostless.app"])];
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
   const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, trustedParentOrigins, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
     if (request.method === "GET" && ["/avatar-studio", "/apps/streamweaver/avatar-studio"].includes(url.pathname)) {
       const nonce = randomBytes(18).toString("base64");
       response.writeHead(200, {
@@ -82,7 +81,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
-        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self';  ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`
+        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; object-src 'none'`
       });
       response.end(renderAvatarStudioPage(nonce));
       return true;
