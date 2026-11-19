@@ -3,6 +3,8 @@ name: Hostless runtime log diagnostics
 # Also capture the Node 2-only launcher port/bind retry and app-level start command; check whether the new command passes readiness.
 
 on:
+  schedule:
+    - cron: '17 */6 * * *' # Every six hours, offset from common cron boundaries
   push:
     branches: [main]
     paths:
