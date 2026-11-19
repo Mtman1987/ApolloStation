@@ -45,3 +45,12 @@ test("SPMT sign-in starts and completes through a PKCE public client with no cli
   assert.match(flow, /issueBrowserSession\(issued\.accessToken\)/);
   assert.match(flow, /timingSafeEqual\(Buffer\.from\(state\)/);
 });
+
+test("a rejected or missing session always reveals the SPMT bridge recovery form", () => {
+  const restore = client.slice(client.indexOf("async function restoreShell"), client.indexOf("async function submitLogin"));
+  const gate = client.slice(client.indexOf("function showAuth"), client.indexOf("function showSessionUnavailable"));
+  assert.match(restore, /Your existing SPMT session is not active in this browser/);
+  assert.match(gate, /authView\.dataset\.mode = "signin"/);
+  assert.match(gate, /selectTab\("spmt"\)/);
+  assert.match(gate, /reportBrowserDiagnostic\("auth-gate-shown"/);
+});
