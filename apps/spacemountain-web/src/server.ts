@@ -468,7 +468,6 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   if(media){for(const name of ["content-range","accept-ranges","content-disposition","x-content-type-options","cross-origin-resource-policy","access-control-allow-origin","access-control-expose-headers"]){const value=upstream.headers.get(name);if(value)responseHeaders[name]=value;}if(method==="HEAD")responseHeaders["content-length"]=upstream.headers.get("content-length")??"0";}
   if (overlay) {
 
-    responseHeaders[""] = upstream.headers.get("") ?? "default-src 'none'; style-src 'unsafe-inline'";
     for (const name of ["referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders[name] = value;
