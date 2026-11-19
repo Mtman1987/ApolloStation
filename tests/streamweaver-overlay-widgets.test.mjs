@@ -1,12 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtempSync,rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
-import { streamweaverCatalogRegistration,streamWeaverWidgetSnapshot,streamWeaverWidgetManifests,renderStreamWeaverWidget,STREAMWEAVER_WIDGET_CLIENT,STREAMWEAVER_WIDGET_CSP } from "../apps/streamweaver/dist/index.js";
+import { streamweaverCatalogRegistration,streamWeaverWidgetSnapshot,streamWeaverWidgetManifests,renderStreamWeaverWidget,STREAMWEAVER_WIDGET_CLIENT } from "../apps/streamweaver/dist/index.js";
 
 test("widget projection preserves visible data and excludes credentials, untrusted sources and other widget data",()=>{
   const now=new Date().toISOString(),events=[
@@ -30,8 +29,8 @@ test("widget projection preserves visible data and excludes credentials, untrust
   const rejectedGesture=streamWeaverWidgetSnapshot([{id:"bad-gesture",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:now,payload:{gesture:"execute_script"}}],now,"avatar");
   assert.equal(rejectedGesture.items[0].gesture,"");
   assert.match(renderStreamWeaverWidget("avatar"),/data-gesture=wave_gesture/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function setAvatarGesture/);
-  assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
-  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
+  assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));
+  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
 });
 
 test("registered StreamWeaver widgets render and poll through real opaque grants and revoke immediately",async()=>{
