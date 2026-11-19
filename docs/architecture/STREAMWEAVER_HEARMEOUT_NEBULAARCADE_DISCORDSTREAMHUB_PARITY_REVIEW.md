@@ -4,7 +4,7 @@ Status: current-source comparison and continuation plan. **No product is declare
 
 ## Source snapshots and evidence boundary
 
-| Product | Donor repository / pinned `main` | Apollo destination / pinned `main` | Current assessment |
+| Product | Donor repository / pinned `main` | Apollo destination / pinned source-review SHA | Current assessment |
 |---|---|---|---|
 | StreamWeaver | `Mtman1987/streamweaver` — `ad2e43fd27f03b4c11fdaa1585ee1ad7ff4fcf80` | `apps/streamweaver` in `Mtman1987/ApolloStation` — `673efc3f9b957833b590194557a84bada2f19238` | Partial; substantial implementation exists, several end-to-end capabilities and live acceptance remain open. |
 | HearMeOut | `Mtman1987/hearmeout-main` — `840111480c09d0bf1fdd16cff446a3a868846720` | `apps/hearmeout` in ApolloStation — `673efc3f9b957833b590194557a84bada2f19238` | Partial; media security has advanced, but provider/browser acceptance and full route/workflow parity remain open. |
@@ -107,7 +107,7 @@ Use `docs/donor-audits/DSH_LIVE_AUDIT_2026-09-07.md` and `FEATURE_PARITY_REVIEW_
 
 ## Ordered continuation and exit gates
 
-1. **Evidence baseline:** merge this source mapping into the machine-readable donor allowlist and parity workflows; run fresh read-only inventories for all four donor/app pairs at explicit refs. Preserve inventory, comparison and REA artifacts with exact commit provenance. A comparison is triage, not feature parity evidence.
+1. **Evidence baseline — complete for this audit snapshot:** the confirmed donor mapping and four manual/nightly pairings are merged; the post-merge main run at Apollo `e96b88207607ab5f586592baebbe03b2bc101ca1` completed read-only inventories and REA for all four donor/app pairs, with artifacts checked for expected contents and commit provenance. Rerun after source changes or artifact expiry. Inventory, path/hash comparison and REA output are triage only, not feature parity evidence.
 2. **Current gap reconciliation:** refresh the StreamWeaver/HMO/DSH legacy ledgers against the pinned Apollo source and current tests. Correct stale “missing,” “open,” or “pending” statements when later merged commits supersede them; do not overwrite historical results without dates/SHA context.
 3. **Nebula/ChatTag:** map Tag aliases/events and each donor Bingo contract; determine donor game list and durable state path; verify current Apollo consumers, XP/event ownership and restart/restore. Keep ChatTag as donor only.
 4. **Bounded behavior slices:** prioritize concrete and cross-cutting blockers rather than copying repositories. For each slice record donor entry/source, Apollo owner/path, disposition (keep/adapt/combine/exclude/blocked), test and fresh result, provider/browser evidence, and any tenant/data migration evidence.
