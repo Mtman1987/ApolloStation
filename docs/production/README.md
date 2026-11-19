@@ -1,28 +1,20 @@
 # Production and release documentation
 
-This folder contains current handoffs and operational evidence references. Dated snapshots are not automatically current; always compare them with the active branch, deployment workflow, and versioned configuration.
+This directory contains only maintained operational references. Dated execution reports and issue-specific handoffs are historical evidence and are preserved in the repository quarantine archive.
 
-## Current handoffs
+## Current operating sources
 
-- [Apollo handoff — 2026-11-19](APOLLO_HANDOFF_2026-11-19.md) — owner-first status, XP import evidence, shell app-frame diagnosis, and remaining operational work.
-- [Apollo sign-in handoff — 2026-11-19](APOLLO_AUTH_HANDOFF_2026-11-19.md) — SPMT bridge/PKCE sign-in implementation and owner acceptance boundary.
-- [Production readiness cleanup — 2026-09-06](READINESS_CLEANUP_2026-09-06.md) — historical branch-consolidation and hygiene record; not current deployment status.
+- [Current Apollo state](../CURRENT_STATE.md) — verified implementation, two-node deployment status, owner sign-in, persistence boundaries, and acceptance gaps.
+- [Production path](../PRODUCTION_PATH.md) — risk-ordered release, recovery, and cutover policy.
+- [Production rollout manifest](../../config/production-rollout.v1.json) — machine-checked rollout state.
+- [Hostless release workflow](../../.github/workflows/hostless-three-node-deploy.yml) — historical filename; current matrix is Node 1 and Node 2.
+- [Development tooling index](../development/README.md) — canonical validation, migration, and operator commands.
 
-## App-specific production references
+## Maintained technical references
 
-- [HearMeOut live inventory](HEARMEOUT_LIVE_INVENTORY.md)
-- [HearMeOut provider canary evidence](HEARMEOUT_PROVIDER_CANARY_2026-08-30.md)
-- [SPMT live inventory](SPMT_LIVE_INVENTORY.md)
-- [StreamWeaver local Kokoro TTS snapshot](STREAMWEAVER_LOCAL_KOKORO_TTS_2026-11-04.md)
-- [HearMeOut / Discord Stream Hub parity implementation snapshot](HMO_DSH_PARITY_IMPLEMENTATION_2026-09-13.md)
-- [HearMeOut single-video test snapshot](HMO_SINGLE_VIDEO_TEST_2026-09-14.md)
-- [HearMeOut authority snapshot](HEARMEOUT_AUTHORITY_2026-09-23.md)
+- [Stella AI provider chain](AI_PROVIDER_CHAIN.md) — provider selection and failover behavior; verify current model/secret configuration before relying on any provider.
+- [StreamWeaver local Kokoro TTS snapshot](STREAMWEAVER_LOCAL_KOKORO_TTS_2026-11-04.md) — retained implementation evidence pending consolidation into the StreamWeaver application README.
 
-## Current sources of truth
+## Historical records
 
-- [Current repository state](../CURRENT_STATE.md)
-- [Production path and cutover policy](../PRODUCTION_PATH.md)
-- [Production rollout manifest](../../config/production-rollout.v1.json)
-- [Canonical two-node Hostless release workflow](../../.github/workflows/hostless-three-node-deploy.yml) — historical filename; currently targets Node 1 and Node 2.
-
-Superseded parity/continuation handoffs, the former three-node continuation, and the obsolete Oracle cutover proposal have been moved to the repository-root quarantine folder. See [the archive manifest](../../mt-delete-me-archive/MANIFEST.md).
+Older handoffs, provider canaries, data inventories, cutover snapshots, issue-specific test reports, branch inventories, and one-off patches have been moved to [the repository quarantine archive](../../mt-delete-me-archive/MANIFEST.md). They are not current deployment instructions.
