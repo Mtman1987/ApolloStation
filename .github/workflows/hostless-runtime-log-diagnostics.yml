@@ -131,10 +131,16 @@ jobs:
           fi
           # Capture informational and warning logs as well as errors. Keep the
           # complete output in the Actions artifact; the issue publisher bounds excerpts.
-          hostless logs --app "$APP" --since "$WINDOW" --level warn 2>&1 | tee hostless-diagnostics/recent-warnings.log
-          echo "Warning log command exit code: ${PIPESTATUS[0]}" >> hostless-diagnostics/summary.txt
-          hostless logs --app "$APP" --since "$WINDOW" --level info 2>&1 | tee hostless-diagnostics/recent-info.log
-          echo "Info log command exit code: ${PIPESTATUS[0]}" >> hostless-diagnostics/summary.txt
+          hostless logs --app "$APP" --since "$WINDOW" --level warn > hostless-diagnostics/recent-warnings.log 2>&1
+          WARN_STATUS=$?
+          echo "Warning log command exit code: $WARN_STATUS" >> hostless-diagnostics/summary.txt
+
+          hostless logs --app "$APP" --since "$WINDOW" --level info > hostless-diagnostics/recent-info.log 2>&1
+
+          INFO_STATUS=$?
+
+          echo "Info log command exit code: $INFO_STATUS" >> hostless-diagnostics/summary.txt
+
           # Record configuration key names only; never retrieve or print secret values.
           curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/environment-variables" -o hostless-diagnostics/environment-variable-names.json
           node --input-type=module -e 'import fs from "node:fs"; const p="hostless-diagnostics/environment-variable-names.json"; try { const d=JSON.parse(fs.readFileSync(p,"utf8")); const a=Array.isArray(d)?d:(d.variables??d.environmentVariables??d.items??d.data??[]); fs.writeFileSync("hostless-diagnostics/environment-variable-names.json",JSON.stringify(a.map(x=>x.name??x.key).filter(x=>typeof x==="string").sort(),null,2)); } catch { fs.writeFileSync(p,"[unparseable response; raw body intentionally discarded]"); }'
@@ -159,8 +165,8 @@ jobs:
             echo "===== RECENT ERROR LOGS ====="
           } | tee hostless-diagnostics/summary.txt
 
-          hostless logs --app "$APP" --since "$WINDOW" --level error 2>&1 | tee hostless-diagnostics/recent-errors.log
-          RECENT_STATUS=${PIPESTATUS[0]}
+          hostless logs --app "$APP" --since "$WINDOW" --level error > hostless-diagnostics/recent-errors.log 2>&1
+          RECENT_STATUS=$?
           echo "Recent log command exit code: $RECENT_STATUS" | tee -a hostless-diagnostics/summary.txt
 
           if [ -z "$DEPLOYMENT_ID" ]; then
@@ -169,8 +175,9 @@ jobs:
           fi
           if [ -n "$DEPLOYMENT_ID" ]; then
             echo "===== DEPLOYMENT LOGS: $DEPLOYMENT_ID =====" | tee -a hostless-diagnostics/summary.txt
-            hostless logs --app "$APP" --deployment "$DEPLOYMENT_ID" 2>&1 | tee hostless-diagnostics/deployment.log
-            echo "Deployment log command exit code: ${PIPESTATUS[0]}" | tee -a hostless-diagnostics/summary.txt
+            hostless logs --app "$APP" --deployment "$DEPLOYMENT_ID" > hostless-diagnostics/deployment.log 2>&1
+            DEPLOYMENT_LOG_STATUS=$?
+            echo "Deployment log command exit code: $DEPLOYMENT_LOG_STATUS" | tee -a hostless-diagnostics/summary.txt
             API="https://api.hostless.cloud/v1/apps/$APP/deployments/$DEPLOYMENT_ID"
             curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API" -o hostless-diagnostics/deployment-detail.json
             curl -sS -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/logs" -o hostless-diagnostics/deployment-api-logs.json
