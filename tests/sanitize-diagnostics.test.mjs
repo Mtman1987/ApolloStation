@@ -14,13 +14,13 @@ test("redacts Hostless, GitHub, JWT, authorization, cookies, query strings and J
     "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNyZXQifQ.signaturevalue",
     "AKIA1234567890ABCDEF",
-  ].join("\\n");
+  ].join("\n");
   const result = redactDiagnosticText(source);
   for (const secret of ["verysecretvalue123", "private-cookie", "private-query-token", "private-refresh", "private-client-secret", "ghp_abcdefghijklmnopqrstuvwxyz", "signaturevalue", "AKIA1234567890ABCDEF"]) {
     assert.equal(result.includes(secret), false, "secret leaked: " + secret);
   }
-  assert.match(result, /Authorization: \\[REDACTED\\]/);
-  assert.match(result, /Set-Cookie: \\[REDACTED\\]/);
+  assert.match(result, /Authorization: \[REDACTED\]/);
+  assert.match(result, /Set-Cookie: \[REDACTED\]/);
   assert.match(result, /state=ok/);
 });
 
@@ -32,7 +32,7 @@ test("redacts PEM and PGP armored private keys", () => {
     "-----BEGIN PGP PRIVATE KEY BLOCK-----",
     "pgp-private-material",
     "-----END PGP PRIVATE KEY BLOCK-----",
-  ].join("\\n");
+  ].join("\n");
   const result = redactDiagnosticText(source);
   assert.doesNotMatch(result, /pem-private-material|pgp-private-material/);
   assert.equal((result.match(/REDACTED PRIVATE KEY/g) ?? []).length, 2);
