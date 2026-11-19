@@ -1,6 +1,9 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const HUMAN_REFRESH_OVERLAP_SECONDS = 60;
+const BROWSER_TOKEN_PREFIX = "bsess_";
+// Matches the browser cookie Max-Age (400 days); logout still revokes earlier.
+const BROWSER_SESSION_TTL_SECONDS = 400 * 24 * 60 * 60;
 
 export type AuthActorTypeV1 = "user" | "service";
 export type TenantModeV1 = "any" | "allow-list";
@@ -100,6 +103,7 @@ export class AuthService {
   private readonly now: () => string;
   private readonly tokenFactory: (kind: "access" | "refresh" | "id") => string;
   private readonly refreshRotationKey: Uint8Array | undefined;
+  private readonly browserSessionKey: Buffer | undefined;
 
   constructor(options: AuthServiceOptions) {
     this.store = options.store;
@@ -107,6 +111,11 @@ export class AuthService {
     this.tokenFactory = options.tokenFactory ?? ((kind) => `${kind}_${randomBytes(32).toString("base64url")}`);
     if (options.refreshRotationKey && options.refreshRotationKey.byteLength < 32) throw new AuthValidationError("refreshRotationKey must be at least 32 bytes");
     this.refreshRotationKey = options.refreshRotationKey ? new Uint8Array(options.refreshRotationKey) : undefined;
+    // Browser tokens are HMAC-signed with a key derived from the stable server key, so a
+    // browser keeps its sign-in across restarts and DB resets (the row is recreated on verify).
+    this.browserSessionKey = options.refreshRotationKey
+      ? createHmac("sha256", options.refreshRotationKey).update("apollo-browser-session-v1\0", "utf8").digest()
+      : undefined;
   }
 
   registerServiceIdentity(input: {
@@ -322,6 +331,14 @@ export class AuthService {
     return this.store.transaction(() => {
       const principal = this.authenticateAccessToken(accessToken);
       if (!principal || principal.actorType !== "user") throw new AuthDeniedError("A signed-in user is required");
+      if (this.browserSessionKey) {
+        const issuedAt = this.now();
+        const expiresAt = addSeconds(issuedAt, BROWSER_SESSION_TTL_SECONDS);
+        const record = { actorId: principal.actorId, scopes: principal.scopes, tenantMode: principal.tenantMode, tenantIds: principal.tenantIds, issuedAt, expiresAt };
+        const token = this.signBrowserToken({ ...record, sid: this.tokenFactory("id") });
+        this.storeBrowserRow(token, record, undefined);
+        return { accessToken: token, accessExpiresAt: expiresAt };
+      }
       const issued = this.issueAccess({actorType:"user", actorId:principal.actorId, scopes:principal.scopes, tenantMode:principal.tenantMode, tenantIds:principal.tenantIds, ttlSeconds:900});
       const session = this.store.getAccessSessionByTokenHash(hashToken(issued.accessToken))!;
       // Browser login is explicitly revoked by logout, not by an idle/access-token timer.
@@ -333,19 +350,32 @@ export class AuthService {
   }
 
   isBrowserSession(accessToken: string): boolean {
+    if (!this.authenticateAccessToken(accessToken)) return false;
     const session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
-    return Boolean(session?.browserSession && !session.revokedAt && this.authenticateAccessToken(accessToken));
+    return Boolean(session?.browserSession && !session.revokedAt);
   }
 
   revokeBrowserSession(accessToken: string): void {
     this.store.transaction(() => {
       const session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
       if (session?.browserSession && !session.revokedAt) this.store.putAccessSession({...session, revokedAt:this.now()});
+      else if (!session && this.browserSessionKey) {
+        // Signed token whose row was lost to a DB reset: record the revocation so it stays dead.
+        const payload = this.verifyBrowserToken(accessToken);
+        if (payload) this.storeBrowserRow(accessToken, payload, this.now());
+      }
     });
   }
 
   authenticateAccessToken(accessToken: string): AuthPrincipalV1 | undefined {
-    const session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
+    let session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
+    if (!session && this.browserSessionKey) {
+      // Signed browser token with no row (DB reset or restart): verify the signature and recreate the row.
+      const payload = this.verifyBrowserToken(accessToken);
+      if (!payload) return undefined;
+      this.storeBrowserRow(accessToken, payload, undefined);
+      session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
+    }
     if (!session || session.revokedAt || isExpired(session.expiresAt, this.now())) return undefined;
     if (session.actorType === "service") {
       const identity = this.store.getServiceIdentity(session.actorId);
@@ -376,6 +406,43 @@ export class AuthService {
     const identity = this.store.getServiceIdentity(serviceId);
     if (!identity) throw new AuthDeniedError(`Unknown service identity ${serviceId}`);
     return identity;
+  }
+
+  private signBrowserToken(payload: { actorId: string; scopes: string[]; tenantMode: TenantModeV1; tenantIds: string[]; issuedAt: string; expiresAt: string; sid: string }): string {
+    const body = Buffer.from(JSON.stringify({ a: payload.actorId, s: payload.scopes, m: payload.tenantMode, t: payload.tenantIds, i: payload.issuedAt, e: payload.expiresAt, sid: payload.sid }), "utf8").toString("base64url");
+    const sig = createHmac("sha256", this.browserSessionKey!).update(body, "utf8").digest("base64url");
+    return `${BROWSER_TOKEN_PREFIX}${body}.${sig}`;
+  }
+
+  private verifyBrowserToken(token: string): { actorId: string; scopes: string[]; tenantMode: TenantModeV1; tenantIds: string[]; issuedAt: string; expiresAt: string } | undefined {
+    if (!this.browserSessionKey || !token.startsWith(BROWSER_TOKEN_PREFIX)) return undefined;
+    const [body, sig, extra] = token.slice(BROWSER_TOKEN_PREFIX.length).split(".");
+    if (!body || !sig || extra !== undefined) return undefined;
+    const expected = createHmac("sha256", this.browserSessionKey).update(body, "utf8").digest();
+    const given = Buffer.from(sig, "base64url");
+    if (given.byteLength !== expected.byteLength || !timingSafeEqual(given, expected)) return undefined;
+    try {
+      const data = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Record<string, unknown>;
+      if (typeof data.a !== "string" || !data.a || !Array.isArray(data.s) || !Array.isArray(data.t) || typeof data.m !== "string" || typeof data.i !== "string" || typeof data.e !== "string") return undefined;
+      if (isExpired(data.e, this.now())) return undefined;
+      return { actorId: data.a, scopes: data.s.map(String), tenantMode: data.m as TenantModeV1, tenantIds: data.t.map(String), issuedAt: data.i, expiresAt: data.e };
+    } catch { return undefined; }
+  }
+
+  private storeBrowserRow(token: string, record: { actorId: string; scopes: string[]; tenantMode: TenantModeV1; tenantIds: string[]; issuedAt: string; expiresAt: string }, revokedAt: string | undefined): void {
+    this.store.putAccessSession({
+      id: this.tokenFactory("id"),
+      tokenHash: hashToken(token),
+      actorType: "user",
+      actorId: record.actorId,
+      scopes: [...record.scopes],
+      tenantMode: record.tenantMode,
+      tenantIds: [...record.tenantIds],
+      issuedAt: record.issuedAt,
+      expiresAt: record.expiresAt,
+      browserSession: true,
+      ...(revokedAt ? { revokedAt } : {}),
+    });
   }
 
   private issueAccess(input: {
