@@ -80,7 +80,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
         });
-      response.end(renderAvatarStudioPage(nonce));
+      response.end(renderAvatarStudioPage(""));
       return true;
     }
     return await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url);
