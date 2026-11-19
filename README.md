@@ -14,7 +14,7 @@ This repository is the implementation—not a donor-app collection or a collecti
 | Working on a shared package | The package README under `packages/<package>/README.md` |
 | Working on deployment or runtime operations | [Production path](docs/PRODUCTION_PATH.md), [current state](docs/CURRENT_STATE.md), and the relevant runbook under `docs/` |
 | Working on development tooling | [Development tools index](docs/development/README.md) |
-| Reviewing historical donor material | [Archive manifest](docs/archive/evidence/MANIFEST.md) |
+| Reviewing historical donor material | [Archive manifest](mt-delete-me-archive/legacy-docs/docs/archive/evidence/MANIFEST.md) |
 | Reviewing quarantined legacy files | [Temporary cleanup archive](mt-delete-me-archive/README.md) |
 
 ## Ecosystem at a glance
