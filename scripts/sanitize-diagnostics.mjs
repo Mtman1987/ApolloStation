@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -32,9 +32,15 @@ export async function sanitizeDiagnosticDirectory(directory) {
       const target = resolve(path, entry.name);
       if (entry.isDirectory()) {
         await visit(target);
-      } else if (entry.isFile() && TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+      } else if (entry.isFile()) {
+        if (!TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+          await unlink(target);
+          skippedFiles++;
+          continue;
+        }
         const bytes = await readFile(target);
         if (bytes.byteLength > MAX_FILE_BYTES) {
+          await writeFile(target, "[omitted: diagnostic file exceeded the redaction size limit]", "utf8");
           skippedFiles++;
           continue;
         }
