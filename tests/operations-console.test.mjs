@@ -179,6 +179,7 @@ test("connected coder queues the exact bounded evidence through API, CLI, and MC
 test("owner diagnostics logs derive tenant scope from the signed session without a tenant header", async () => {
   const env = setup();
   try {
+    env.data.registerUser({ userId: "owner-a", username: "owner-a", displayName: "Owner A", password: "fixture-password-owner-a", tenantIds: ["tenant-a"] });
     const published = await env.appA.publishOperationsLog("tenant-a", { level: "warn", kind: "diagnostics.owner-check", summary: "Node readiness is healthy" }, "owner-diagnostics-1");
     const allowed = env.api.handle({
       method: "GET",
@@ -193,6 +194,7 @@ test("owner diagnostics logs derive tenant scope from the signed session without
     assert.equal(allowed.body.some((item) => "summary" in item || "detail" in item || "reporterId" in item || "labels" in item), false);
 
     env.authority.ensureUser("member-c");
+    env.data.registerUser({ userId: "member-c", username: "member-c", displayName: "Member C", password: "fixture-password-member-c", tenantIds: ["tenant-a"] });
     const memberToken = env.auth.issueHumanSession({
       userId: "member-c",
       scopes: ["operations:logs:read"],
