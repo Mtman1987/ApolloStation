@@ -85,7 +85,7 @@ export class OverlayBayParityController {
   }
 
   private editor(scene: OverlaySceneV1, owner: boolean) {
-    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget" && (kind !== "terminal" || (owner && hasScope(this.snapshot.session, "operations:logs:read")))).map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
+    const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget" && (kind !== "terminal" || (owner && hasScope(this.snapshot.session, "operations:logs:read") && isTenantOwner(this.snapshot.session, this.snapshot.tenantId)))).map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
     const widgetGroups = new Map<string, string[]>();
     const available=[...(this.snapshot.overlayWidgets??[]),...this.discoveredWidgets],seenWidgets=new Set<string>();
     for (const item of available) {
@@ -191,16 +191,13 @@ export class OverlayBayParityController {
 
   private async refreshTerminal(sourceId: string, bay: HTMLElement) {
     const source = this.activeScene()?.sources.find(item => item.id === sourceId && item.kind === "terminal");
-    if (!source || !hasScope(this.snapshot.session, "overlay:outputs:write") || !hasScope(this.snapshot.session, "operations:logs:read")) return;
+    if (!source || !hasScope(this.snapshot.session, "overlay:outputs:write") || !hasScope(this.snapshot.session, "operations:logs:read") || !isTenantOwner(this.snapshot.session, this.snapshot.tenantId)) return;
     const state = bay.querySelector<HTMLElement>("[data-ob-terminal-state]");
     if (state) state.textContent = "Reading Apollo service health and operational logs…";
     try {
-      const tenantId = String(this.snapshot.tenantId ?? "");
-      if (!tenantId) throw new Error("The signed-in Apollo session has no active workspace.");
-      const headers = { "x-spmt-tenant": tenantId, accept: "application/json" };
       const [healthResponse, logsResponse] = await Promise.all([
-        fetch("/health/ready", { credentials: "same-origin", cache: "no-store", headers }),
-        fetch("/v1/operations/logs?limit=30", { credentials: "same-origin", cache: "no-store", headers }),
+        fetch("/health/ready", { credentials: "same-origin", cache: "no-store" }),
+        fetch("/v1/operations/logs/owner?limit=30", { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } }),
       ]);
       const health = await safeJson(healthResponse);
       const logs = await safeJson(logsResponse);
@@ -349,6 +346,7 @@ export class OverlayBayParityController {
 function gridLayers(gameIds: string[], styles: Record<string, unknown>) { const columns = Math.ceil(Math.sqrt(gameIds.length)); const rows = Math.ceil(gameIds.length / columns); const width = 100 / columns; const height = 100 / rows; return gameIds.map((gameId, index) => ({ gameId, enabled: true, zIndex: index, x: (index % columns) * width, y: Math.floor(index / columns) * height, width, height, opacity: 1, style: ["compact","minimal"].includes(String(styles[gameId])) ? String(styles[gameId]) : "full" })); }
 function numberField(key: string, label: string, value: number, min: number, max: number) { return `<label>${label}<input data-ob-field="${key}" type="number" min="${min}" max="${max}" step=".5" value="${value}"></label>`; }
 function hasScope(value: unknown, scope: string) { const scopes = record(value)?.scopes; return Array.isArray(scopes) && scopes.includes(scope); }
+function isTenantOwner(value: unknown, tenantId: string) { const roles = record(value)?.tenantRoles; return Boolean(tenantId && record(roles)?.[tenantId] === "owner"); }
 function record(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
 function numeric(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
