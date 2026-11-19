@@ -39,7 +39,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
         </div>
         <form id="login-form" autocomplete="off" hidden>
           <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="5" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
-          <button type="button" id="open-spmt" class="secondary-button">Open SPMT to copy bridge JSON</button>
+          <button type="button" id="open-spmt" class="secondary-button">Open SPMT bridge JSON (copy it)</button>
           <button type="submit">Sign in with SPMT</button>
           <p class="spmt-auth-help">Sent straight to Apollo over HTTPS to verify. Not saved in browser storage.</p>
         </form>

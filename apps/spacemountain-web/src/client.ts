@@ -48,7 +48,7 @@ const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
-document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/", "_blank", "noopener"));
+document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
 selectTab("apollo");
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
