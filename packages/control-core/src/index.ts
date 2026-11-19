@@ -129,9 +129,6 @@ export class ControlService {
     return tenant;
   }
 
-  /** Returns tenant ownership records for trusted internal reconciliation. */
-  listTenants() { return this.store.listTenants(); }
-
   registerApp(input: Omit<AppManifestV1, "createdAt" | "updatedAt">): AppManifestV1 {
     return this.store.transaction(() => {
       let normalized;
