@@ -15,7 +15,7 @@ import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
-import { createProductAppWebServer, productAppFrameAncestors, productAppSnapshotHandler, productAppSnapshotSources, validateSpmtServiceOrigin, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, validateSpmtServiceOrigin, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { streamWeaverMediaBrowserJs } from "./media-client.js";
@@ -82,7 +82,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
-        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; frame-ancestors ${productAppFrameAncestors(trustedParentOrigins)}; object-src 'none'`
+        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; object-src 'none'`
       });
       response.end(renderAvatarStudioPage(nonce));
       return true;
