@@ -114,6 +114,7 @@ const resetDeveloperButton = element<HTMLButtonElement>("reset-developer-form");
 const registerDeveloperButton = element<HTMLButtonElement>("register-developer-app");
 const loginForm = element<HTMLFormElement>("login-form");
 const apolloLoginForm = element<HTMLFormElement>("apollo-login-form");
+const createApolloAccountButton = element<HTMLButtonElement>("create-apollo-account");
 const dialog = element<HTMLDialogElement>("record-dialog");
 const dialogTitle = element<HTMLElement>("record-dialog-title");
 const dialogBody = element<HTMLElement>("record-dialog-body");
@@ -135,6 +136,7 @@ const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
+createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
 document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
 selectTab("apollo");
@@ -184,7 +186,7 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Paste your SPMT session bridge JSON to sign in to Apollo.");
+      showAuth("Sign in with your Apollo username and password, or create an Apollo account below.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -908,8 +910,15 @@ function refreshOnceSignedIn() {
 }
 
 async function submitApolloLogin() {
-  try { await authRequest("/sandbox/auth/login", authInput(apolloLoginForm), apolloLoginForm); }
+  try { await authRequest("/auth/login", authInput(apolloLoginForm), apolloLoginForm); }
   catch (error) { setStatus(message(error), "error"); }
+}
+
+async function submitApolloRegistration() {
+  try {
+    const input = authInput(apolloLoginForm);
+    await authRequest("/auth/register", { ...input, displayName: input.username }, apolloLoginForm);
+  } catch (error) { setStatus(message(error), "error"); }
 }
 
 function selectTab(name: "spmt" | "apollo") {

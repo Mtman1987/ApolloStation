@@ -554,6 +554,23 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/auth/token/introspect") {
+        const token = accessToken(request);
+        const principal = token ? auth.authenticateAccessToken(token) : undefined;
+        if (!principal) return json(response, 401, { active: false, error: "invalid_token" });
+        // This is the one canonical validation result for Apollo-owned apps. Do not
+        // return the token, session rows, refresh material, or password/profile data.
+        return json(response, 200, {
+          active: true,
+          actorType: principal.actorType,
+          actorId: principal.actorId,
+          scopes: principal.scopes,
+          tenantMode: principal.tenantMode,
+          tenantIds: principal.tenantIds,
+          sessionId: principal.sessionId,
+        }, { "cache-control": "no-store" });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge") return json(response, 404, { error: "not_found" });
       if (request.method === "POST" && url.pathname === "/v1/auth/session/bridge-login") {
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
@@ -668,10 +685,20 @@ export function createSpmtService(options: SpmtServiceOptions) {
         const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
         const password = str(body.password, "password");
 
-        // Production credentials remain owned by the existing donor SPMT service.
-        // Apollo creates only a short-lived local session for an already-linked owner
-        // workspace; it never creates a second password or accepts a client tenant ID.
+        // Apollo-owned credentials are the primary sign-in path. The browser receives
+        // the same existing HttpOnly Apollo session cookie used by every app; no
+        // manually copied token, new secret, or provider key is required.
         if (runtimeMode === "production") {
+          try {
+            const result = data.login(username, password, USER_SCOPES);
+            const browser = auth.issueBrowserSession(result.tokens.accessToken);
+            return json(response, 200, result, { "set-cookie": browserSessionCookie(browser.accessToken) });
+          } catch {
+            // Existing donor-linked accounts can still use the compatibility path
+            // below until their Apollo password is set locally.
+          }
+
+          // Legacy donor compatibility. New Apollo accounts never reach this branch.
           try {
             const donorLoginResponse = await fetchImpl("https://spmt.live/api/auth/login", {
               method: "POST",

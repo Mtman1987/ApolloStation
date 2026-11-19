@@ -51,11 +51,10 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <img class="gate-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite">Reading your SPMT session…</p>
       <div class="gate-forms">
-        <div class="gate-tabs" role="tablist">
-          <button type="button" role="tab" data-tab="apollo" aria-selected="true">Apollo login</button>
-          <button type="button" role="tab" data-tab="spmt" aria-selected="false">SPMT bridge</button>
+        <div class="gate-tabs" role="tablist" aria-label="Sign-in method">
+          <button type="button" role="tab" data-tab="apollo" aria-selected="true">Apollo account</button>
         </div>
-        <form id="login-form" autocomplete="off" hidden>
+        <form id="login-form" autocomplete="off" hidden aria-hidden="true">
           <a class="secondary-button spmt-start" href="/v1/auth/spmt/start">Sign in with SPMT (automatic)</a>
           <label>SPMT session bridge JSON<textarea name="bridgeJson" rows="5" maxlength="30000" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder='{"token":"…","user":{…}}'></textarea></label>
           <button type="button" id="open-spmt" class="secondary-button">Open SPMT bridge JSON (copy it)</button>
@@ -65,7 +64,9 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
         <form id="apollo-login-form" autocomplete="on">
           <label>Apollo username<input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
           <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-          <button type="submit">Sign in to Apollo</button>
+          <button type="submit">Sign in</button>
+          <button type="button" id="create-apollo-account" class="secondary-button">Create Apollo account</button>
+          <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
         </form>
       </div>
     </section>
