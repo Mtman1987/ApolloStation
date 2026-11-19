@@ -13,7 +13,7 @@ This directory is the temporary holding area for historical, superseded, duplica
 
 ## Current contents
 
-- Nine superseded production handoff/plan documents.
+- Twenty-three superseded production handoff, inventory, canary, issue, and plan documents.
 - The complete 295-file captured donor evidence tree formerly under docs/archive/evidence/.
 
 The captured donor tree is historical source evidence, not current product documentation. The active documentation index and root README link to the archived manifest. No archived content has been permanently deleted.
