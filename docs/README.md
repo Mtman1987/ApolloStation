@@ -13,6 +13,7 @@ This directory contains maintained architecture, contracts, product guides, deve
 - [Nebula Arcade](../apps/nebula-arcade/README.md) — games, Tag, Bingo, Quackverse, Mosaic, overlays, and provider runtime.
 - [Discord Stream Hub](../apps/discord-stream-hub/README.md) — Discord community, publishing, calendar, moderation, points, and media workers.
 - [HearMeOut](../apps/hearmeout/README.md) — watch rooms, playback, IPTV/HLS, Discord Activity, RTC, voice and media workers.
+- [Commlink](../apps/commlink/README.md) — canonical desks, mail, notifications, live chat, and shared messaging contracts.
 
 
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
