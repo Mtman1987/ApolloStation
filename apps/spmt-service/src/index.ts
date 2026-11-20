@@ -1087,9 +1087,13 @@ function safeInteger(value: unknown, name: string) { if (!Number.isSafeInteger(v
 function header(request: IncomingMessage, name: string) { const value = request.headers[name]; return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function accessToken(request: IncomingMessage) { const authorization = request.headers.authorization; if (authorization?.startsWith("Bearer ")) return authorization.slice(7); return cookie(request, "spmt_token"); }
 function cookie(request: IncomingMessage, name: string) { const source = request.headers.cookie ?? ""; for (const item of source.split(";")) { const [index, ...rest] = item.trim().split("="); if (index === name) return decodeURIComponent(rest.join("=")); } return undefined; }
-function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`; }
+function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax${browserCookieDomain()}`; }
 function setupCookie(name: string, token: string) { return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1800`; }
-function clearCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`; }
+function clearCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${browserCookieDomain()}`; }
+// Node 1 and Node 2 are Hostless subdomains. A production owner session must
+// be sent to both nodes so Node 2 can forward it to the canonical Node 1
+// authority for validation. Keep local/dev cookies host-only.
+function browserCookieDomain() { return process.env.NODE_ENV === "production" ? "; Domain=.hostless.app" : ""; }
 interface PendingProviderLinkV1 { schemaVersion: 1; provider: "twitch" | "discord"; tenantId: string; userId: string; state: string; }
 function encodeProviderLinkCookie(value: PendingProviderLinkV1) { return Buffer.from(JSON.stringify(value), "utf8").toString("base64url"); }
 function decodeProviderLinkCookie(value: string | undefined): PendingProviderLinkV1 | undefined {
