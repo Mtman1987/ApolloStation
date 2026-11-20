@@ -16,6 +16,9 @@ export function decideResume({ state, snapshot, now = Date.now(), cooldownMs = 6
   if (typeof state.pendingPrompt !== "string" || !state.pendingPrompt.trim()) {
     return { action: "noop", reason: "no-pending-prompt" };
   }
+  if (state.lastSubmittedQueueItemId && state.lastSubmittedQueueItemId === state.pendingQueueItemId) {
+    return { action: "noop", reason: "queue-item-attempted" };
+  }
   if (state.lastSubmittedPromptHash && state.lastSubmittedPromptHash === state.pendingPromptHash) {
     return { action: "noop", reason: "prompt-already-submitted" };
   }
