@@ -278,7 +278,7 @@ async function hasSavedSessionCookie(): Promise<boolean> {
   if (response.status === 401) return false;
   if (!response.ok) throw new Error("Apollo could not verify the saved browser session cookie.");
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  return payload.authenticated === true && payload.cookiePresent === true && payload.spmtValidated === true;
+  return payload.authenticated === true && payload.cookiePresent === true && payload.apolloValidated === true;
 }
 
 function showSavedSession() {
