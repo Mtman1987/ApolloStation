@@ -212,7 +212,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const OWNER_SPMT_USERNAME = "mtman1987";
   const OWNER_DISCORD_ID = "767875979561009173";
   const OWNER_TWITCH_ID = "94371378";
-  const resolveDonorWorkspace = (donor: { id: string; username: string; discordId?: unknown; twitchId?: unknown }): DonorWorkspace => {
+  const resolveDonorWorkspace = (donor: { id: string; username: string; discordId?: unknown; twitchId?: unknown }, allowBootstrap = true): DonorWorkspace => {
     const donorUsername = donor.username.trim().toLowerCase();
     const donorDiscordId = typeof donor.discordId === "string" ? donor.discordId.trim() : "";
     const donorTwitchId = typeof donor.twitchId === "string" ? donor.twitchId.trim() : "";
@@ -233,7 +233,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
     let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
       ownerBootstrap ? (usernameProfile ?? linkedProfile) : (linkedProfile ?? usernameProfile);
-    if (!profile && !ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1") {
+    if (!profile && (!allowBootstrap || (!ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1"))) {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
     if (!profile) {
@@ -270,7 +270,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
   // Resume an Apollo browser session from the SPMT donor cookie when the browser has
   // none (or an expired one). The donor token is re-validated against SPMT every time.
-  const resumeDonorSession = async (request: IncomingMessage): Promise<string | undefined> => {
+  const resumeDonorSession = async (request: IncomingMessage, allowBootstrap = true): Promise<string | undefined> => {
     const donorToken = cookie(request, "spmt_donor_session");
     if (!donorToken) return undefined;
     const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
@@ -283,7 +283,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
     const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim() : "";
     if (!donorId || !donorUsername) return undefined;
-    const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId });
+    const resolved = resolveDonorWorkspace({ id: donorId, username: donorUsername, discordId: donorUser.discordId, twitchId: donorUser.twitchId }, allowBootstrap);
     if (!resolved.ok) return undefined;
     const issued = auth.issueHumanSession({ userId: resolved.profile.userId, scopes: USER_SCOPES, tenantIds: resolved.tenantIds });
     return auth.issueBrowserSession(issued.accessToken).accessToken;
@@ -925,8 +925,16 @@ export function createSpmtService(options: SpmtServiceOptions) {
       // Apollo browser session from it so returning visitors land signed in.
       let resumedToken: string | undefined;
       const existingBrowserToken = cookie(request, "spmt_token");
-      if (request.method === "GET" && url.pathname === "/v1/session" && runtimeMode === "production" && !request.headers.authorization && !(existingBrowserToken && auth.authenticateAccessToken(existingBrowserToken))) {
-        resumedToken = await resumeDonorSession(request);
+      const existingPrincipal = existingBrowserToken ? auth.authenticateAccessToken(existingBrowserToken) : undefined;
+      // A token can still validate after recovery while its old profile ID no
+      // longer exists. Revalidate the donor identity and select an EXISTING
+      // profile; never create an empty replacement workspace for this repair.
+      const missingProfile = url.pathname === "/v1/session" && existingPrincipal?.actorType === "user" && (() => {
+        try { data.getProfile(existingPrincipal.actorId); return false; }
+        catch (error) { if (error instanceof PlatformDataError) return true; throw error; }
+      })();
+      if (request.method === "GET" && url.pathname === "/v1/session" && runtimeMode === "production" && !request.headers.authorization && (!existingPrincipal || missingProfile)) {
+        resumedToken = await resumeDonorSession(request, !missingProfile);
         if (resumedToken) response.setHeader("set-cookie", browserSessionCookie(resumedToken));
       }
 
