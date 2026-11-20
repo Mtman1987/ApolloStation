@@ -702,46 +702,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
             const browser = auth.issueBrowserSession(result.tokens.accessToken);
             return json(response, 200, result, { "set-cookie": browserSessionCookie(browser.accessToken) });
           } catch {
-            // Existing donor-linked accounts can still use the compatibility path
-            // below until their Apollo password is set locally.
-          }
-
-          // Legacy donor compatibility. New Apollo accounts never reach this branch.
-          try {
-            const donorLoginResponse = await fetchImpl("https://spmt.live/api/auth/login", {
-              method: "POST",
-              headers: { accept: "application/json", "content-type": "application/json" },
-              body: JSON.stringify({ username, password }),
-              redirect: "manual",
-              signal: AbortSignal.timeout(8000),
-            });
-            const donorLoginBody: unknown = await donorLoginResponse.json().catch(() => ({}));
-            const donorLoginRecord = donorLoginBody && typeof donorLoginBody === "object" ? donorLoginBody as Record<string, unknown> : {};
-            if (!donorLoginResponse.ok) return json(response, donorLoginResponse.status === 401 ? 401 : 503, { error: donorLoginResponse.status === 401 ? "invalid_credentials" : "identity_unavailable" });
-            const donorToken = typeof donorLoginRecord.token === "string" ? donorLoginRecord.token : "";
-            if (!donorToken) return json(response, 502, { error: "identity_unavailable" });
-            const donorMe = await fetchImpl("https://spmt.live/api/auth/me", { headers: { accept: "application/json", authorization: `Bearer ${donorToken}` }, redirect: "manual", signal: AbortSignal.timeout(8000) });
-            if (!donorMe.ok) return json(response, 502, { error: "identity_unavailable" });
-            const donorPayload: unknown = await donorMe.json().catch(() => ({}));
-            const donorPayloadRecord = donorPayload && typeof donorPayload === "object" ? donorPayload as Record<string, unknown> : {};
-            const donorUser = donorPayloadRecord.user && typeof donorPayloadRecord.user === "object" ? donorPayloadRecord.user as Record<string, unknown> : {};
-            const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
-            const donorUsername = typeof donorUser.username === "string" ? donorUser.username.trim().toLowerCase() : "";
-            if (!donorId || !donorUsername || donorUsername !== username) return json(response, 401, { error: "invalid_credentials" });
-
-            const profile = data.getProfileByUsername(donorUsername);
-            if (!profile) return json(response, 403, { error: "workspace_not_linked", message: "This SPMT account has no existing Apollo workspace mapping." });
-            const tenantIds = profile.tenantIds.filter((tenantId) => {
-              try { const tenant = control.getTenant(tenantId); return tenant.status === "active" && tenant.ownerUserId === profile.userId; }
-              catch { return false; }
-            });
-            if (!tenantIds.length || !store.getUser(profile.userId)) return json(response, 403, { error: "workspace_not_linked", message: "No active owner workspace is linked to this SPMT account." });
-
-            const issued = auth.issueHumanSession({ userId: profile.userId, scopes: USER_SCOPES, tenantIds });
-            const browser = auth.issueBrowserSession(issued.accessToken);
-            return json(response, 200, { profile, tenantIds }, { "set-cookie": browserSessionCookie(browser.accessToken) });
-          } catch {
-            return json(response, 503, { error: "identity_unavailable", message: "The existing SPMT identity service could not verify this login." });
+            // Apollo is the sole production identity authority. Do not fall back
+            // to the retired SPMT/Fly donor login when local credentials fail.
+            return json(response, 401, { error: "invalid_credentials", message: "This Apollo account does not have a valid local password yet." });
           }
         }
 
