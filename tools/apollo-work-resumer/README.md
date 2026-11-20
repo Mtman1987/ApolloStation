@@ -1,18 +1,22 @@
 # Apollo Bulletin Work Resumer (prototype)
 
-This is a fail-closed prototype for a browser-assisted work queue. It is not a production scheduler or a ChatGPT integration.
+Fail-closed infrastructure for a browser-assisted work queue. This is not yet a packaged extension or a live ChatGPT integration.
 
-## Supported boundary
-A browser extension/content script can inspect the active ChatGPT tab and interact with its visible UI only while the user is signed in and the exact conversation URL is configured. It cannot guarantee ChatGPT's backend state or safely infer UI changes from button placement. DOM labels/selectors can change, so unknown states pause rather than send.
+## Modules
+- `guard.mjs`: conservative conversation/idle/composer guard.
+- `state-store.mjs`: atomic local checkpoint writes and capped activity log.
+- `queue.mjs`: queue item validation, hashing, enqueue, and explicit completion.
+- `scheduler.mjs`: hourly default scheduler, manual tick, pause/resume/stop, serialized ticks, persisted send intent, and adapter boundary.
 
-## Intended flow
-1. User creates a queue entry with a prompt and a designated conversation URL.
-2. Scheduler tick checks enabled/paused state and cycle limit.
-3. Browser guard verifies exact conversation, composer, idle/send control, no stop/busy control, no recent submission, and pending prompt.
-4. Only if every check passes, fill composer and activate the visible send control.
-5. Persist submission id/time and cycle count; subsequent ticks cannot duplicate it.
-6. User can pause/stop, manually tick, set max cycles, and inspect activity log.
-7. Completion is explicit (queue item marked complete or configured completion phrase), never inferred from silence.
+## Safe operation
+- Configure an exact `https://chatgpt.com/c/<conversation>` target per queue item.
+- Adapter snapshot must positively confirm idle state, composer ready, and send control visible.
+- Unknown UI state, busy state, wrong conversation, duplicate queue item attempt, cooldown, or cycle limit never sends.
+- Submission intent is saved before the adapter action; an unconfirmed send is not automatically retried, avoiding accidental duplicate messages.
+- Queue completion is explicit. Submitted items remain submitted until marked complete; silence or an empty pending queue is not completion.
 
-## Prototype
-The current code provides pure safety decision logic and a DOM snapshot reader. A real persistent scheduler, extension permissions, UI, and end-to-end browser test remain follow-up work. The code deliberately requires an exact conversation URL and fails closed on ambiguous DOM state.
+## Adapter boundary
+The scheduler requires an injected `snapshot()` and `submit()` adapter. The current prototype does not yet package a browser extension, implement a browser UI, or connect to the user's live browser. Adapter work must use the visible signed-in UI, not private endpoints or authentication bypasses.
+
+## Validation
+Node tests are included. CI is required before merge; no deployment is part of this prototype.
