@@ -515,8 +515,10 @@ function launchApp(app: SpaceMountainAppCardV1) {
     const mode = app.surfaces.includes("standalone") ? "standalone" : app.surfaces[0];
     if (!mode) throw new Error(`${app.name} has no launch surface`);
     const target = buildAppFrameTarget(app, principal.tenantIds[0]!, mode, crypto.randomUUID());
-    const opened = window.open(target.url, "_blank", "noopener,noreferrer");
-    if (!opened) setStatus("The browser blocked the app window. Allow pop-ups for this private Sprite and try again.", "error");
+    // Navigate directly so mobile browsers and popup policies cannot swallow app launches.
+    // The destination receives only its own matching HttpOnly cookie automatically;
+    // its existing session validator remains responsible for authentication.
+    window.location.assign(target.url);
   } catch (error) { setStatus(message(error), "error"); }
 }
 
