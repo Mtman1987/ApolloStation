@@ -65,11 +65,10 @@ jobs:
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ secrets.SPMT_ORIGIN }}
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
-          # Nebula needs a real Hostless worker and provider socket, not the legacy Sprite default.
+          # Nebula needs a real Hostless worker and an enabled provider bot, not the legacy Sprite default.
           APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: "hosted"
           APOLLO_RUNTIME_NODE2_SPMT_OUTBOUND_MODE: "enabled"
-          # Hostless is the production execution plane; never inherit the retired Sprite default.
-          APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: "hosted"
+          APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
