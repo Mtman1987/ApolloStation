@@ -551,25 +551,15 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/session/check") {
-        // Validate the original SPMT bearer session from its HttpOnly cookie.
-        // This deliberately bypasses Apollo profile and tenant lookups.
-        const donorToken = cookie(request, "spmt_donor_session");
-        if (!donorToken) return json(response, 401, { authenticated: false, cookiePresent: false });
-        try {
-          const donorMe = await fetchImpl("https://spmt.live/api/auth/me", {
-            headers: { accept: "application/json", authorization: `Bearer ${donorToken}` },
-            redirect: "manual", signal: AbortSignal.timeout(10000),
-          });
-          if (!donorMe.ok) return json(response, 401, { authenticated: false, cookiePresent: true, spmtValidated: false });
-          const donorPayload = await donorMe.json().catch(() => ({})) as Record<string, unknown>;
-          const donorUser = donorPayload.user && typeof donorPayload.user === "object" ? donorPayload.user as Record<string, unknown> : {};
-          const donorId = typeof donorUser.id === "string" ? donorUser.id : "";
-          const donorUsername = typeof donorUser.username === "string" ? donorUser.username : "";
-          if (!donorId) return json(response, 401, { authenticated: false, cookiePresent: true, spmtValidated: false });
-          return json(response, 200, { authenticated: true, cookiePresent: true, spmtValidated: true, spmtIdentity: { id: donorId, username: donorUsername } });
-        } catch {
-          return json(response, 503, { authenticated: false, cookiePresent: true, spmtValidated: false, error: "spmt_unavailable" });
+        // Apollo browser sessions are canonical. Do not require retired SPMT donor validation.
+        const browserToken = cookie(request, "spmt_token");
+        const principal = browserToken && auth.isBrowserSession(browserToken)
+          ? auth.authenticateAccessToken(browserToken)
+          : undefined;
+        if (!principal || principal.actorType !== "user") {
+          return json(response, 401, { authenticated: false, cookiePresent: Boolean(browserToken), apolloValidated: false });
         }
+        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/token/introspect") {
