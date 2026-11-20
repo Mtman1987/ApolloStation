@@ -186,6 +186,10 @@ export class SupervisedChatGatewayService {
   private readonly connectionClient:SpmtClient;
   private lastYouTubeSync=0;
   private lastTwitchBotSync=0;
+  private youtubeDiscoveryFailures=0;
+  private twitchBotDiscoveryFailures=0;
+  private youtubeDiscoverySucceeded=false;
+  private twitchBotDiscoverySucceeded=false;
   private nebulaDeploymentProofSent=false;
   private readonly startedAt = new Date().toISOString();
   private readonly chatStore: SqliteChatGatewayStore;
@@ -415,11 +419,12 @@ export class SupervisedChatGatewayService {
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
     await this.tiktok?.reconcile();
-    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
+    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastYouTubeSync>Math.min(60000, this.youtubeDiscoveryFailures ? 5000 * 2 ** Math.min(this.youtubeDiscoveryFailures-1,4) : this.youtubeDiscoverySucceeded ? 30000 : 5000)){this.lastYouTubeSync=Date.now();try{
       const result=await this.connectionClient.listYouTubeChatConnections();if(!Array.isArray(result.connections))throw new Error("YouTube connection discovery returned an invalid response");
       for(const c of result.connections)this.applyDiscoveredConnection(c);
-    }catch(error){console.warn("[chat-gateway] YouTube provider discovery failed; will retry:",error instanceof Error?error.message:"unknown error");}}
-    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastTwitchBotSync>5000){this.lastTwitchBotSync=Date.now();try{
+      this.youtubeDiscoveryFailures=0;this.youtubeDiscoverySucceeded=true;
+    }catch(error){this.youtubeDiscoveryFailures=Math.min(this.youtubeDiscoveryFailures+1,5);console.warn("[chat-gateway] YouTube provider discovery failed; retry backoff:",error instanceof Error?error.message:"unknown error");}}
+    if((this.options.operationMode==="active"||this.options.liveIngressEnabled)&&Date.now()-this.lastTwitchBotSync>Math.min(60000, this.twitchBotDiscoveryFailures ? 5000 * 2 ** Math.min(this.twitchBotDiscoveryFailures-1,4) : this.twitchBotDiscoverySucceeded ? 30000 : 5000)){this.lastTwitchBotSync=Date.now();try{
       const result=await this.connectionClient.listTwitchBotConnections();if(!Array.isArray(result.connections))throw Error("Invalid Twitch bot discovery");
       const wanted=new Set(result.connections.map(c=>c.tenantId+":"+c.connectionId));
       for(const tenant of this.tenants)for(const old of this.connectionStore.list(tenant))if(old.provider==="twitch"&&old.connectionId.startsWith("twitch-bot-")&&!wanted.has(tenant+":"+old.connectionId))this.applyDiscoveredConnection({...old,desired:false});
@@ -427,7 +432,8 @@ export class SupervisedChatGatewayService {
         for(const old of this.connectionStore.list(c.tenantId))if(old.provider==="twitch"&&old.channelId===c.channelId&&old.connectionId!==c.connectionId&&old.desired)this.applyDiscoveredConnection({...old,desired:false});
         this.applyDiscoveredConnection(c);
       }
-    }catch(error){console.warn("[chat-gateway] Twitch bot provider discovery failed; will retry:",error instanceof Error?error.message:"unknown error");}}
+      this.twitchBotDiscoveryFailures=0;this.twitchBotDiscoverySucceeded=true;
+    }catch(error){this.twitchBotDiscoveryFailures=Math.min(this.twitchBotDiscoveryFailures+1,5);console.warn("[chat-gateway] Twitch bot provider discovery failed; retry backoff:",error instanceof Error?error.message:"unknown error");}}
     const connections = await this.supervisor.reconcile();
     await this.sendNebulaDeploymentProofOnce();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
