@@ -23,19 +23,21 @@ export class WorkResumerScheduler {
     try {
       const item = nextPending(this.state);
       if (!item) {
-        this.state = { ...this.state, completed: (this.state.queue ?? []).length > 0 };
-        await this.persist("queue-empty");
-        return { action: "noop", reason: "queue-empty" };
+        const queue = this.state.queue ?? [];
+        const completed = queue.length > 0 && queue.every(q => q.status === "completed");
+        this.state = { ...this.state, completed };
+        await this.persist(completed ? "queue-completed" : "queue-awaiting-completion");
+        return { action: "noop", reason: completed ? "queue-completed" : "queue-awaiting-completion" };
       }
       const snapshot = await this.adapter.snapshot();
-      const derived = { ...this.state, pendingPrompt: item.prompt, pendingPromptHash: item.promptHash, targetConversationUrl: item.targetConversationUrl };
+      const derived = { ...this.state, pendingPrompt: item.prompt, pendingPromptHash: item.promptHash, pendingQueueItemId: item.id, targetConversationUrl: item.targetConversationUrl };
       const decision = decideResume({ state: derived, snapshot, now: this.now(), cooldownMs: this.state.cooldownMs });
       if (decision.action !== "submit") {
         await this.persist(`tick-skipped:${decision.reason}`);
         return decision;
       }
       // Persist intent before interacting; if the process crashes, it will not blindly resend.
-      this.state = appendActivity({ ...this.state, lastAttemptPromptHash: item.promptHash, lastAttemptAt: this.now() }, manual ? "manual-submit-intent" : "scheduled-submit-intent", this.now());
+      this.state = appendActivity({ ...this.state, lastAttemptPromptHash: item.promptHash, lastSubmittedQueueItemId: item.id, lastAttemptAt: this.now() }, manual ? "manual-submit-intent" : "scheduled-submit-intent", this.now());
       await saveState(this.statePath, this.state);
       const result = await this.adapter.submit({ prompt: item.prompt, conversationUrl: item.targetConversationUrl, queueItemId: item.id });
       if (result?.submitted !== true) {
