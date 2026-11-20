@@ -139,7 +139,7 @@ apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); 
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
 document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
-selectTab("spmt");
+selectTab("apollo");
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
 developerForm.addEventListener("input", (event) => { if (event.target !== acknowledgement) updateManifestPreview(); });
 developerForm.addEventListener("submit", (event) => void registerDeveloperApp(event));
@@ -232,7 +232,7 @@ async function submitLogin(event: SubmitEvent) {
 async function authRequest(path: string, input: Record<string, string>, form: HTMLFormElement) {
   const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
   if (button) button.disabled = true;
-  setStatus("Opening your SPMT session…", "working");
+  setStatus("Opening your Apollo session…", "working");
   try {
     const response = await spmtAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -936,7 +936,7 @@ function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
   const password = String(data.get("password") ?? "");
-  if (!username || !password) throw new Error("Enter your existing SPMT username and password.");
+  if (!username || !password) throw new Error("Enter your Apollo username and password.");
   return { username, password };
 }
 function requirePrincipal() {
