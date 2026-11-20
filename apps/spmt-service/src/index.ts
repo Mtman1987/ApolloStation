@@ -33,6 +33,7 @@ import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqliteMediaAssetStore, SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
+import { hydrateSpmtFromTurso, type TursoHydrateReport } from "./turso-hydrate.js";
 import {
   ProviderGrantBroker,
   ProviderGrantError,
@@ -178,6 +179,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const mediaSweepTimer = setInterval(() => {mediaAssets.sweep();socialStreamStore.sweepPrivate();}, 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
+  let tursoHydrateReport: TursoHydrateReport | undefined;
+  health.setDependency("turso-hydrate", "degraded", "not started");
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
 
@@ -957,7 +960,32 @@ export function createSpmtService(options: SpmtServiceOptions) {
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
-    listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
+    getTursoHydrateReport() { return tursoHydrateReport; },
+    async listen() {
+      try {
+        tursoHydrateReport = await hydrateSpmtFromTurso({
+          authority: store as unknown as Parameters<typeof hydrateSpmtFromTurso>[0]["authority"],
+          platform: platformStore as unknown as Parameters<typeof hydrateSpmtFromTurso>[0]["platform"],
+        });
+        if (tursoHydrateReport.enabled) {
+          const summary = Object.entries(tursoHydrateReport.tables).map(([name, stats]) => `${name}:${stats.inserted}/${stats.remote}`).join(",") || "no-matching-tables";
+          health.setDependency("turso-hydrate", "ready", `hydrated in ${tursoHydrateReport.durationMs}ms (${summary})`);
+        } else {
+          health.setDependency("turso-hydrate", "degraded", tursoHydrateReport.reason ?? "turso credentials not configured");
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "turso hydrate failed";
+        health.setDependency("turso-hydrate", "unavailable", message.slice(0, 200));
+        console.error("[spmt] turso hydrate failed:", message);
+      }
+      return new Promise<void>((done, reject) => {
+        server.once("error", reject);
+        server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => {
+          server.off("error", reject);
+          done();
+        });
+      });
+    },
     close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); twitchBots.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
