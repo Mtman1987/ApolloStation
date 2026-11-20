@@ -310,8 +310,14 @@ export class SpaceMountainShellController {
 export function resolveShellAppLaunchUrl(app: SpaceMountainAppCardV1): string {
   const shellOrigin = typeof window === "undefined" ? "https://spacemountain.live" : window.location.origin;
   const target = new URL(app.launchUrl, shellOrigin);
-  if (app.appId === "streamweaver" && shellOrigin === "https://apollo-node-1.hostless.app") {
-    const direct = new URL("/apps/streamweaver", "https://apollo-node-2.hostless.app");
+  const deployedApps: Record<string, string> = {
+    streamweaver: "https://apollo-node-2.hostless.app",
+    "nebula-arcade": "https://apollo-node-2.hostless.app",
+    hearmeout: "https://apollo-node-1.hostless.app",
+    "discord-stream-hub": "https://apollo-node-1.hostless.app",
+  };
+  if (deployedApps[app.appId] && shellOrigin === "https://apollo-node-1.hostless.app") {
+    const direct = new URL(`/apps/${app.appId}`, deployedApps[app.appId]);
     direct.search = target.search;
     direct.hash = target.hash;
     direct.searchParams.set("surface", "shell");
@@ -324,7 +330,8 @@ export function resolveShellAppLaunchUrl(app: SpaceMountainAppCardV1): string {
 export function buildAppFrameTarget(app: SpaceMountainAppCardV1, tenantId: string, mode: SurfaceModeV1, launchId: string): AppFrameTargetV1 {
   if (!app.installed || !app.enabled) throw new Error(`App ${app.appId} is not enabled for this tenant`);
   if (!app.surfaces.includes(mode)) throw new Error(`App ${app.appId} does not support ${mode}`);
-  const parsed = new URL(app.appId === "streamweaver" && mode === "shell" ? resolveShellAppLaunchUrl(app) : app.launchUrl);
+  const deployedApp = ["streamweaver", "nebula-arcade", "hearmeout", "discord-stream-hub"].includes(app.appId);
+  const parsed = new URL(deployedApp && mode === "shell" ? resolveShellAppLaunchUrl(app) : app.launchUrl);
   if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") throw new Error("Embedded app launch URL must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("Embedded app launch URL may not contain credentials");
   return {

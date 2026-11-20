@@ -153,7 +153,8 @@ if (nebulaConfigRequested) {
 }
 node2.push(
   ["apps/chat-gateway/dist/service-start.js", {}],
-  ["apps/streamweaver/dist/web-server.js", { PORT: hostlessPort || "8000", HOST: "0.0.0.0" }],
+  ["apps/streamweaver/dist/web-server.js", { PORT: process.env.STREAMWEAVER_WEB_PORT ?? "3202", HOST: "127.0.0.1" }],
+  ["scripts/hostless/node2-ingress.mjs", { PORT: hostlessPort || "8000" }],
 );
 
 // Derive the public Nebula game server from the same live Twitch connection
