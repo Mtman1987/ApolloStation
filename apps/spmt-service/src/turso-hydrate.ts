@@ -109,6 +109,16 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     const cols = await columns(db, table);
     if (!cols.includes("id")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "no id column" }; continue; }
     const hasBody = cols.includes("body");
+    // Legacy Turso ledgers are not schema-uniform. Some tables named
+    // spmt_xp_ledger/xp_events are unrelated or predate the tenant columns.
+    // Do not let one incompatible candidate abort the entire authority hydrate;
+    // report it and continue looking for a compatible ledger table.
+    const requiredColumns = ["tenant_id", "user_id", "delta", "idempotency_key"];
+    const missingColumns = hasBody ? [] : requiredColumns.filter(column => !cols.includes(column));
+    if (missingColumns.length) {
+      report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: `missing columns: ${missingColumns.join(", ")}` };
+      continue;
+    }
     const result = await db.execute(hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, [], true);
     let inserted = 0, skipped = 0;
     for (const row of result.rows) {
