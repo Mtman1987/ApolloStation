@@ -8,7 +8,7 @@ const MAX_RENDER_BYTES=8*1024*1024,MAX_BODY_BYTES=256*1024;
 const ROOT_OUTPUT=/^\/o\/([A-Za-z0-9_-]{16,512})$/,CHILD_OUTPUT=/^\/o\/([A-Za-z0-9_-]{16,512})\/source\/([A-Za-z0-9._:@/-]{1,200})$/;
 const TENANT_OUTPUT=/^\/t\/([A-Za-z0-9._:@-]{1,200})\/(public|personal)$/,TENANT_OUTPUT_CHILD=/^\/t\/([A-Za-z0-9._:@-]{1,200})\/(public|personal)\/source\/([A-Za-z0-9._:@/-]{1,200})$/;
 const OVERLAY_BAY_APP="overlay-bay";
-export interface SpmtOutputGatewayServiceV1{speechPresence?:StellarSpeechPresence;server:Server;listen(port?:number,host?:string):Promise<void>;control:ControlService;authority:{getWorkspace(tenantId:string):unknown;listEvents?(tenantId:string,options:{type?:string;sourceAppId?:string;limit?:number}):Array<{id:string;sourceAppId:string;type:string;occurredAt?:string;createdAt?:string;payload:unknown}>};auth:{authorize(token:string,scope:string,tenantId?:string):{actorId:string}};close():Promise<void>;}
+export interface SpmtOutputGatewayServiceV1{speechPresence?:StellarSpeechPresence;server:Server;listen?(port?:number,host?:string):Promise<void>;control:ControlService;authority:{getWorkspace(tenantId:string):unknown;listEvents?(tenantId:string,options:{type?:string;sourceAppId?:string;limit?:number}):Array<{id:string;sourceAppId:string;type:string;occurredAt?:string;createdAt?:string;payload:unknown}>};auth:{authorize(token:string,scope:string,tenantId?:string):{actorId:string}};close():Promise<void>;}
 export interface SpmtOutputGatewayOptionsV1{port:number;host?:string;publicBaseUrl?:string;fetchImpl?:typeof fetch;}
 
 export function createSpmtOutputGateway(service: SpmtOutputGatewayServiceV1, options: SpmtOutputGatewayOptionsV1) {
@@ -53,7 +53,8 @@ export function createSpmtOutputGateway(service: SpmtOutputGatewayServiceV1, opt
       // Use the service lifecycle instead of binding its raw HTTP server.
       // service.listen() performs the idempotent Turso-to-SQLite hydration before
       // the authority accepts traffic. Bind it privately on an ephemeral port.
-      await service.listen(0, "127.0.0.1");
+      if (service.listen) await service.listen(0, "127.0.0.1");
+      else await listenServer(service.server, 0, "127.0.0.1");
       const address = service.server.address();
       if (!address || typeof address === "string") throw new Error("SPMT inner service did not bind a TCP port");
       innerPort = address.port;
