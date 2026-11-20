@@ -3,7 +3,7 @@ import { SimulationRoomsUi, simulationRoomPath, simulationRoomSlot } from "./sim
 import { applyShellLayoutMetrics, observeShellLayout } from "@spmt/embed";
 import type { MeteredResourceV1, OperationsLogV1, PersonalUsageResourceV1 } from "@spmt/contracts";
 import { bindProductRocketNavigation, installProductBackdrop, PRODUCT_UI_CSS, resolveProductBackdrop, resolveProductTheme, type ProductSceneV1 } from "@spmt/ui";
-import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCardV1, type SpaceMountainShellSnapshotV1 } from "./index.js";
+import { DEFERRED_RUNTIME_SOURCES, resolveShellAppLaunchUrl, type SourceStateV1, type SpaceMountainAppCardV1, type SpaceMountainShellSnapshotV1 } from "./index.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
@@ -678,18 +678,7 @@ export class SpaceMountainShellUi {
   }
 
   private shellLaunchUrl(app: SpaceMountainAppCardV1) {
-    const target = new URL(app.launchUrl, typeof window === "undefined" ? "https://spacemountain.live" : window.location.origin);
-    // StreamWeaver lives on Node 2, but its browser surface must use the shell's
-    // Node 1 proxy so frame policies, sessions, and API requests share an origin.
-    if (app.appId === "streamweaver") {
-      const proxy = new URL("/apps/streamweaver", typeof window === "undefined" ? "https://spacemountain.live" : window.location.origin);
-      proxy.search = target.search;
-      proxy.hash = target.hash;
-      proxy.searchParams.set("surface", "shell");
-      return proxy.toString();
-    }
-    target.searchParams.set("surface", "shell");
-    return target.toString();
+    return resolveShellAppLaunchUrl(app);
   }
 
   private openAppDockTarget(target: string) {
