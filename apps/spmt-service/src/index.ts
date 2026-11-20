@@ -951,7 +951,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     getTursoHydrateReport() { return tursoHydrateReport; },
-    async listen() {
+    async listen(port = options.port ?? 3000, host = options.host ?? "0.0.0.0") {
       try {
         tursoHydrateReport = await hydrateSpmtFromTurso({
           authority: store as unknown as Parameters<typeof hydrateSpmtFromTurso>[0]["authority"],
@@ -970,7 +970,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
       return new Promise<void>((done, reject) => {
         server.once("error", reject);
-        server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => {
+        server.listen(port, host, () => {
           server.off("error", reject);
           done();
         });
