@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { mergeNebulaRuntimeConfig } from "./nebula-runtime-config.mjs";
 
+// Hostless does not guarantee Node environment defaults. Set production explicitly
+// before spawning child services so browser session cookies are shared across the
+// two Hostless node subdomains and production diagnostics do not report dev mode.
+process.env.NODE_ENV = "production";
+
 // Keep Hostless runtime configuration bootstrap deterministic across the two-node release.
 const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
