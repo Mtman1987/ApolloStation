@@ -1,0 +1,61 @@
+name: Apollo local Chrome proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      conversation_url:
+        description: "Exact live ChatGPT conversation URL (not a /share/ link)"
+        required: true
+        type: string
+      prompt:
+        description: "One-time test prompt to send through the signed-in local Chrome extension"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  queue-local-browser-command:
+    name: Queue command for signed-in local Chrome
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate and publish one-time browser command
+        uses: actions/github-script@v7
+        env:
+          CONVERSATION_URL: ${{ inputs.conversation_url }}
+          TASK_PROMPT: ${{ inputs.prompt }}
+        with:
+          script: |
+            const rawUrl = process.env.CONVERSATION_URL || "";
+            const prompt = process.env.TASK_PROMPT || "";
+            let url;
+            try { url = new URL(rawUrl); } catch { throw new Error("Enter a valid ChatGPT conversation URL."); }
+            if (url.origin !== "https://chatgpt.com" || !/^\\/c\\/[A-Za-z0-9-]+$/.test(url.pathname) || url.search || url.hash) {
+              throw new Error("Only an exact https://chatgpt.com/c/<conversation-id> URL is accepted. Shared /share/ links are not supported.");
+            }
+            if (!prompt.trim() || prompt.length > 6000) throw new Error("Prompt must contain 1–6000 characters.");
+            const command = {
+              id: `${context.runId}-${context.runAttempt}`,
+              conversationUrl: url.href,
+              prompt: prompt.trim(),
+              createdAt: new Date().toISOString()
+            };
+            const body = [
+              "APOLLO_CHROME_COMMAND_V1",
+              "",
+              "One-time command for the Apollo local Chrome extension. Do not edit this payload.",
+              "```json",
+              JSON.stringify(command),
+              "```"
+            ].join("\\n");
+            const response = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 553,
+              body
+            });
+            core.notice(`Queued local Chrome command in PR #553 comment ${response.data.id}. Keep the Apollo extension's GitHub bridge tab open; it will pick up the command and send it to the exact ChatGPT conversation.`);
+            core.setOutput("comment_id", String(response.data.id));
