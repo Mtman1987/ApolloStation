@@ -146,7 +146,7 @@ async function runOnce(manual = false) {
       return save(state, "tick-skipped-task-cycle-cap");
     }
 
-    if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < state.cooldownMs) {
+    if (!manual && state.lastAttemptAt && Date.now() - state.lastAttemptAt < state.cooldownMs) {
       return save(state, "tick-skipped-cooldown");
     }
 
@@ -305,9 +305,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         : prepareManualRetry(item);
       if (!resumed) throw new Error("Task could not be resumed in its current state");
       state.queue = state.queue.map(queueItem => queueItem.id === item.id ? resumed : queueItem);
-      return save(state, item.status === "limit-reached"
+      await save(state, item.status === "limit-reached"
         ? "task-resumed-after-cycle-limit"
         : "task-retry-explicitly-confirmed-by-owner");
+      return runOnce(true);
     }
 
     if (message?.type === "APOLLO_COMPLETE") {
