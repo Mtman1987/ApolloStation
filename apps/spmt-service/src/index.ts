@@ -690,12 +690,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
       if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/start") {
         const provider = url.searchParams.get("provider");
-        const username = (url.searchParams.get("username") ?? "").trim().toLowerCase().replace(/@spmt\\.live$/, "");
-        if ((provider !== "discord" && provider !== "twitch") || !/^[a-z0-9_.-]{2,32}$/.test(username)) return json(response, 400, { error: "recovery_details_invalid" });
+        if (provider !== "discord" && provider !== "twitch") return json(response, 400, { error: "recovery_provider_invalid" });
         const client = accountProviderOAuthClient(options, provider);
         if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
         const state = randomBytes(24).toString("base64url");
-        const pending = Buffer.from(JSON.stringify({ provider, username, state }), "utf8").toString("base64url");
+        const pending = Buffer.from(JSON.stringify({ provider, state }), "utf8").toString("base64url");
         const redirectUri = `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`;
         const authorizationUrl = provider === "twitch" ? new URL("https://id.twitch.tv/oauth2/authorize") : new URL("https://discord.com/oauth2/authorize");
         authorizationUrl.searchParams.set("client_id", client.clientId);
@@ -709,7 +708,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
       if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/callback") {
         const pendingRaw = cookie(request, "spmt_linked_recovery");
-        let pending: { provider: "discord" | "twitch"; username: string; state: string } | undefined;
+        let pending: { provider: "discord" | "twitch"; state: string } | undefined;
         try { pending = pendingRaw ? JSON.parse(Buffer.from(pendingRaw, "base64url").toString("utf8")) : undefined; } catch { pending = undefined; }
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
@@ -722,10 +721,17 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const client = accountProviderOAuthClient(options, provider);
           if (!client) throw new Error("Provider unavailable");
           const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`, client, fetchImpl);
-          const resolved = accounts.resolveProviderIdentity(provider, identity.id);
-          if (!resolved || resolved.profile.username.toLowerCase() !== pending.username) throw new Error("Linked identity mismatch");
-          const reset = accounts.createLinkedProviderPasswordReset(pending.username, provider, identity.id);
-          response.writeHead(302, { location: `${publicBaseUrl}/?recovery=1`, "cache-control": "no-store", "set-cookie": [setupCookie("spmt_linked_recovery_ticket", reset.ticket), clearCookie("spmt_linked_recovery")] });
+          const linked = accounts.resolveProviderIdentity(provider, identity.id);
+          if (!linked) throw new Error("No existing Apollo account is linked to this provider identity");
+          const workspace = resolveDonorWorkspace({
+            id: linked.userId,
+            username: linked.profile.username,
+            ...(provider === "discord" ? { discordId: identity.id } : { twitchId: identity.id }),
+          }, false);
+          if (!workspace.ok) throw new Error("The linked Apollo workspace could not be restored");
+          const issued = auth.issueHumanSession({ userId: workspace.profile.userId, scopes: USER_SCOPES, tenantIds: workspace.tenantIds });
+          const browser = auth.issueBrowserSession(issued.accessToken);
+          response.writeHead(302, { location: new URL("/", publicBaseUrl).toString(), "cache-control": "no-store", "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery")] });
           return response.end();
         } catch {
           response.writeHead(302, { location: `${publicBaseUrl}/?recoveryError=verification_failed`, "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
