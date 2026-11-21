@@ -51,27 +51,27 @@ jobs:
             token="$2"
             [ -n "$token" ] || { echo "=== $label: no token configured ==="; return; }
             echo "=== $label credential scopes ==="
-            curl -sS -H "Authorization: $token" https://api.hostless.cloud/v1/api-keys/current | jq '{name,prefix,scopes,projects}'
+            curl --max-time 8 -sS -H "Authorization: $token" https://api.hostless.cloud/v1/api-keys/current | jq '{name,prefix,scopes,projects}'
             echo "=== $label projects ==="
-            curl -sS -H "Authorization: $token" https://api.hostless.cloud/v1/projects | jq '[.projects[]? | {id,name}]'
+            curl --max-time 8 -sS -H "Authorization: $token" https://api.hostless.cloud/v1/projects | jq '[.projects[]? | {id,name}]'
             echo "=== $label workers ==="
-            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/workers' | jq '[.workers[]? | {name,projectId,status,resources}]'
+            curl --max-time 8 -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/workers' | jq '[.workers[]? | {name,projectId,status,resources}]'
             echo "=== $label cron jobs ==="
-            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/cron-jobs' | jq '[.cronJobs[]? | {name,projectId,status,schedule}]'
+            curl --max-time 8 -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/cron-jobs' | jq '[.cronJobs[]? | {name,projectId,status,schedule}]'
             echo "=== $label billing breakdown (if permitted) ==="
-            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/billing/breakdown' | jq '{usage,allowance,resources,totals}'
+            curl --max-time 8 -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/billing/breakdown' | jq '{usage,allowance,resources,totals}'
           }
           inspect_account "Hostless Node 1" "$NODE1_TOKEN"
           inspect_account "Hostless Node 2" "$NODE2_TOKEN"
           inspect_account "Hostless Node 3" "$NODE3_TOKEN"
           echo "=== Hostless CLI top-level commands ==="
-          hostless --help
+          timeout 8s hostless --help
           echo "=== Hostless CLI create commands ==="
-          hostless create --help
+          timeout 8s hostless create --help
           echo "=== Hostless CLI worker commands ==="
-          hostless worker --help
-          hostless workers --help
+          timeout 8s hostless worker --help
+          timeout 8s hostless workers --help
           echo "=== Hostless CLI cron commands ==="
-          hostless cron --help
-          hostless cron-job --help
-          hostless cron-jobs --help
+          timeout 8s hostless cron --help
+          timeout 8s hostless cron-job --help
+          timeout 8s hostless cron-jobs --help
