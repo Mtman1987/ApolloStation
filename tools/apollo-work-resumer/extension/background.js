@@ -230,7 +230,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         createdAt: Date.now(),
         source: "github-actions",
       };
-      state.processedCommandIds = [...processed, command.id].slice(-100);
+      // Keep the dedupe ledger durable across extension restarts; old inbox comments must never replay.
+      state.processedCommandIds = [...processed, command.id];
       state.completed = false;
       state.queue = [...state.queue, item];
       await save(state, "github-actions-command-received");
