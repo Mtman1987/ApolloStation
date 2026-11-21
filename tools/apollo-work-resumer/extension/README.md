@@ -1,28 +1,43 @@
-# Apollo Bulletin local Chrome extension proof
+# Apollo Bulletin local extension
 
-This prototype uses the user's existing signed-in desktop Chrome/Chromium profile. It does not launch a new browser, copy cookies, request a password, or deploy a headless browser.
+This is a desktop Chrome/Chromium helper for the work-resumer queue. It uses the user's existing, visible ChatGPT session in that browser profile. It is not a cloud worker, an Apollo-hosted browser, or an Apollo overlay UI.
 
-## One-time setup
+## Install
 
-1. Open `chrome://extensions` in desktop Chrome/Chromium and enable Developer mode.
-2. Choose **Load unpacked** and select this extension folder.
-3. The extension opens a background tab for the private ApolloStation PR #553 command inbox. Sign in to GitHub in that tab if prompted.
-4. Keep the GitHub inbox tab and the target ChatGPT conversation tab open in Chrome.
+1. Download the repository source from the [ApolloStation main branch](https://github.com/Mtman1987/ApolloStation/archive/refs/heads/main.zip) and extract the ZIP.
+2. Open `chrome://extensions` in desktop Chrome or Chromium.
+3. Turn on **Developer mode**.
+4. Select **Load unpacked**.
+5. Choose the extracted `tools/apollo-work-resumer/extension` folder.
+6. Pin **Apollo Bulletin Work Resumer** to the browser toolbar.
+7. Sign in to `https://chatgpt.com` in this same browser profile.
 
-## Trigger the proof from GitHub Actions
+## First manual test
 
-1. Open the repository's **Actions** tab.
-2. Select **Apollo local Chrome proof** and choose **Run workflow**.
-3. Paste the exact live conversation URL (for example, `https://chatgpt.com/c/<conversation-id>`; never a `/share/` URL) and a harmless test prompt.
-4. The workflow validates the URL and posts a one-time command comment to PR #553.
-5. The extension polls that GitHub page, accepts commands only from `github-actions[bot]`, validates the target URL again, and submits the prompt to the matching ChatGPT tab.
-6. Check the ChatGPT tab and the extension popup activity log. The popup distinguishes a click being issued from confirmed delivery; a click alone is not proof that ChatGPT accepted the message.
+1. Open the exact ChatGPT conversation you want to use. Keep that conversation as the active tab in the last-focused browser window.
+2. Open the extension popup and set **Max cycles** to `1`.
+3. Add a harmless test prompt, for example: `For this test, do not take any external action. Reply with APOLLO_BULLETIN_TEST_DONE.`
+4. Copy the conversation's exact URL from the address bar into the URL field, then select **Add to queue**.
+5. Make sure the ChatGPT composer is empty, then select **Run now**. The extension checks that exactly one tab matches the URL, that it is active, and that the visible page is idle. ChatGPT may show its Send control as disabled while the composer is empty; the extension fills the empty composer first and requires Send to become visibly enabled before clicking.
+6. Confirm the prompt appears in that conversation. A recorded click means only that the visible Send control was clicked; it is not proof of delivery or task completion.
+7. After the response finishes, select **Run now** once more. If the task-specific completion marker is present, the item is marked complete. Otherwise the one-cycle limit stops further sends; inspect the conversation before choosing **Resume task** or **Mark complete**.
 
-## Safety boundaries
+## Controls and behavior
 
-- The workflow runs on GitHub-hosted infrastructure; the local extension is the bridge to the user's already-authenticated Chrome session. No self-hosted runner or Chrome remote-debugging port is required.
-- The extension has host access only to ChatGPT and the single fixed private PR inbox page. It does not have broad GitHub API access or a personal access token.
-- Commands are accepted only from the GitHub Actions bot comment on PR #553, are deduplicated by workflow run ID, and require an exact `chatgpt.com/c/` conversation URL.
-- The prompt and conversation URL are visible in the PR comment. Keep the repository private and use a harmless test prompt; do not send secrets or sensitive content through this proof.
-- The local queue must be empty before a workflow command is accepted. Uncertain sends are not automatically retried.
-- This is a private development proof, not a multi-user-secure production feature. Complete the privacy/security review before exposing it to other users.
+- **Add to queue** stores the prompt, exact conversation URL, and a unique completion marker in this browser profile's Chrome local storage.
+- **Run now** performs one guarded tick. Scheduled ticks run hourly and only when the exact target conversation is the unique matching tab and is active in the last-focused window.
+- **Pause**, **Resume**, and **Stop** control scheduled ticks. **Max cycles** is configurable from 1 to 100 per task.
+- Active tasks receive a short continuation prompt that asks ChatGPT to continue from its TODO/checkpoint and emit the unique completion marker only when genuinely finished.
+- A queue item is persisted as attempted before the Send click. If the click result is uncertain, it is not retried automatically and it blocks later queue items until the user explicitly retries it or marks it complete.
+- **Retry (check first)** requires confirmation because it can duplicate a send. An uncertain continuation retry resumes the continuation, not the original prompt.
+- **Resume task** after a cycle limit starts a fresh cycle budget while retaining the prior-cycle count.
+- Queue history and the last 200 activity events stay in this browser profile's local storage. No credentials or ChatGPT session data are read or exported by the extension.
+
+## Safeguards and limitations
+
+- Requires desktop Chrome/Chromium and the user's own signed-in ChatGPT UI. It cannot control ChatGPT Android or this current ChatGPT conversation.
+- It never bypasses sign-in, calls private ChatGPT endpoints, or uses an API key.
+- Exact URL mismatch, duplicate target tabs, a background target tab, a non-empty composer draft, hidden controls, a Send control that remains disabled after the prompt is filled, an unknown busy state, or a hidden page all block sending.
+- DOM changes may make the extension stop safely until its visible-control allowlist is updated.
+- A Send click is not delivery confirmation. The user must inspect the conversation and explicitly resolve uncertain attempts.
+- This is a local desktop prototype; no production deployment is part of this change.

@@ -1,13 +1,15 @@
 # Apollo Bulletin work resumer checkpoint
 
-- Foundation PR #552 was merged previously.
-- Earlier local Chrome extension PR #553 was closed without merging. Its CI validation passed on its last head, but it is not installed or active in production.
-- Current implementation is in PR #570: https://github.com/Mtman1987/ApolloStation/pull/570.
-- PR #570 adds a manual-only GitHub Actions workflow and a local Chrome MV3 extension bridge. The workflow posts a one-time command comment to the fixed private PR #553 inbox; the extension polls that signed-in GitHub page and sends the command into the exact open ChatGPT conversation tab.
-- This approach reuses the user's existing signed-in desktop Chrome session. It does not launch a headless browser, copy cookies, require a personal access token, or require a self-hosted runner/remote-debugging port.
-- Commands are accepted only from github-actions[bot], require a strict `https://chatgpt.com/c/<id>` URL, are deduplicated by workflow run ID, and are blocked while another local task is pending/active/uncertain.
-- The extension keeps the prior fail-closed visible UI checks and dispatch-intent-before-send/no-automatic-retry behavior. A send click is not independent proof of delivery; owner visual confirmation remains required.
-- The workflow is manual-only. No ChatGPT scheduled tasks are used or created.
-- The command prompt and conversation URL are visible in a PR #553 comment. Keep the repo private and use harmless test text; this is a development proof, not a multi-user-secure production design.
-- No Hostless application deployment is requested. The new workflow and local extension must pass CI before merge. After merge, the workflow becomes available under GitHub Actions and the extension can be loaded unpacked in desktop Chrome.
-- Next steps: verify the latest PR #570 head/CI, fix issues, merge only after green checks, then install the extension locally and run the first manual Actions-triggered test. Do not merge/deploy the separate headless browser PR #568 as part of this test.
+- Foundation PR #552 is merged after GitHub Actions validation.
+- PR #553 is the desktop Chrome/Chromium extension prototype; it remains open, unmerged, and not deployed.
+- Exact pre-fix head `e2d77da718ca5d7d380c96b6811c79f91521cf7d` was validated by PR workflow run #44932408923 and Hostless release-gate run #44932408994. Both workflow runs completed successfully. The release-gate typecheck and change-detection jobs passed; its deployment and log-snapshot matrix jobs were skipped, so no production deployment occurred.
+- Final diff review found two actionable browser-control defects: ChatGPT can render the visible Send control disabled while the empty composer is ready, which blocked the first prompt; and the previous submit path could overwrite an existing unsent composer draft.
+- The follow-up fix distinguishes a visible Send control from an enabled Send control, treats the visible control plus an empty ready composer as idle only when no busy/stop evidence exists, requires Send to become enabled after filling, and refuses to overwrite any non-empty draft. The background queue now checks for an empty composer before persisting send intent.
+- Queue selection now prioritizes any uncertain `attempted` item ahead of active or pending work, so it blocks all later queue dispatch until the user explicitly retries or completes it.
+- The first validation of follow-up head `29f798f59bac7864d4dc34a289a36d1fa9059920` passed the Hostless typecheck/change-detection gate (run #44933496126; deploy/log jobs skipped) but the PR test run #44933496105 failed in the new disabled-Send test fixture: its simulated input event was attached to the Send button instead of the composer. The production content-script path was not implicated by that fixture error.
+- The fixture is corrected to simulate ChatGPT enabling Send in response to the composer input event. A regression also asserts that a Send control that remains disabled after filling is never clicked. Validation must be rerun against the resulting exact PR head.
+- Regression tests cover the disabled-empty-composer case, post-fill enablement and one-click behavior, preservation of an existing draft, exact URL and active-tab matching, duplicate tabs, uncertain queue blocking/retry phase, cycle-budget reset, completion-marker exact-line matching, hidden DOM controls, ambiguous idle state, and script syntax.
+- The extension uses only the user's existing visible signed-in ChatGPT UI in desktop Chrome/Chromium. It has no auth bypass, private ChatGPT endpoints, API keys, remote browser, or production deployment.
+- A Send click is not delivery confirmation. Uncertain sends are never retried automatically; manual retry requires an explicit confirmation.
+- The owner must still perform the documented desktop-browser smoke test after merge. CI cannot prove live ChatGPT DOM compatibility or delivery.
+- Next: inspect the required checks for the exact follow-up PR head, fix any failures, and merge only after all required checks are green. Do not deploy production.
