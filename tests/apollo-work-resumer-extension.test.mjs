@@ -8,8 +8,13 @@ import { join } from "node:path";
 const root = process.cwd();
 const dir = join(root, "tools/apollo-work-resumer/extension");
 
-function loadContentScript({ composerText = "", sendButton = true, sendInitiallyDisabled = true, busy = false, acceptInput = true } = {}) {
-  const source = awaitableRead("content.js");
+function loadContentScript(source, {
+  composerText = "",
+  sendButton = true,
+  sendInitiallyDisabled = true,
+  busy = false,
+  acceptInput = true,
+} = {}) {
   const handlers = [];
   let currentText = composerText;
   let clickCount = 0;
@@ -74,10 +79,6 @@ function loadContentScript({ composerText = "", sendButton = true, sendInitially
   };
 }
 
-function awaitableRead(file) {
-  return globalThis.__extensionSources?.[file] || "";
-}
-
 test("extension manifest grants only ChatGPT UI and the fixed Apollo inbox", async () => {
   const manifest = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3);
@@ -101,8 +102,7 @@ test("extension scripts parse", async () => {
 
 test("content preflight allows the normal disabled empty-composer Send button and clicks only after it enables", async () => {
   const source = await readFile(join(dir, "content.js"), "utf8");
-  globalThis.__extensionSources = { "content.js": source };
-  const harness = loadContentScript();
+  const harness = loadContentScript(source);
   const snapshot = harness.dispatch({ type: "APOLLO_SNAPSHOT" });
   assert.equal(snapshot.sendControlPresent, true);
   assert.equal(snapshot.sendControlVisible, false);
@@ -120,8 +120,10 @@ test("content preflight allows the normal disabled empty-composer Send button an
 
 test("content refuses to overwrite a pre-existing composer draft", async () => {
   const source = await readFile(join(dir, "content.js"), "utf8");
-  globalThis.__extensionSources = { "content.js": source };
-  const harness = loadContentScript({ composerText: "owner's unsent draft", sendInitiallyDisabled: false });
+  const harness = loadContentScript(source, {
+    composerText: "owner's unsent draft",
+    sendInitiallyDisabled: false,
+  });
   const result = harness.dispatch({
     type: "APOLLO_SUBMIT",
     targetUrl: "https://chatgpt.com/c/test-conversation",
@@ -135,30 +137,29 @@ test("content refuses to overwrite a pre-existing composer draft", async () => {
 
 test("content fails closed for missing Send, busy UI, wrong URL, or a Send button that stays disabled", async () => {
   const source = await readFile(join(dir, "content.js"), "utf8");
-  globalThis.__extensionSources = { "content.js": source };
 
-  const missing = loadContentScript({ sendButton: false });
+  const missing = loadContentScript(source, { sendButton: false });
   assert.equal(missing.dispatch({
     type: "APOLLO_SUBMIT",
     targetUrl: "https://chatgpt.com/c/test-conversation",
     prompt: "task",
   }).clicked, false);
 
-  const busy = loadContentScript({ busy: true });
+  const busy = loadContentScript(source, { busy: true });
   assert.equal(busy.dispatch({
     type: "APOLLO_SUBMIT",
     targetUrl: "https://chatgpt.com/c/test-conversation",
     prompt: "task",
   }).clicked, false);
 
-  const mismatch = loadContentScript();
+  const mismatch = loadContentScript(source);
   assert.equal(mismatch.dispatch({
     type: "APOLLO_SUBMIT",
     targetUrl: "https://chatgpt.com/c/another-conversation",
     prompt: "task",
   }).clicked, false);
 
-  const disabled = loadContentScript({ acceptInput: false });
+  const disabled = loadContentScript(source, { acceptInput: false });
   const result = disabled.dispatch({
     type: "APOLLO_SUBMIT",
     targetUrl: "https://chatgpt.com/c/test-conversation",
@@ -171,10 +172,10 @@ test("content fails closed for missing Send, busy UI, wrong URL, or a Send butto
 
 test("background requires a unique active exact tab and uses a serialized runner", async () => {
   const background = await readFile(join(dir, "background.js"), "utf8");
-  assert.match(background, /return selectUniqueActiveTab\\(matches, url\\)/);
-  assert.match(background, /createSerialRunner\\(\\)/);
+  assert.match(background, /return selectUniqueActiveTab\(matches, url\)/);
+  assert.match(background, /createSerialRunner\(\)/);
   assert.match(background, /tick-skipped-uncertain-send-no-retry/);
-  assert.match(background, /isTrustedBridgeSender\\(sender\\)/);
+  assert.match(background, /isTrustedBridgeSender\(sender\)/);
 });
 
 test("GitHub bridge marks a command seen only after acceptance or duplicate confirmation", async () => {
@@ -182,14 +183,14 @@ test("GitHub bridge marks a command seen only after acceptance or duplicate conf
   const sendIndex = bridge.indexOf("await chrome.runtime.sendMessage");
   const seenIndex = bridge.indexOf("seen.add(command.id)", sendIndex);
   assert.ok(sendIndex >= 0 && seenIndex > sendIndex);
-  assert.match(bridge, /result\\?\\.queued === true \\|\\| result\\?\\.duplicate === true/);
+  assert.match(bridge, /result\?\.queued === true \|\| result\?\.duplicate === true/);
 });
 
 test("GitHub Actions proof is manual-only and validates exact conversation URLs", async () => {
   const workflow = await readFile(join(root, ".github/workflows/apollo-local-chrome-proof.yml"), "utf8");
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /issues: write/);
-  assert.match(workflow, /chatgpt\\.com/);
+  assert.match(workflow, /chatgpt\.com/);
   assert.match(workflow, /createComment/);
   assert.match(workflow, /issue_number: 553/);
 });
