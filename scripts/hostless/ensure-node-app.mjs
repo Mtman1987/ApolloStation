@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
 
@@ -291,45 +291,76 @@ console.log(`Deploying validated ApolloStation commit ${commit} to ${node.app}.`
 const scope = ["--app", node.app, "--project", String(projectId)];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function tryCliJson(args) {
-  const result = spawnSync("hostless", args, {
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 20 * 1024 * 1024,
-    timeout: 3 * 60 * 1000,
-    killSignal: "SIGTERM",
+function tryCliJson(args, { timeoutMs = 45000, description = "Hostless CLI" } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn("hostless", args, {
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      console.error(`${description} exceeded ${Math.round(timeoutMs / 1000)}s; stopping the CLI process. The remote operation may already have been accepted, so it will not be blindly retried.`);
+      child.kill("SIGTERM");
+      const killTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
+      killTimer.unref?.();
+      finish({ ok: false, ambiguous: true, error: `timed out after ${timeoutMs}ms; remote acceptance is unknown` });
+    }, timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      process.stdout.write(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      process.stderr.write(chunk);
+    });
+    child.on("error", (error) => finish({ ok: false, error: error.message }));
+    child.on("close", (code, signal) => {
+      if (code !== 0) {
+        finish({ ok: false, error: (stderr.trim() || `exit ${code ?? signal}`).slice(0, 500) });
+        return;
+      }
+      try {
+        finish({ ok: true, value: JSON.parse(stdout || "{}") });
+      } catch {
+        finish({ ok: false, error: "non-JSON CLI output" });
+      }
+    });
   });
-  if (result.status !== 0 || result.error) {
-    return { ok: false, error: result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}` };
-  }
-  try {
-    return { ok: true, value: JSON.parse(result.stdout || "{}") };
-  } catch {
-    return { ok: false, error: "non-JSON CLI output" };
-  }
 }
 
-let trigger;
-for (let attempt = 1; attempt <= 3 && !trigger?.ok; attempt++) {
-  trigger = tryCliJson(["deploy", "--json", "--yes", ...scope, "--commit", commit]);
-  if (!trigger.ok) {
-    console.error(`Trigger ${node.app} attempt ${attempt}/3 failed: ${String(trigger.error).slice(0, 300)}`);
-    if (attempt < 3) await sleep(10000 * attempt);
-  }
+console.log(`Requesting Hostless deployment for ${node.app} at commit ${commit}.`);
+const trigger = await tryCliJson(
+  ["deploy", "--json", "--yes", ...scope, "--commit", commit],
+  { timeoutMs: 90000, description: `Hostless deploy trigger for ${node.app}` },
+);
+if (!trigger.ok) {
+  const ambiguity = trigger.ambiguous
+    ? " The request may have reached Hostless; inspect the app's deployment history before retrying to avoid duplicate deployments."
+    : "";
+  fail(`Hostless deploy trigger for ${node.app} did not return a confirmed deployment ID: ${trigger.error}.${ambiguity}`);
 }
-if (!trigger?.ok) fail(`Hostless deploy trigger for ${node.app} failed after 3 attempts: ${trigger?.error}`);
 const deployment = trigger.value;
 const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?.deploymentId ?? null;
 if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
-// Keep a single Hostless deployment wait bounded to ten minutes for future releases.
+// Keep the Hostless status wait bounded to ten minutes; each poll is independently bounded and streamed.
 const deadline = Date.now() + 10 * 60 * 1000;
 let pollFailures = 0;
 let lastStatus = "unknown";
 while (Date.now() < deadline) {
   await sleep(15000);
-  const poll = tryCliJson(["deploy", "status", String(deploymentId), "--json", ...scope]);
+  const poll = await tryCliJson(["deploy", "status", String(deploymentId), "--json", ...scope], { timeoutMs: 30000, description: `Hostless status poll for ${deploymentId}` });
   if (!poll.ok) {
     pollFailures += 1;
     console.error(`Status poll ${pollFailures} for ${deploymentId} failed: ${String(poll.error).slice(0, 200)}`);
