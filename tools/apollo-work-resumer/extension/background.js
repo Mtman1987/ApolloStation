@@ -76,7 +76,13 @@ async function ensureGitHubBridgeTab({ reloadExisting = false } = {}) {
 
 async function targetTab(url) {
   const matches = await chrome.tabs.query({ url });
-  return selectUniqueActiveTab(matches, url);
+  if (matches.length !== 1 || !Number.isInteger(matches[0]?.windowId)) return null;
+  try {
+    const focusedWindow = await chrome.windows.get(matches[0].windowId);
+    return selectUniqueActiveTab(matches, url, focusedWindow);
+  } catch {
+    return null;
+  }
 }
 
 function isInboxPage(value) {
