@@ -14,6 +14,7 @@ function loadContentScript(source, {
   sendInitiallyDisabled = true,
   busy = false,
   acceptInput = true,
+  composerVisible = true,
 } = {}) {
   const handlers = [];
   let currentText = composerText;
@@ -35,6 +36,7 @@ function loadContentScript(source, {
     get textContent() { return currentText; },
     set textContent(value) { currentText = value; },
     get innerText() { return currentText; },
+    getClientRects() { return composerVisible ? [{}] : []; },
     getAttribute() { return null; },
     focus() {},
     dispatchEvent(event) {
@@ -159,6 +161,13 @@ test("content fails closed for missing Send, busy UI, wrong URL, or a Send butto
     prompt: "task",
   }).clicked, false);
 
+  const hiddenComposer = loadContentScript(source, { composerVisible: false });
+  assert.equal(hiddenComposer.dispatch({
+    type: "APOLLO_SUBMIT",
+    targetUrl: "https://chatgpt.com/c/test-conversation",
+    prompt: "task",
+  }).clicked, false);
+
   const disabled = loadContentScript(source, { acceptInput: false });
   const result = disabled.dispatch({
     type: "APOLLO_SUBMIT",
@@ -175,6 +184,8 @@ test("background requires a unique active exact tab and uses a serialized runner
   assert.match(background, /return selectUniqueActiveTab\(matches, url\)/);
   assert.match(background, /createSerialRunner\(\)/);
   assert.match(background, /tick-skipped-uncertain-send-no-retry/);
+  assert.match(background, /if \(!manual && state\.lastAttemptAt/);
+  assert.match(background, /return runOnce\(true\)/);
   assert.match(background, /isTrustedBridgeSender\(sender\)/);
   assert.match(background, /processedCommandIds = \[\.\.\.processed, command\.id\]/);
   assert.doesNotMatch(background, /processedCommandIds = \[\.\.\.processed, command\.id\]\.slice/);
