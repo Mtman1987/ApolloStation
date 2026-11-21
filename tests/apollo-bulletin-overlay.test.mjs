@@ -75,3 +75,23 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("scheduler proof page and simulator destination re-arm interval delivery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-proof-"));
+  const app = createBulletinServer({ port: 0, statePath: join(directory, "state.json") });
+  try {
+    const address = await app.listen(), origin = "http://127.0.0.1:" + address.port;
+    const proof = await fetch(origin + "/widgets/proof");
+    assert.equal(proof.status, 200);
+    assert.match(await proof.text(), /does not log into ChatGPT/i);
+    const created = await fetch(origin + "/api/tasks", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({name:"1-second simulator test",prompt:"Reply with receipt",scheduleType:"interval",every:1,unit:"seconds",destination:"test-simulator"}) });
+    assert.equal(created.status,201);
+    const task=(await created.json()).task;
+    assert.equal(task.destination,"test-simulator");
+    await new Promise(resolve=>setTimeout(resolve,1400));
+    const state=await (await fetch(origin+"/api/tasks")).json(), updated=state.tasks.find(t=>t.id===task.id);
+    assert.equal(updated.status,"scheduled");
+    assert.match(updated.lastEvent,/SIMULATED AI RECEIPT/);
+    assert.ok(updated.nextRunAt>Date.now());
+  } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
+});
