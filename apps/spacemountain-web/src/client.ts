@@ -141,39 +141,14 @@ const recoveryToggle = document.getElementById("apollo-recover-account") as HTML
 const recoveryStart = document.getElementById("apollo-recovery-start") as HTMLDivElement | null;
 const recoveryVerify = document.getElementById("apollo-recovery-verify") as HTMLButtonElement | null;
 const recoveryProvider = document.getElementById("apollo-recovery-provider") as HTMLSelectElement | null;
-const recoveryPasswordForm = document.getElementById("apollo-recovery-password") as HTMLDivElement | null;
-const recoveryPasswordInput = document.getElementById("apollo-recovery-new-password") as HTMLInputElement | null;
-const recoveryPasswordSubmit = document.getElementById("apollo-recovery-submit") as HTMLButtonElement | null;
 const recoveryMessage = document.getElementById("apollo-recovery-message") as HTMLParagraphElement | null;
 recoveryToggle?.addEventListener("click", () => { if (recoveryStart) recoveryStart.hidden = !recoveryStart.hidden; });
 recoveryVerify?.addEventListener("click", () => {
-  const username = (apolloLoginForm.elements.namedItem("username") as HTMLInputElement | null)?.value.trim();
-  if (!username) { if (recoveryMessage) recoveryMessage.textContent = "Enter your existing Apollo username first."; return; }
   const provider = recoveryProvider?.value === "twitch" ? "twitch" : "discord";
-  window.location.assign(`/v1/auth/linked-provider-recovery/start?provider=${provider}&username=${encodeURIComponent(username)}`);
+  window.location.assign(`/v1/auth/linked-provider-recovery/start?provider=${provider}`);
 });
-if (new URLSearchParams(window.location.search).get("recovery") === "1") {
-  if (recoveryPasswordForm) recoveryPasswordForm.hidden = false;
-  if (recoveryMessage) recoveryMessage.textContent = "Provider verified. Choose a new Apollo password.";
-}
 const recoveryError = new URLSearchParams(window.location.search).get("recoveryError");
-if (recoveryError && recoveryMessage) recoveryMessage.textContent = "We couldn't verify that provider against the existing Apollo account. Check the username and try again.";
-recoveryPasswordSubmit?.addEventListener("click", async () => {
-  const username = (apolloLoginForm.elements.namedItem("username") as HTMLInputElement | null)?.value.trim();
-  const password = recoveryPasswordInput?.value ?? "";
-  if (!username) { if (recoveryMessage) recoveryMessage.textContent = "Enter your existing Apollo username."; return; }
-  if (password.length < 12) { if (recoveryMessage) recoveryMessage.textContent = "Use a password with at least 12 characters."; return; }
-  recoveryPasswordSubmit.disabled = true;
-  try {
-    const response = await fetch("/v1/auth/linked-provider-recovery/password", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
-    const payload = await response.json().catch(() => ({})) as { message?: string };
-    if (!response.ok) throw new Error(payload.message ?? "Password recovery failed.");
-    window.location.assign("/");
-  } catch (error) {
-    if (recoveryMessage) recoveryMessage.textContent = error instanceof Error ? error.message : "Password recovery failed.";
-    recoveryPasswordSubmit.disabled = false;
-  }
-});
+if (recoveryError && recoveryMessage) recoveryMessage.textContent = "We couldn't match that verified provider account to an existing Apollo account. Try the other provider or contact the workspace owner.";
 
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
 document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
