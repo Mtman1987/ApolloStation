@@ -144,7 +144,16 @@ const recoveryMessage = element<HTMLParagraphElement>("apollo-recovery-message")
 recoveryDiscord.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=discord"));
 recoveryTwitch.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=twitch"));
 const recoveryError = new URLSearchParams(window.location.search).get("recoveryError");
-if (recoveryError && recoveryMessage) recoveryMessage.textContent = "We couldn't match that verified provider account to an existing Apollo account. Try the other provider or contact the workspace owner.";
+if (recoveryError && recoveryMessage) {
+  const recoveryMessages: Record<string, string> = {
+    invalid_state: "The recovery attempt expired or could not be verified. Start again with Twitch or Discord.",
+    provider_verification_failed: "The provider could not verify the account. Check the provider authorization and try again.",
+    provider_not_linked: "Twitch or Discord verified your identity, but that provider ID is not linked to an Apollo account record yet.",
+    workspace_unavailable: "Your provider ID matched, but Apollo could not restore an active owner workspace. Your existing data was not changed.",
+    recovery_failed: "Your provider was verified, but Apollo could not finish opening the account. Try again; the failure was logged for diagnosis.",
+  };
+  recoveryMessage.textContent = recoveryMessages[recoveryError] ?? "Account recovery could not be completed. Choose a provider to try again.";
+}
 
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
 document.getElementById("open-spmt")?.addEventListener("click", () => window.open("https://spmt.live/api/session/bridge", "_blank", "noopener"));
@@ -195,7 +204,10 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      showAuth("Your existing SPMT session is not active in this browser. Sign in with your SPMT bridge JSON below to open your Apollo workspace.");
+      const recoveryAttempt = new URLSearchParams(window.location.search).has("recoveryError");
+      showAuth(recoveryAttempt
+        ? "You're signed out, which is expected during account recovery. Choose the provider already linked to your Apollo account."
+        : "No active Apollo session was found in this browser. You can recover your existing account with its linked Twitch or Discord identity.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -886,9 +898,10 @@ function showAuth(detail: string) {
   shellView.hidden = true;
   authView.hidden = false;
   authView.dataset.mode = "signin";
-  // Always return to the owner-approved bridge flow after a rejected or missing
-  // session. A stale tab selection must never leave the gate looking empty.
-  selectTab("spmt");
+  // A missing session is the expected starting point for recovery. Show the
+  // Apollo account tab first so the provider-recovery actions are immediately visible;
+  // the SPMT bridge remains available as an explicit alternate sign-in method.
+  selectTab("apollo");
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
   reportBrowserDiagnostic("auth-gate-shown", { mode: authView.dataset.mode, bridgeFormVisible: !loginForm.hidden });
 }

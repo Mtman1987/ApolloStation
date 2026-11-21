@@ -21,7 +21,7 @@ test("restoring a session goes straight to loadShell without the cookie-only sho
 test("bridge-login bootstraps the owner workspace on first sign-in and reuses it afterwards", () => {
   const start = service.indexOf("const resolveDonorWorkspace");
   assert.notEqual(start, -1, "resolveDonorWorkspace helper must exist");
-  const block = service.slice(start, start + 4000);
+  const block = service.slice(start, start + 8000);
   assert.match(service, /resolveDonorWorkspace\(\{ id: donorId/);
   assert.match(block, /data\.getProfileByUsername\(donorUsername\)/);
   assert.match(block, /linkedProfile \?\? usernameProfile/, "verified provider-linked account outranks stale shell username");
@@ -50,12 +50,14 @@ test("SPMT sign-in starts and completes through a PKCE public client with no cli
   assert.match(flow, /timingSafeEqual\(Buffer\.from\(state\)/);
 });
 
-test("a rejected or missing session always reveals the SPMT bridge recovery form", () => {
+test("a rejected or missing session defaults to Apollo provider recovery with SPMT bridge optional", () => {
   const restore = client.slice(client.indexOf("async function restoreShell"), client.indexOf("async function submitLogin"));
   const gate = client.slice(client.indexOf("function showAuth"), client.indexOf("function showSessionUnavailable"));
-  assert.match(restore, /Your existing SPMT session is not active in this browser/);
+  assert.match(restore, /No active Apollo session was found in this browser/);
+  assert.match(restore, /recover your existing account with its linked Twitch or Discord identity/);
   assert.match(gate, /authView\.dataset\.mode = "signin"/);
-  assert.match(gate, /selectTab\("spmt"\)/);
+  assert.match(gate, /selectTab\("apollo"\)/);
+  assert.doesNotMatch(gate, /selectTab\("spmt"\)/);
   assert.match(gate, /reportBrowserDiagnostic\("auth-gate-shown"/);
 });
 
@@ -76,9 +78,12 @@ test("account recovery accepts either Discord or Twitch independently", () => {
   assert.match(client, /linked-provider-recovery\/start\?provider=twitch/);
   assert.doesNotMatch(client, /apollo-recovery-provider|apollo-recovery-verify/);
 
-  const start = service.slice(service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/start"'));
-  const callback = start.slice(0, start.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/password"'));
-  assert.match(callback, /provider !== "discord" && provider !== "twitch"/);
+  const start = service.slice(service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/start"'), service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/password"'));
+  const callbackStart = service.indexOf('url.pathname === "/v1/onboarding/twitch/callback"');
+  const callback = service.slice(callbackStart, service.indexOf('url.pathname === "/v1/onboarding/twitch/start"', callbackStart));
+  assert.match(start, /provider !== "discord" && provider !== "twitch"/);
+  assert.match(start, /redirectUri = `\$\{publicBaseUrl\}\/v1\/onboarding\/twitch\/callback`/);
+  assert.doesNotMatch(service, /linked-provider-recovery\/callback/);
   assert.match(callback, /accounts\.resolveProviderIdentity\(provider, identity\.id\)/);
   assert.match(callback, /resolveDonorWorkspace\(/);
   assert.match(callback, /issueHumanSession\(\{ userId: workspace\.profile\.userId, scopes: USER_SCOPES, tenantIds: workspace\.tenantIds \}\)/);
@@ -92,4 +97,6 @@ test("missing local Apollo passwords immediately expose direct provider recovery
   assert.match(login, /recoveryDiscord\.focus/);
   assert.match(page, /Continue with Discord/);
   assert.match(page, /Continue with Twitch/);
+  assert.match(page, /data-tab="apollo" aria-selected="true"/);
+  assert.match(page, /data-tab="spmt" aria-selected="false"/);
 });

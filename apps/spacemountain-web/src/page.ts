@@ -52,7 +52,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <p id="spmt-auth-status" class="spmt-auth-status" role="status" aria-live="polite">Reading your SPMT session…</p>
       <div class="gate-forms">
         <div class="gate-tabs" role="tablist" aria-label="Sign-in method">
-          <button type="button" role="tab" data-tab="spmt" aria-selected="true">SPMT bridge</button><button type="button" role="tab" data-tab="apollo" aria-selected="false">Apollo account</button>
+          <button type="button" role="tab" data-tab="spmt" aria-selected="false">SPMT bridge</button><button type="button" role="tab" data-tab="apollo" aria-selected="true">Apollo account</button>
         </div>
         <form id="login-form" autocomplete="off" hidden aria-hidden="true">
           <a class="secondary-button spmt-start" href="/v1/auth/spmt/start">Sign in with SPMT (automatic)</a>

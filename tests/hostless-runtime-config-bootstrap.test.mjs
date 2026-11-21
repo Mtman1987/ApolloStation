@@ -147,3 +147,9 @@ test("production app launch defaults to SpaceMountain while the SPMT bridge stay
   assert.ok(browser.includes('"/v1/auth/session/bridge-login"'));
   assert.ok(!launcher.includes("apollo-node-1.hostless.app"));
 });
+
+test("Node 1 always pins the OAuth callback base to its stable Hostless origin", () => {
+  const script = readFileSync(new URL("../scripts/hostless/ensure-node-app.mjs", import.meta.url), "utf8");
+  assert.match(script, /nodeKey === "node1"[\s\S]*?SPMT_PUBLIC_URL=https:\/\/apollo-node-1\.hostless\.app/);
+  assert.match(script, /custom domain is an additional alias, not the callback origin/);
+});
