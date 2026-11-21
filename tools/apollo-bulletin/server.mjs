@@ -3,20 +3,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apollo Bulletin</title><style>
-:root{color-scheme:dark;font:15px system-ui;background:#080d1c;color:#edf3ff}body{max-width:980px;margin:0 auto;padding:24px}h1{margin-bottom:4px}.muted{color:#9eacc8}.panel,article{background:#111b30;border:1px solid #293956;border-radius:16px;padding:16px;margin:14px 0}input,textarea,select,button{font:inherit;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:9px;padding:10px;width:100%;box-sizing:border-box;margin:5px 0}textarea{min-height:130px}button{background:#264d83;cursor:pointer;width:auto;padding:9px 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.status{color:#8ee6b6}@media(max-width:650px){.grid{grid-template-columns:1fr}body{padding:14px}}</style></head><body><h1>Apollo Bulletin</h1><div class="muted">Cloud task dispatch · one send per scheduled run · explicit owner review</div>
-<section class="panel"><h2>New scheduled task</h2><form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/ (or conversation URL)"><div class="grid"><label>Schedule<select name="schedule"><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="manual">Manual only</option></select></label><label>First run<input name="runAt" type="datetime-local"></label></div><button>Create task</button></form></section>
-<section><h2>Tasks & history</h2><div id="tasks" class="muted">Loading…</div></section><section class="panel"><h2>Activity log</h2><pre id="log" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></section>
-<script>
-async function api(path,options){const r=await fetch(path,{headers:{'content-type':'application/json'},...options});const d=await r.json();if(!r.ok)throw Error(d.error||r.statusText);return d}
-async function refresh(){const d=await api('/api/tasks');document.querySelector('#tasks').innerHTML=d.tasks.map(t=>'<article><b>'+esc(t.name)+'</b> · <span class="status">'+esc(t.status)+'</span><p>'+esc(t.schedule)+' · next: '+(t.nextRunAt?new Date(t.nextRunAt).toLocaleString():'manual')+'</p><p>'+esc(t.lastEvent||'No activity yet')+'</p><button onclick="act(\''+t.id+'\',\'run\')">Run once</button> <button onclick="act(\''+t.id+'\',\'pause\')">Pause</button> <button onclick="act(\''+t.id+'\',\'resume\')">Resume</button> <button onclick="act(\''+t.id+'\',\'complete\')">Mark complete</button><p><a href="'+esc(t.reviewUrl)+'">Open task review URL</a></p></article>').join('')||'No tasks yet';document.querySelector('#log').textContent=d.activity.map(x=>new Date(x.at).toLocaleString()+' — '+x.event+' '+(x.taskId||'')).join('\\n')}
-function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function act(id,action){try{await api('/api/tasks/'+id+'/'+action,{method:'POST',body:'{}'});await refresh()}catch(e){alert(e.message)}}
-document.querySelector('#create').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/tasks',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});e.target.reset();await refresh()}catch(x){alert(x.message)}};
-refresh();setInterval(refresh,10000);
-</script></body></html>`;
-
-
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
