@@ -123,7 +123,7 @@ test("Bulletin server reads and writes task state through the injected Turso sto
   }
 });
 
-test("Hostless cron endpoint is authenticated and processes one due task per tick", async () => {
+test("Hostless cron endpoint is authenticated and wakes one due task per tick", async () => {
   const priorCron = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
   const priorToken = process.env.APOLLO_BULLETIN_CRON_TOKEN;
   process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
@@ -149,12 +149,15 @@ test("Hostless cron endpoint is authenticated and processes one due task per tic
     assert.equal(denied.status, 401);
     await denied.text();
     const first = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
-    assert.equal(first.status, 200);
-    assert.deepEqual(await first.json(), { processed: 1, busy: false });
+    assert.equal(first.status, 202);
+    assert.deepEqual(await first.json(), { accepted: true });
+    for (let attempt = 0; attempt < 30 && persisted.tasks[0].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(persisted.tasks[0].status, "dispatched");
     assert.equal(persisted.tasks[1].status, "scheduled");
     const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
-    assert.deepEqual(await second.json(), { processed: 1, busy: false });
+    assert.equal(second.status, 202);
+    assert.deepEqual(await second.json(), { accepted: true });
+    for (let attempt = 0; attempt < 30 && persisted.tasks[1].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(persisted.tasks[1].status, "dispatched");
   } finally {
     await app.close();
