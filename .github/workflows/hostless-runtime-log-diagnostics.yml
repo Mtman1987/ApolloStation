@@ -129,6 +129,51 @@ jobs:
           else
             echo "HTTP probes skipped: no public URL." | tee -a hostless-diagnostics/http-probes.txt
           fi
+
+          # Verify the owner-facing recovery surface on Node 1 without completing OAuth
+          # or attempting a password change. Only status, provider host, callback host,
+          # and cookie names are retained; OAuth state and cookie values are discarded.
+          if [ "$NODE" = "node1" ] && [ -n "$APP_URL" ]; then
+            ROOT_BODY="hostless-diagnostics/http-_.body"
+            if [ -f "$ROOT_BODY" ] && grep -q "apollo-recovery-start" "$ROOT_BODY" && grep -q "apollo-recovery-password" "$ROOT_BODY"; then
+              echo "Apollo recovery UI markup: present" | tee -a hostless-diagnostics/http-probes.txt
+            else
+              echo "Apollo recovery UI markup: missing" | tee -a hostless-diagnostics/http-probes.txt
+            fi
+            for provider in discord twitch; do
+              HEADERS="$(mktemp)"
+              STATUS="$(curl -sS --max-time 20 -D "$HEADERS" -o /dev/null -w '%{http_code}' "$APP_URL/v1/auth/linked-provider-recovery/start?provider=$provider&username=apollo-probe-user" 2>/dev/null || true)"
+              node --input-type=module - "$provider" "$STATUS" "$HEADERS" <<'NODE'
+          import fs from "node:fs";
+          const [provider, status, file] = process.argv.slice(2);
+          const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+          const locationLine = lines.find(line => /^location:/i.test(line));
+          const location = locationLine ? locationLine.slice(locationLine.indexOf(":") + 1).trim() : "";
+          const cookies = lines.filter(line => /^set-cookie:/i.test(line)).map(line => line.slice(line.indexOf(":") + 1).trim().split("=", 1)[0]).filter(Boolean);
+          let oauthHost = "none";
+          let callbackHost = "none";
+          try {
+            const target = new URL(location);
+            oauthHost = target.host;
+            const callback = target.searchParams.get("redirect_uri");
+            if (callback) callbackHost = new URL(callback).host;
+          } catch {}
+          console.log(`${provider} recovery start status=${status} oauthHost=${oauthHost} callbackHost=${callbackHost} cookieNames=${cookies.join(",") || "none"}`);
+          NODE
+              rm -f "$HEADERS"
+            done
+            BODY="$(mktemp)"
+            STATUS="$(curl -sS --max-time 20 -o "$BODY" -w '%{http_code}' -X POST "$APP_URL/v1/auth/linked-provider-recovery/password" 2>/dev/null || true)"
+            ERROR_CODE="$(node --input-type=module - "$BODY" <<'NODE'
+          import fs from "node:fs";
+          try { process.stdout.write(String(JSON.parse(fs.readFileSync(process.argv[2], "utf8")).error ?? "none")); }
+          catch { process.stdout.write("unparseable"); }
+          NODE
+            )"
+            echo "Recovery password endpoint without ticket status=$STATUS error=$ERROR_CODE" | tee -a hostless-diagnostics/http-probes.txt
+            rm -f "$BODY"
+          fi
+
           # Capture informational and warning logs as well as errors. Keep the
           # complete output in the Actions artifact; the issue publisher bounds excerpts.
           hostless logs --app "$APP" --since "$WINDOW" --level warn > hostless-diagnostics/recent-warnings.log 2>&1

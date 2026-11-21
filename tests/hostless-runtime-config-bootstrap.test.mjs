@@ -153,3 +153,21 @@ test("Node 1 always pins the OAuth callback base to its stable Hostless origin",
   assert.match(script, /nodeKey === "node1"[\s\S]*?SPMT_PUBLIC_URL=https:\/\/apollo-node-1\.hostless\.app/);
   assert.match(script, /custom domain is an additional alias, not the callback origin/);
 });
+
+test("Hostless recovery release keeps a ten-minute wait, serializes nodes, and probes the live recovery routes safely", () => {
+  const script = readFileSync(new URL("../scripts/hostless/ensure-node-app.mjs", import.meta.url), "utf8");
+  const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  const diagnostics = readFileSync(new URL("../.github/workflows/hostless-runtime-log-diagnostics.yml", import.meta.url), "utf8");
+
+  assert.ok(script.includes("const deadline = Date.now() + 10 * 60 * 1000;"));
+  assert.ok(script.includes("within 10 minutes (last status:"));
+  assert.ok(script.includes("timeout: 30 * 1000,"));
+  assert.ok(release.includes("timeout-minutes: 12"));
+  assert.ok(release.includes("max-parallel: 1"));
+  assert.ok(release.includes("fail-fast: true"));
+  assert.ok(diagnostics.includes("apollo-recovery-start"));
+  assert.ok(diagnostics.includes("/v1/auth/linked-provider-recovery/start?provider=$provider"));
+  assert.ok(diagnostics.includes("callbackHost="));
+  assert.ok(diagnostics.includes("cookieNames="));
+  assert.ok(diagnostics.includes("Recovery password endpoint without ticket"));
+});
