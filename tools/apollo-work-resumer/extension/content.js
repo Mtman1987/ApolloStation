@@ -1,10 +1,14 @@
 const SEND_LABEL = /^(send message|send prompt|send|send-message|send-button)$/;
 
+function buttonMatchesSend(button) {
+  return [button.getAttribute("aria-label"), button.getAttribute("data-testid"), button.textContent]
+    .some(value => SEND_LABEL.test(String(value || "").trim().toLowerCase()));
+}
+
 function buttonLabel(button) {
   return [button.getAttribute("aria-label"), button.getAttribute("data-testid"), button.textContent]
     .filter(Boolean)
     .join(" ")
-    .trim()
     .toLowerCase();
 }
 
@@ -20,7 +24,7 @@ function isEnabled(button) {
 
 function findSendButton({ requireEnabled = false } = {}) {
   return [...document.querySelectorAll("button")].find(button =>
-    SEND_LABEL.test(buttonLabel(button)) &&
+    buttonMatchesSend(button) &&
     isVisible(button) &&
     (!requireEnabled || isEnabled(button))
   ) || null;
