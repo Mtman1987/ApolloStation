@@ -110,17 +110,21 @@ const cockpit = existing || unwrap(await api("GET", "/apps/" + appName));
 const url = appUrl(cockpit, createRecords);
 
 if (!existing) {
-  const envArgs = [
+  const secretArgs = [
     "env", "set",
     "APOLLO_BROWSER_CONTROL_PASSWORD=" + password,
     "APOLLO_COCKPIT_WORKER_TOKEN=" + workerToken,
-    "APOLLO_COCKPIT_PUBLIC_URL=" + url,
     "HOSTLESS_TOKEN=" + token,
   ];
-  if (process.env.TURSO_DATABASE_URL) envArgs.push("TURSO_DATABASE_URL=" + process.env.TURSO_DATABASE_URL);
-  if (process.env.TURSO_AUTH_TOKEN) envArgs.push("TURSO_AUTH_TOKEN=" + process.env.TURSO_AUTH_TOKEN);
-  envArgs.push("--write-only", "--app", appName, "--project", String(projectId), "--deploy");
-  run("hostless", envArgs);
+  if (process.env.TURSO_AUTH_TOKEN) secretArgs.push("TURSO_AUTH_TOKEN=" + process.env.TURSO_AUTH_TOKEN);
+  if (process.env.TURSO_API_TOKEN) secretArgs.push("TURSO_API_TOKEN=" + process.env.TURSO_API_TOKEN);
+  secretArgs.push("--write-only", "--app", appName, "--project", String(projectId));
+  run("hostless", secretArgs);
+
+  const publicArgs = ["env", "set", "APOLLO_COCKPIT_PUBLIC_URL=" + url];
+  if (process.env.TURSO_DATABASE_URL) publicArgs.push("TURSO_DATABASE_URL=" + process.env.TURSO_DATABASE_URL);
+  publicArgs.push("--app", appName, "--project", String(projectId), "--deploy");
+  run("hostless", publicArgs);
 }
 
 await waitForHealth(url);
