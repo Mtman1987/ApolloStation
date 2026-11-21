@@ -34,6 +34,7 @@ function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyCon
 }
 
 const node1 = [
+  ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STATE_PATH: process.env.APOLLO_BULLETIN_STATE_PATH ?? "/tmp/apollo-bulletin/state.json" }],
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
 ];
 
