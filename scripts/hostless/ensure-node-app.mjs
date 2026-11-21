@@ -323,7 +323,8 @@ const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?
 if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
-const deadline = Date.now() + 40 * 60 * 1000;
+// Keep a single Hostless deployment wait bounded to ten minutes for future releases.
+const deadline = Date.now() + 10 * 60 * 1000;
 let pollFailures = 0;
 let lastStatus = "unknown";
 while (Date.now() < deadline) {
