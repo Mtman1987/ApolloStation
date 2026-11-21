@@ -37,7 +37,7 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
       });
       page = context.pages()[0] || await context.newPage();
       page.setDefaultTimeout(12000);
-      await page.goto(target, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.goto(target || CHATGPT_ORIGIN, { waitUntil: "domcontentloaded", timeout: 45000 });
       page.on("crash", () => { lastError = "ChatGPT browser page crashed"; });
       lastError = null;
     })().catch(error => { lastError = error.message || String(error); throw error; }).finally(() => { opening = null; });
