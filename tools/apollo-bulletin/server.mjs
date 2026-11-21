@@ -30,7 +30,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let busy = false;
   let browserWorker;
   const persistence = store ?? createTursoBulletinStoreFromEnvironment();
-  if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires SHARED_TURSO_DATABASE_URL and NODE1_TURSO_AUTH_TOKEN");
+  if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires TURSO_DATABASE_URL or SHARED_TURSO_DATABASE_URL and TURSO_AUTH_TOKEN or NODE1_TURSO_AUTH_TOKEN");
   async function deliver(task) {
     if (task.destination === "test-simulator") return { submitted: true, receipt: simulatedAiReply(task, (task.simulatedRunCount || 0) + 1), reason: "Task simulator receipt recorded" };
     if (!browserWorker) return { submitted: false, reason: "dedicated-chromium-browser-not-ready" };
