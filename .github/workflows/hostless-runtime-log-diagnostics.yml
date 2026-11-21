@@ -134,7 +134,7 @@ jobs:
           # or attempting a password change. Only status, provider host, callback host,
           # and cookie names are retained; OAuth state and cookie values are discarded.
           if [ "$NODE" = "node1" ] && [ -n "$APP_URL" ]; then
-            ROOT_BODY="hostless-diagnostics/http-__.body"
+            ROOT_BODY="hostless-diagnostics/http-_.body"
             if [ -f "$ROOT_BODY" ] && grep -q "apollo-recovery-start" "$ROOT_BODY" && grep -q "apollo-recovery-password" "$ROOT_BODY"; then
               echo "Apollo recovery UI markup: present" | tee -a hostless-diagnostics/http-probes.txt
             else
@@ -146,8 +146,9 @@ jobs:
               node --input-type=module - "$provider" "$STATUS" "$HEADERS" <<'NODE'
           import fs from "node:fs";
           const [provider, status, file] = process.argv.slice(2);
-          const lines = fs.readFileSync(file, "utf8").split(/\\r?\\n/);
-          const location = lines.find(line => /^location:/i.test(line))?.slice(lines.find(line => /^location:/i.test(line)).indexOf(":") + 1).trim();
+          const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+          const locationLine = lines.find(line => /^location:/i.test(line));
+          const location = locationLine ? locationLine.slice(locationLine.indexOf(":") + 1).trim() : "";
           const cookies = lines.filter(line => /^set-cookie:/i.test(line)).map(line => line.slice(line.indexOf(":") + 1).trim().split("=", 1)[0]).filter(Boolean);
           let oauthHost = "none";
           let callbackHost = "none";
