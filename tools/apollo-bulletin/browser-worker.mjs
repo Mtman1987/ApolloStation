@@ -134,8 +134,8 @@ export class ApolloChatGptBrowserWorker {
 }
 
 export async function createApolloChatGptBrowserWorkerFromEnvironment(environment = process.env) {
-  const profilePath = environment.APOLLO_BROWSER_PROFILE_PATH;
-  if (!profilePath) const worker = new ApolloChatGptBrowserWorker({ profilePath: profilePath || "/tmp/apollo-browser-profile", allowedOrigin: environment.APOLLO_BROWSER_ALLOWED_ORIGIN || environment.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app" });
+  const profilePath = environment.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile";
+  const worker = new ApolloChatGptBrowserWorker({ profilePath, allowedOrigin: environment.APOLLO_BROWSER_ALLOWED_ORIGIN || environment.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app" });
   await worker.start();
   return { enabled: true, worker };
 }
