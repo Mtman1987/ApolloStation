@@ -1,6 +1,8 @@
 import { allQueueCompleted, buildTaskPrompt, decideQueueItem, isConversationUrl, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
 const ALARM = "apollo-bulletin-hourly";
-const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [] };
+const GITHUB_BRIDGE_URL = "https://github.com/Mtman1987/ApolloStation/pull/553";
+const GITHUB_BRIDGE_PATTERN = GITHUB_BRIDGE_URL + "*";
+const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [], processedCommandIds: [] };
 let running = false;
 
 async function getState() {
@@ -22,6 +24,10 @@ async function ensureAlarm() {
   const state = await getState();
   if (state.enabled && !state.paused) chrome.alarms.create(ALARM, { periodInMinutes: 60 });
   else await chrome.alarms.clear(ALARM);
+}
+async function ensureGitHubBridgeTab() {
+  const matches = await chrome.tabs.query({ url: GITHUB_BRIDGE_PATTERN });
+  if (!matches.length) await chrome.tabs.create({ url: GITHUB_BRIDGE_URL, active: false });
 }
 async function targetTab(url) {
   const matches = await chrome.tabs.query({ url });
@@ -102,13 +108,44 @@ async function runOnce(manual = false) {
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.set({ state: await getState() });
   await ensureAlarm();
+  await ensureGitHubBridgeTab();
 });
-chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); });
+chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); void ensureGitHubBridgeTab(); });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) void runOnce(false); });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   (async () => {
     if (message?.type === "APOLLO_GET_STATE") return getState();
+    if (message?.type === "APOLLO_GITHUB_COMMAND") {
+      if (!sender.url?.startsWith(GITHUB_BRIDGE_URL)) throw new Error("GitHub command source is not trusted");
+      const command = message.command || {};
+      if (typeof command.id !== "string" || command.id.length > 100 ||
+          typeof command.prompt !== "string" || !command.prompt.trim() || command.prompt.length > 6000 ||
+          !isConversationUrl(command.conversationUrl)) {
+        throw new Error("GitHub command is malformed or targets a non-conversation URL");
+      }
+      const state = await getState();
+      if (state.processedCommandIds.includes(command.id)) return { duplicate: true };
+      if (state.queue.some(q => ["pending", "active", "attempted", "limit-reached"].includes(q.status))) {
+        throw new Error("Local queue is not empty; clear or complete the existing task before dispatching another proof command");
+      }
+      const item = {
+        id: "github-" + command.id,
+        prompt: command.prompt.trim(),
+        targetUrl: command.conversationUrl,
+        completionToken: "APOLLO_TASK_COMPLETE:github-" + command.id,
+        status: "pending",
+        cycles: 0,
+        createdAt: Date.now(),
+        source: "github-actions",
+      };
+      state.processedCommandIds = [...state.processedCommandIds, command.id].slice(-100);
+      state.completed = false;
+      state.queue = [...state.queue, item];
+      await save(state, "github-actions-command-received");
+      await runOnce(true);
+      return { queued: true, id: item.id };
+    }
     if (message?.type === "APOLLO_ENQUEUE") {
       const state = await getState();
       if (typeof message.prompt !== "string" || !message.prompt.trim() ||
