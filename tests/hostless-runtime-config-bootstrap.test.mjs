@@ -173,3 +173,15 @@ test("Hostless recovery release keeps a ten-minute wait, serializes nodes, and p
   assert.ok(diagnostics.includes("cookieNames="));
   assert.ok(diagnostics.includes("Recovery password endpoint without ticket"));
 });
+
+test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
+  const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const hostless = readFileSync(new URL("../hostless.yaml", import.meta.url), "utf8");
+  const build = packageJson.scripts["build:hostless"];
+  assert.match(build, /^tsc -b /);
+  for (const app of ["apps/spmt-service", "apps/spacemountain-web", "apps/chat-gateway", "apps/streamweaver", "apps/discord-stream-hub", "apps/nebula-arcade"]) {
+    assert.ok(build.includes(app), "Hostless build must include " + app);
+  }
+  assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
+  assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless/);
+});
