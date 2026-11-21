@@ -59,6 +59,27 @@ test("Bulletin ChatGPT browser opens the requested conversation and submits one 
   }
 });
 
+
+test("manual task uses the conversation currently selected in the browser when URL is omitted", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-chatgpt-browser-"));
+  const fake = fakeBrowser();
+  const adapter = createChatGPTBrowserAdapter({
+    profileDir: directory, browserPath: async () => "/fake/chromium",
+    launch: async () => fake.context,
+  });
+  try {
+    await adapter.status();
+    await adapter.input({ action: "navigate", url: "https://chatgpt.com/c/owner-work" });
+    const result = await adapter.dispatch({ conversationUrl: null, prompt: "Continue my owner work" });
+    assert.equal(result.submitted, true);
+    assert.equal(result.conversationUrl, "https://chatgpt.com/c/owner-work");
+    assert.equal(fake.sent(), 1);
+  } finally {
+    await adapter.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("browser adapter refuses non-ChatGPT navigation and bounds remote keyboard input", async () => {
   const directory = await mkdtemp(join(tmpdir(), "apollo-chatgpt-browser-"));
   const fake = fakeBrowser();
