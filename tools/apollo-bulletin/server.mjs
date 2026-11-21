@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { normalizeSchedule, nextScheduledAt, scheduleLabel } from "./schedule.mjs";
 import { simulatedAiReply } from "./test-simulator.mjs";
-import { createApolloChatGptBrowserWorkerFromEnvironment } from "./browser-worker.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
@@ -27,12 +26,12 @@ function bulletinWidgetHtml(kind) {
 export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, now = () => Date.now() } = {}) {
   let state;
   let busy = false;
-  let browserWorker;
-  let browserUnavailableReason = "persistent-browser-profile-not-configured";
+  const browserWorker = { mode: "simulated", connected: true };
   async function deliver(task) {
-    if (task.destination === "test-simulator") return { submitted: true, receipt: simulatedAiReply(task, (task.simulatedRunCount || 0) + 1), reason: "Simulator receipt recorded" };
-    if (!browserWorker) return { submitted: false, reason: browserUnavailableReason };
-    return browserWorker.sendTask(task);
+    const runNumber = (task.simulatedRunCount || 0) + 1;
+    const receipt = simulatedAiReply(task, runNumber);
+    receipt.provider = task.destination === "chatgpt" ? "simulated-chatgpt-browser" : "test-simulator";
+    return { submitted: true, receipt, reason: "Simulated browser response recorded; no external service was contacted" };
   }
   async function save() {
     await mkdir(dirname(statePath), { recursive: true });
@@ -43,9 +42,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function load() {
     try { state = JSON.parse(await readFile(statePath, "utf8")); }
     catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
-    state.tasks ||= []; state.activity ||= [];
+    state.tasks ||= []; state.activity ||= []; state.browserMessages ||= [];
   }
-  function log(event, taskId) { state.activity.push({ at: now(), event, taskId }); state.activity = state.activity.slice(-300); }
+  function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
   async function tick() {
     if (busy) return; busy = true;
     try {
@@ -101,11 +100,11 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/api/browser/view") return send(200, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#212121;color:#eee;font:15px system-ui}.top{padding:13px;border-bottom:1px solid #444}.wrap{max-width:720px;margin:auto;padding:18px 14px 85px}.msg{padding:13px;border-radius:12px;margin:12px 0;white-space:pre-wrap;line-height:1.5}.user{background:#303030;margin-left:12%}.assistant{background:#292929;margin-right:12%}.bar{position:fixed;bottom:0;left:0;right:0;padding:12px;background:#212121}.form{max-width:720px;margin:auto;display:flex;gap:8px;background:#303030;padding:8px;border-radius:16px}textarea{flex:1;min-height:42px;resize:vertical;background:transparent;color:white;border:0;font:inherit}button{border:0;border-radius:12px;padding:0 16px}</style><div class="top">ChatGPT <b style="color:#8ee6b6">· SIMULATION</b></div><main class="wrap" id="messages"><div class="msg assistant">Hello! This is Apollo’s simulated ChatGPT browser. Send a message to test the flow. Nothing leaves Apollo.</div></main><div class="bar"><form class="form" id="send"><textarea id="prompt" placeholder="Message ChatGPT (simulated)"></textarea><button>Send</button></form></div><script>const box=document.querySelector("#messages"),input=document.querySelector("#prompt");function add(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;box.append(d)}document.querySelector("#send").onsubmit=async e=>{e.preventDefault();const prompt=input.value.trim();if(!prompt)return;input.value="";add("user",prompt);const r=await fetch("/bulletin/api/browser/send",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt})});const d=await r.json();add("assistant",d.reply||d.error||"No reply")};</script>', "text/html; charset=utf-8");
       if (req.method === "POST" && url.pathname === "/api/browser/send") { const input=await body(); if(typeof input.prompt!=="string"||!input.prompt.trim()) return send(400,{error:"Enter a message first"}); const prompt=input.prompt.trim().slice(0,4000); const id="browser-"+randomUUID(); const reply="SIMULATED CHATGPT REPLY: Apollo received your message in the browser proof of concept: "+prompt.slice(0,1000); state.browserMessages.push({id,at:now(),prompt,reply}); state.browserMessages=state.browserMessages.slice(-100); log("browser-message-sent",id,prompt.slice(0,240)); log("browser-simulated-reply",id,reply.slice(0,240)); await save(); return send(200,{id,reply,simulated:true}); }
       if (req.method === "GET" && url.pathname === "/api/browser/log") return send(200,{messages:state.browserMessages.slice(-100).reverse(),activity:state.activity.filter(x=>String(x.event).startsWith("browser-")).slice(-100).reverse()});
-      if (req.method === "GET" && url.pathname === "/health/ready") return send(200,{ready:true,tasks:state.tasks.length,browser:browserWorker ? "ready" : "not-configured"});
+      if (req.method === "GET" && url.pathname === "/health/ready") return send(200,{ready:true,tasks:state.tasks.length,browser:"simulated-ready"});
       send(404,{error:"not_found"});
     } catch (error) { send(500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); try { const browser = await createApolloChatGptBrowserWorkerFromEnvironment(); browserWorker = browser.enabled ? browser.worker : undefined; browserUnavailableReason = browser.reason ?? "browser-start-failed"; } catch (error) { browserUnavailableReason = "browser-start-failed: " + String(error?.message || error).slice(0,300); console.error("[apollo-bulletin] Dedicated browser unavailable:", browserUnavailableReason); } await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(browserWorker) await browserWorker.close(); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
+  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
