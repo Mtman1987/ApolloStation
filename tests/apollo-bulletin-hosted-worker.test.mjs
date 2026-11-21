@@ -224,6 +224,14 @@ test("Hostless cron proxy uses a bearer secret and does not need an interactive 
   );
   assert.equal(denied.authorized, false);
   assert.equal(denied.status, 401);
+  const previewAllowed = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer preview-only-token" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    { APOLLO_PREVIEW_PASSWORD: "preview-only-token" },
+  );
+  assert.equal(previewAllowed.authorized, true);
 });
 
 test("Node 1 disables its private polling loop when Hostless cron owns scheduling", async () => {
