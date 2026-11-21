@@ -371,8 +371,9 @@ export class AccountRecoveryService {
     if (typeof oauthState !== "string" || !/^[A-Za-z0-9_-]{32,100}$/.test(oauthState)) throw new AccountSetupError("A valid OAuth recovery state is required");
     const profile = this.platformStore.getUserProfileByUsername(username);
     if (!profile) throw new AccountSetupError("Account recovery could not be verified");
-    const linkedId = this.setupStore.findProviderUserId(profile.userId, provider);
-    if (!linkedId || linkedId !== requireProviderUserId(verifiedProviderUserId)) throw new AccountSetupError("Account recovery could not be verified");
+    const linkedId = requireProviderUserId(verifiedProviderUserId);
+    const providerLink = this.authorityStore.getProviderLink(provider, linkedId);
+    if (!providerLink || providerLink.revokedAt || providerLink.userId !== profile.userId) throw new AccountSetupError("Account recovery could not be verified");
     const token = this.tokenFactory();
     const now = this.now();
     const ticket: AccountSetupTicketV1 = {
@@ -402,7 +403,8 @@ export class AccountRecoveryService {
     if (!profile || normalizeUsername(profile.username) !== username) throw new AccountSetupError("Account recovery could not be verified");
     const linkedProvider = hasDiscord ? "discord" : "twitch";
     const linkedId = hasDiscord ? ticket.discordUserId : ticket.twitchUserId;
-    if (!linkedId || this.setupStore.findProviderUserId(ticket.userId, linkedProvider) !== linkedId) {
+    const providerLink = linkedId ? this.authorityStore.getProviderLink(linkedProvider, linkedId) : undefined;
+    if (!providerLink || providerLink.revokedAt || providerLink.userId !== ticket.userId) {
       throw new AccountSetupError("Account recovery could not be verified");
     }
     requirePassword(password);
