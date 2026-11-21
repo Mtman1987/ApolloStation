@@ -97,4 +97,6 @@ test("missing local Apollo passwords immediately expose direct provider recovery
   assert.match(login, /recoveryDiscord\.focus/);
   assert.match(page, /Continue with Discord/);
   assert.match(page, /Continue with Twitch/);
+  assert.match(page, /data-tab="apollo" aria-selected="true"/);
+  assert.match(page, /data-tab="spmt" aria-selected="false"/);
 });
