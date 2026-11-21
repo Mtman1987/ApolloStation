@@ -66,14 +66,13 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
           <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
           <button type="submit">Sign in</button>
           <button type="button" id="create-apollo-account" class="secondary-button">Create Apollo account</button>
-          <button type="button" id="apollo-recover-account" class="secondary-button">Recover with Discord or Twitch</button>
-          <div id="apollo-recovery-start" hidden>
-            <p class="spmt-auth-help">Choose either provider already linked to your Apollo account. You do not need both.</p>
+          <div id="apollo-recovery-start">
+            <p class="spmt-auth-help">No local password yet? Start recovery with either provider already linked to your Apollo account. You only need one.</p>
             <div class="auth-actions">
-              <button type="button" id="apollo-recovery-discord">Recover with Discord</button>
-              <button type="button" id="apollo-recovery-twitch" class="secondary-button">Recover with Twitch</button>
+              <button type="button" id="apollo-recovery-discord">Continue with Discord</button>
+              <button type="button" id="apollo-recovery-twitch" class="secondary-button">Continue with Twitch</button>
             </div>
-            <p class="spmt-auth-help">Apollo will use the verified provider ID to find your existing account and restore its database-owned workspace. No new account is created.</p>
+            <p class="spmt-auth-help">Apollo verifies the provider ID, finds your existing account, and restores its workspace. Recovery does not create a new account.</p>
           </div>
           <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
           <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
