@@ -1,0 +1,8 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildTaskPrompt, nextQueueItem, isTaskComplete, taskCycleLimitReached } from "../tools/apollo-work-resumer/extension/logic.mjs";
+const item={id:"q1",status:"pending",prompt:"Finish task",completionToken:"APOLLO_TASK_COMPLETE:q1",cycles:0};
+test("active queue item has priority over pending",()=>{assert.equal(nextQueueItem([{...item,status:"pending"},{...item,id:"q2",status:"active"}]).id,"q2")});
+test("initial and continuation prompts carry unique completion token",()=>{assert.match(buildTaskPrompt(item),/Finish task/);assert.match(buildTaskPrompt(item),/APOLLO_TASK_COMPLETE:q1/);assert.match(buildTaskPrompt({...item,status:"active"}),/Continue working/);});
+test("completion marker requires an idle assistant response for the active task",()=>{assert.equal(isTaskComplete({...item,status:"active"},{busy:false,assistantText:"APOLLO_TASK_COMPLETE:q1"}),true);assert.equal(isTaskComplete({...item,status:"active"},{busy:true,assistantText:"APOLLO_TASK_COMPLETE:q1"}),false);assert.equal(isTaskComplete(item,{busy:false,assistantText:"APOLLO_TASK_COMPLETE:q1"}),false)});
+test("cycle cap is per queue item",()=>{assert.equal(taskCycleLimitReached({...item,cycles:3},3),true);assert.equal(taskCycleLimitReached(item,3),false)});
