@@ -114,3 +114,41 @@ test("linked provider recovery verifies the existing immutable link and consumes
     assert.throws(() => f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "recoverme", "another-recovery-password-123"), /already used/);
   } finally { f.close(); }
 });
+
+test("linked-provider recovery rechecks the immutable provider link before changing the password", () => {
+  const f = fixture();
+  try {
+    const invite = f.accounts.createDiscordInvite({
+      tenantId: "tenant-recovery-revocation",
+      sourceAppId: "spacemountain",
+      username: "revokeme",
+      discord: { id: "discord-recovery-revoked" },
+    });
+    const started = f.accounts.beginTwitchVerification(invite.ticket);
+    f.accounts.completeTwitchVerification(invite.ticket, started.state, { id: "twitch-recovery-still-linked" });
+    f.accounts.completeFirstTimePassword(invite.ticket, "original-password-123");
+
+    const reset = f.accounts.createLinkedProviderPasswordReset(
+      "revokeme",
+      "discord",
+      "discord-recovery-revoked",
+      "oauth-state-" + "x".repeat(40),
+    );
+    f.authority.unlinkProvider(invite.account.userId, "discord", "discord-recovery-revoked");
+
+    assert.throws(
+      () => f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "revokeme", "replacement-password-123"),
+      /could not be verified/,
+    );
+    assert.equal(
+      f.data.login("revokeme", "original-password-123", ["workspace:read"]).profile.userId,
+      invite.account.userId,
+      "a provider link revoked after OAuth must not allow the password to be changed",
+    );
+    assert.deepEqual(
+      f.authority.listProviderLinks(invite.account.userId).map(link => link.provider + ":" + link.providerUserId),
+      ["twitch:twitch-recovery-still-linked"],
+      "recovery must not restore or replace the revoked identity",
+    );
+  } finally { f.close(); }
+});
