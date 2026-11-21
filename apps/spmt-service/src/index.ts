@@ -688,6 +688,68 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/start") {
+        const provider = url.searchParams.get("provider");
+        const username = (url.searchParams.get("username") ?? "").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        if ((provider !== "discord" && provider !== "twitch") || !/^[a-z0-9_.-]{2,32}$/.test(username)) return json(response, 400, { error: "recovery_details_invalid" });
+        const client = accountProviderOAuthClient(options, provider);
+        if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
+        const state = randomBytes(24).toString("base64url");
+        const pending = Buffer.from(JSON.stringify({ provider, username, state }), "utf8").toString("base64url");
+        const redirectUri = `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`;
+        const authorizationUrl = provider === "twitch" ? new URL("https://id.twitch.tv/oauth2/authorize") : new URL("https://discord.com/oauth2/authorize");
+        authorizationUrl.searchParams.set("client_id", client.clientId);
+        authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+        authorizationUrl.searchParams.set("response_type", "code");
+        authorizationUrl.searchParams.set("scope", provider === "twitch" ? "user:read:email" : "identify");
+        authorizationUrl.searchParams.set("state", state);
+        response.writeHead(302, { location: authorizationUrl.toString(), "cache-control": "no-store", "set-cookie": setupCookie("spmt_linked_recovery", pending) });
+        return response.end();
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/callback") {
+        const pendingRaw = cookie(request, "spmt_linked_recovery");
+        let pending: { provider: "discord" | "twitch"; username: string; state: string } | undefined;
+        try { pending = pendingRaw ? JSON.parse(Buffer.from(pendingRaw, "base64url").toString("utf8")) : undefined; } catch { pending = undefined; }
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        if (!pending || !code || !state || pending.state !== state || !["discord", "twitch"].includes(pending.provider)) {
+          response.writeHead(302, { location: `${publicBaseUrl}/?recoveryError=verification_failed`, "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
+          return response.end();
+        }
+        try {
+          const provider = pending.provider;
+          const client = accountProviderOAuthClient(options, provider);
+          if (!client) throw new Error("Provider unavailable");
+          const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`, client, fetchImpl);
+          const resolved = accounts.resolveProviderIdentity(provider, identity.id);
+          if (!resolved || resolved.profile.username.toLowerCase() !== pending.username) throw new Error("Linked identity mismatch");
+          const reset = accounts.createLinkedProviderPasswordReset(pending.username, provider, identity.id);
+          response.writeHead(302, { location: `${publicBaseUrl}/?recovery=1`, "cache-control": "no-store", "set-cookie": [setupCookie("spmt_linked_recovery_ticket", reset.ticket), clearCookie("spmt_linked_recovery")] });
+          return response.end();
+        } catch {
+          response.writeHead(302, { location: `${publicBaseUrl}/?recoveryError=verification_failed`, "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
+          return response.end();
+        }
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/auth/linked-provider-recovery/password") {
+        const body = await readBody(request);
+        const ticket = cookie(request, "spmt_linked_recovery_ticket");
+        if (!ticket) return json(response, 400, { error: "recovery_ticket_required" });
+        const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        try {
+          const completed = accounts.completeLinkedProviderPasswordReset(ticket, str(body.password, "password"));
+          const inspection = accounts.inspectSignIn(username);
+          if (inspection.state !== "password-set" || inspection.userId !== completed.userId) return json(response, 400, { error: "recovery_account_mismatch" }, { "set-cookie": clearCookie("spmt_linked_recovery_ticket") });
+          const result = data.login(username, str(body.password, "password"), USER_SCOPES);
+          const browser = auth.issueBrowserSession(result.tokens.accessToken);
+          return json(response, 200, { ok: true }, { "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery_ticket")] });
+        } catch (error) {
+          return json(response, 400, { error: "recovery_failed", message: error instanceof Error ? error.message : "Recovery failed" });
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
         const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
