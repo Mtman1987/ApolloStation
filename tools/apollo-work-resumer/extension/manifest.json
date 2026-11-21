@@ -3,7 +3,7 @@
   "name": "Apollo Bulletin Work Resumer",
   "version": "0.2.0",
   "description": "Guarded local queue and hourly resume helper for ChatGPT conversations, with a GitHub Actions local-browser proof bridge.",
-  "permissions": ["storage", "alarms", "tabs", "notifications"],
+  "permissions": ["storage", "alarms", "tabs", "windows", "notifications"],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://github.com/Mtman1987/ApolloStation/pull/553*"

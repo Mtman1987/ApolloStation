@@ -17,11 +17,13 @@ function parseComment(container) {
     if (!command || typeof command.id !== "string" || typeof command.prompt !== "string" ||
         typeof command.conversationUrl !== "string") return null;
     return command;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function poll() {
-  if (polling || !location.pathname.startsWith("/Mtman1987/ApolloStation/pull/553")) return;
+  if (polling || location.pathname !== "/Mtman1987/ApolloStation/pull/553") return;
   polling = true;
   try {
     const response = await fetch(location.href, { credentials: "include", cache: "no-store" });
@@ -34,8 +36,12 @@ async function poll() {
     for (const container of comments) {
       const command = parseComment(container);
       if (!command || seen.has(command.id)) continue;
-      seen.add(command.id);
-      chrome.runtime.sendMessage({ type: "APOLLO_GITHUB_COMMAND", command }).catch(() => {});
+      try {
+        const result = await chrome.runtime.sendMessage({ type: "APOLLO_GITHUB_COMMAND", command });
+        if (result?.queued === true || result?.duplicate === true) seen.add(command.id);
+      } catch {
+        // Rejected or unconfirmed acceptance remains eligible for the next poll.
+      }
     }
   } catch {
     // GitHub can be temporarily unavailable or require sign-in; retry next interval.
@@ -43,5 +49,6 @@ async function poll() {
     polling = false;
   }
 }
+
 void poll();
 setInterval(() => void poll(), 8000);
