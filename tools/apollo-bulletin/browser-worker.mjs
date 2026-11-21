@@ -34,7 +34,7 @@ export class ApolloChatGptBrowserWorker {
 
   async openLogin() {
     const page = this.#requirePage();
-    await page.goto(this.allowedOrigin + "/bulletin/fake-chatgpt", { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.goto("https://chatgpt.com/", { waitUntil: "domcontentloaded", timeout: 60_000 });
     return this.status();
   }
 
@@ -45,7 +45,7 @@ export class ApolloChatGptBrowserWorker {
     const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
       await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
     return {
-      connected: url.startsWith(this.allowedOrigin),
+      connected: /^https:\/\/(?:chatgpt\.com|auth\.openai\.com|openai\.com)(?:\/|$)/i.test(url),
       loginRequired,
       url,
       title,
@@ -55,7 +55,13 @@ export class ApolloChatGptBrowserWorker {
     };
   }
 
-  async screenshot() {
+  async navigate(targetUrl) {
+    const target = new URL(targetUrl);
+    if (target.protocol !== "https:" || !["chatgpt.com", "auth.openai.com", "openai.com"].some(host => target.hostname === host || target.hostname.endsWith("." + host))) throw new Error("Browser navigation is limited to ChatGPT and OpenAI sign-in domains");
+    await this.#requirePage().goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    return this.status();
+  }
+\n  async screenshot() {
     const page = this.#requirePage();
     return page.screenshot({ type: "png", fullPage: false });
   }
@@ -93,7 +99,7 @@ export class ApolloChatGptBrowserWorker {
     this.busy = true;
     const page = this.#requirePage();
     try {
-      await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
       const composer = page.locator("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],textarea").last();
       await composer.waitFor({ state: "visible", timeout: 20_000 });
       const before = await page.locator("[data-message-author-role='assistant']").count().catch(() => 0);
