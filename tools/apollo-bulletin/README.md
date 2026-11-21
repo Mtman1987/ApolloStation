@@ -37,14 +37,15 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 
 - Open `/bulletin/browser` from the Task Queue component. It launches a dedicated persistent Chromium profile and displays the live ChatGPT page so the owner can sign in and select the target conversation.
 - Create the task with that exact `https://chatgpt.com/c/<conversation-id>` URL. Use **Run once** to submit the saved prompt through the visible ChatGPT composer.
-- The adapter checks only the current URL, login/composer readiness, send control and whether the composer cleared after the click. It does not inspect, parse, or monitor assistant replies.
+- The adapter checks only the current URL, login/composer readiness, send control and whether the composer cleared after the click. It does not inspect, parse, or monitor assistant replies. If the task URL is blank, it uses the conversation currently selected in the browser.
+- Every task receives a progress URL, a completion URL, and the existing review/pause URL. The handoff tells the AI to own its TODO/progress/blocker updates through the progress URL, mark itself complete through the completion URL, and pause for owner review when stuck. Bulletin renders the saved summary, next step, TODO, and blocker.
 - The browser profile defaults to `/tmp/apollo-bulletin-chatgpt-profile`; set `APOLLO_BULLETIN_BROWSER_PROFILE` to a mounted path if a development session must survive container replacement. The Chromium binary is bootstrapped by the existing `scripts/setup-local-browser.mjs` helper.
 - The browser view and input routes are intentionally development-only and are not safe for public multi-user exposure. Do not add other users or put sensitive sessions in this browser before the later privacy/security pass.
 
 ## Deliberate prototype boundary
 
 - The scheduler persists dispatch intent before invoking its adapter and never automatically resends an uncertain dispatch.
-- This proof supports one-shot manual prompt delivery only. It does not yet implement recurring continuation cycles, progress/checklist write-back, completion callbacks, or repeated-blocker detection. Those are the next stage after the first real handoff is verified.
+- This proof supports one-shot manual prompt delivery plus explicit progress/completion write-back. It does not yet implement recurring continuation cycles or automatic repeated-blocker detection. The AI is instructed to pause through the review URL when it recognizes a repeated blocker.
 - The existing repo documents the Apollo-native terminal backend as unfinished. No fake terminal frame or second terminal backend is introduced; the existing Mission Control/operations app frame is reusable, but a real terminal panel still needs the missing backend.
 - The open task review URL and task API remain private-development prototype surfaces and require hardening before public exposure.
 - No AI response monitoring, response parsing, or automatic continuation loop is implemented.
