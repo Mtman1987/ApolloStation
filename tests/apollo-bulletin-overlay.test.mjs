@@ -68,8 +68,28 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     assert.equal(created.status, 201);
     const payload = await created.json();
     assert.equal(payload.task.status, "paused");
+    assert.ok(payload.task.progressUrl);
+    assert.ok(payload.task.completeUrl);
+    const progressPath = new URL(payload.task.progressUrl).pathname;
+    const progressQuery = new URLSearchParams({
+      summary: "Verified the first proof step",
+      todo: JSON.stringify(["Connect browser", "Run one prompt"]),
+      completed: JSON.stringify(["Connect browser"]),
+      next: "Run one prompt",
+      blocker: "",
+    });
+    const progress = await fetch(origin + progressPath + "?" + progressQuery.toString());
+    assert.equal(progress.status, 200);
+    const progressPayload = await progress.json();
+    assert.equal(progressPayload.task.handoff.summary, "Verified the first proof step");
+    assert.deepEqual(progressPayload.task.handoff.todo, ["Connect browser", "Run one prompt"]);
+    const completePath = new URL(payload.task.completeUrl).pathname;
+    const completed = await fetch(origin + completePath);
+    assert.equal(completed.status, 200);
+    assert.equal((await completed.json()).task.status, "completed");
     const list = await (await fetch(origin + "/api/tasks")).json();
     assert.equal(list.tasks.length, 1);
+    assert.equal(list.tasks[0].handoff.status, "completed");
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
