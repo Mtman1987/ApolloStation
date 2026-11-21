@@ -26,7 +26,7 @@ async function runOnce(manual = false) {
   running = true;
   try {
     let state = await getState();
-    if (!state.enabled || state.paused) return save(state, "tick-skipped-paused");
+    if (!state.enabled || (state.paused && !manual)) return save(state, "tick-skipped-paused");
     const item = nextQueueItem(state.queue);
     if (!item) return save(state, "tick-skipped-empty-queue");
     if (item.status === "attempted") return save(state, "tick-skipped-uncertain-send-no-retry");
