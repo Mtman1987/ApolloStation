@@ -41,7 +41,7 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 - The simulator remains a separate safe test destination and does not exercise real ChatGPT delivery.
 - The existing repo documents the Apollo-native terminal backend as unfinished. No fake terminal frame or second terminal backend is introduced; the existing Mission Control/operations app frame is reusable, but a real terminal panel still needs the missing backend.
 - The open task review URL and task API remain private-development prototype surfaces and require hardening before public exposure.
-- No AI response monitoring, response parsing, or automatic continuation loop is implemented.
+- AI response monitoring is limited to visible assistant-response completion and the unique task completion marker; no private ChatGPT endpoints are used.
 
 
 ## Dedicated ChatGPT browser console
