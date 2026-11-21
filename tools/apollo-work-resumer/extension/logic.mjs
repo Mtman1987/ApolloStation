@@ -6,3 +6,4 @@ export function isTaskComplete(item, snapshot) { return item?.status === "active
 export function taskCycleLimitReached(item, maxCycles) { return (Number.isInteger(item?.cycles) ? item.cycles : 0) >= maxCycles; }
 
 export function allQueueCompleted(queue = []) { return queue.length > 0 && queue.every(q => q.status === "completed"); }
+export function isConversationUrl(value) { return typeof value === "string" && /^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9-]+$/.test(value); }
