@@ -195,3 +195,11 @@ test("Hostless deployment orchestrator passes Node syntax validation", () => {
   const result = spawnSync(process.execPath, ["--check", script.pathname], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
+
+test("Node 1 wires the existing owner secret into Bulletin cron and browser-control auth", () => {
+  const startNode = readFileSync(new URL("../scripts/hostless/start-node.mjs", import.meta.url), "utf8");
+  const cronTick = readFileSync(new URL("../tools/apollo-bulletin/cron-tick.mjs", import.meta.url), "utf8");
+  assert.match(startNode, /APOLLO_BULLETIN_CRON_TOKEN: process\\.env\\.APOLLO_BULLETIN_CRON_TOKEN \\?\\? process\\.env\\.APOLLO_BROWSER_CONTROL_PASSWORD \\?\\? process\\.env\\.APOLLO_PREVIEW_PASSWORD \\?\\? process\\.env\\.BOSS_KEY/);
+  assert.match(startNode, /APOLLO_BROWSER_CONTROL_PASSWORD: process\\.env\\.APOLLO_BROWSER_CONTROL_PASSWORD \\?\\? process\\.env\\.APOLLO_PREVIEW_PASSWORD \\?\\? process\\.env\\.BOSS_KEY/);
+  assert.match(cronTick, /process\\.env\\.APOLLO_PREVIEW_PASSWORD \\?\\? process\\.env\\.BOSS_KEY/);
+});
