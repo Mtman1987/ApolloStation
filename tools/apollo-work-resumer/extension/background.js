@@ -1,4 +1,4 @@
-import { allQueueCompleted, buildTaskPrompt, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
+import { allQueueCompleted, buildTaskPrompt, isConversationUrl, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
 const ALARM = "apollo-bulletin-hourly";
 const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [] };
 let running = false;
@@ -97,7 +97,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message?.type === "APOLLO_ENQUEUE") {
       const state = await getState();
       if (typeof message.prompt !== "string" || !message.prompt.trim() ||
-          !/^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9-]+$/.test(message.targetUrl || "")) {
+          !isConversationUrl(message.targetUrl)) {
         throw new Error("Prompt and exact conversation URL required");
       }
       const id = crypto.randomUUID();
