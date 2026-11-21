@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const client = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
+const page = readFileSync(new URL("../apps/spacemountain-web/src/page.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("../apps/spmt-service/src/index.ts", import.meta.url), "utf8");
 
 test("SPMT bridge sign-in loads the Apollo shell instead of the saved-session screen", () => {
@@ -65,8 +66,12 @@ test("SPMT proxy promise rejections are caught by the HTTP handler", () => {
   assert.match(server, /return await proxy\(response, request, url, spmtOrigin, fetchImpl\);/);
 });
 test("account recovery accepts either Discord or Twitch independently", () => {
-  assert.match(client, /id="apollo-recovery-discord"/);
-  assert.match(client, /id="apollo-recovery-twitch"/);
+  assert.match(page, /id="apollo-recovery-discord"/);
+  assert.match(page, /id="apollo-recovery-twitch"/);
+  assert.doesNotMatch(page, /id="apollo-recover-account"/);
+  assert.doesNotMatch(page, /id="apollo-recovery-start" hidden/);
+  assert.match(client, /recoveryDiscord\.addEventListener\("click", \(\) => window\.location\.assign/);
+  assert.match(client, /recoveryTwitch\.addEventListener\("click", \(\) => window\.location\.assign/);
   assert.match(client, /linked-provider-recovery\/start\?provider=discord/);
   assert.match(client, /linked-provider-recovery\/start\?provider=twitch/);
   assert.doesNotMatch(client, /apollo-recovery-provider|apollo-recovery-verify/);
@@ -78,4 +83,13 @@ test("account recovery accepts either Discord or Twitch independently", () => {
   assert.match(callback, /resolveDonorWorkspace\(/);
   assert.match(callback, /issueHumanSession\(\{ userId: workspace\.profile\.userId, scopes: USER_SCOPES, tenantIds: workspace\.tenantIds \}\)/);
   assert.doesNotMatch(callback, /both providers|required provider pair|identity_account_mismatch/);
+});
+
+test("missing local Apollo passwords immediately expose direct provider recovery", () => {
+  const login = client.slice(client.indexOf("async function submitApolloLogin"), client.indexOf("async function submitApolloRegistration"));
+  assert.match(login, /valid local password/);
+  assert.match(login, /recoveryStart\.hidden = false/);
+  assert.match(login, /recoveryDiscord\.focus/);
+  assert.match(page, /Continue with Discord/);
+  assert.match(page, /Continue with Twitch/);
 });
