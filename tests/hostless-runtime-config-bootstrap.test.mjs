@@ -159,9 +159,11 @@ test("Hostless recovery release keeps a ten-minute wait, serializes nodes, and p
   const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   const diagnostics = readFileSync(new URL("../.github/workflows/hostless-runtime-log-diagnostics.yml", import.meta.url), "utf8");
 
-  assert.ok(script.includes("const deadline = Date.now() + 10 * 60 * 1000;"));
-  assert.ok(script.includes("within 10 minutes (last status:"));
-  assert.ok(script.includes("timeout: 30 * 1000,"));
+  assert.ok(script.includes('"deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "600"'));
+  assert.ok(script.includes("timeout: 630 * 1000,"));
+  assert.ok(script.includes('event?.type === "deployment"'));
+  assert.ok(script.includes("isHostlessDeploymentSuccessful(finalStatus)"));
+  assert.ok(!script.includes("const deadline = Date.now() + 10 * 60 * 1000;"));
   assert.ok(release.includes("timeout-minutes: 12"));
   assert.ok(release.includes("max-parallel: 1"));
   assert.ok(release.includes("fail-fast: true"));
@@ -170,4 +172,26 @@ test("Hostless recovery release keeps a ten-minute wait, serializes nodes, and p
   assert.ok(diagnostics.includes("callbackHost="));
   assert.ok(diagnostics.includes("cookieNames="));
   assert.ok(diagnostics.includes("Recovery password endpoint without ticket"));
+});
+
+test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
+  const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const hostless = readFileSync(new URL("../hostless.yaml", import.meta.url), "utf8");
+  const build = packageJson.scripts["build:hostless"];
+  assert.match(build, /^tsc -b /);
+  for (const app of ["apps/spmt-service", "apps/spacemountain-web", "apps/chat-gateway", "apps/streamweaver", "apps/discord-stream-hub", "apps/nebula-arcade"]) {
+    assert.ok(build.includes(app), "Hostless build must include " + app);
+  }
+  assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
+  assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless/);
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Build focused Node 1 and Node 2 Hostless runtime[\s\S]*?run: npm run build:hostless/);
+  assert.match(workflow, /\[node1-only\]/);
+  assert.match(workflow, /Node 1-only deployment requested/);
+});
+
+test("Hostless deployment orchestrator passes Node syntax validation", () => {
+  const script = new URL("../scripts/hostless/ensure-node-app.mjs", import.meta.url);
+  const result = spawnSync(process.execPath, ["--check", script.pathname], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });

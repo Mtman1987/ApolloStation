@@ -331,35 +331,33 @@ const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?
 if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
-// Keep a single Hostless deployment wait bounded to ten minutes for future releases.
-const deadline = Date.now() + 10 * 60 * 1000;
-let pollFailures = 0;
-let lastStatus = "unknown";
-let lastStatusLogAt = 0;
-while (Date.now() < deadline) {
-  await sleep(15000);
-  const poll = tryCliJson(["deploy", "status", String(deploymentId), "--json", ...scope]);
-  if (!poll.ok) {
-    pollFailures += 1;
-    console.error(`Status poll ${pollFailures} for ${deploymentId} failed: ${String(poll.error).slice(0, 200)}`);
-    if (pollFailures >= 8) fail(`Lost contact with Hostless status for deployment ${deploymentId} (${pollFailures} consecutive failures). See the log snapshot artifact.`);
-    continue;
-  }
-  pollFailures = 0;
-  const nextStatus = normalizeHostlessDeploymentStatus(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown");
-  if (nextStatus !== lastStatus || Date.now() - lastStatusLogAt >= 60000) {
-    console.log(`Hostless deployment ${deploymentId} for ${node.app}: ${nextStatus}`);
-    lastStatusLogAt = Date.now();
-  }
-  lastStatus = nextStatus;
-  if (isHostlessDeploymentSuccessful(lastStatus)) break;
-  if (isHostlessDeploymentFailure(lastStatus)) {
-    const reason = poll.value?.failReason ?? poll.value?.deployment?.failReason ?? poll.value?.message ?? poll.value?.error;
-    const detail = reason ? ` (reason: ${String(reason).slice(0, 160)})` : "";
-    fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${lastStatus}${detail}.`);
-  }
+// Use the Hostless CLI's supported wait mode so build/release logs and the
+// final deployment status come from the same operation. A plain status poll can
+// remain at validate_hostless_file_successful and never expose the build result.
+const waited = spawnSync("hostless", [
+  "deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "600", ...scope,
+], {
+  encoding: "utf8",
+  env: process.env,
+  maxBuffer: 20 * 1024 * 1024,
+  timeout: 630 * 1000,
+  killSignal: "SIGTERM",
+});
+if (waited.stdout) process.stdout.write(waited.stdout);
+if (waited.stderr) process.stderr.write(waited.stderr);
+if (waited.error) fail(`Hostless deployment ${deploymentId} for ${node.app} wait failed: ${waited.error.message}`);
+if (waited.status !== 0) fail(`Hostless deployment ${deploymentId} for ${node.app} failed with exit code ${waited.status}.`);
+const deploymentEvents = (waited.stdout || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+  try { return [JSON.parse(line)]; } catch { return []; }
+});
+const finalDeployment = [...deploymentEvents].reverse().find((event) => event?.type === "deployment" && event?.deployment);
+if (!finalDeployment) fail(`Hostless deployment ${deploymentId} for ${node.app} returned no final deployment event.`);
+const finalStatus = normalizeHostlessDeploymentStatus(finalDeployment.deployment.status ?? "unknown");
+if (isHostlessDeploymentFailure(finalStatus)) {
+  const reason = finalDeployment.deployment.failReason ?? finalDeployment.deployment.message;
+  fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${finalStatus}${reason ? ` (reason: ${String(reason).slice(0, 160)})` : ""}.`);
 }
-if (!isHostlessDeploymentSuccessful(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 10 minutes (last status: ${lastStatus}).`);
+if (!isHostlessDeploymentSuccessful(finalStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state (last status: ${finalStatus}).`);
 
-console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${lastStatus}.`);
+console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${finalStatus}.`);
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
