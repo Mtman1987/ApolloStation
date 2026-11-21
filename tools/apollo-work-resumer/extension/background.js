@@ -148,6 +148,10 @@ async function runOnce(manual = false) {
       return save(state, "tick-skipped-cooldown");
     }
 
+    if (snapshot.composerEmpty !== true) {
+      return save(state, "tick-skipped-composer-has-existing-draft");
+    }
+
     const prompt = buildTaskPrompt(item);
     const decision = decideQueueItem({ item, prompt, snapshot, now: Date.now() });
     if (decision.action !== "submit") {

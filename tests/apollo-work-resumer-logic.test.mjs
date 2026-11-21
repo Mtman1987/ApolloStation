@@ -31,12 +31,12 @@ test("conversation URL validator accepts only exact ChatGPT conversation URLs", 
   assert.equal(isConversationUrl("https://chatgpt.com/"), false);
 });
 
-test("active task wins, then an uncertain attempt blocks later pending work", () => {
+test("an uncertain attempt blocks all later queue work, including active and pending items", () => {
   const pending = { ...item, status: "pending" };
   const attempted = { ...item, id: "q2", status: "attempted" };
   const active = { ...item, id: "q3", status: "active" };
-  assert.equal(nextQueueItem([pending, attempted, active]).id, "q3");
-  assert.equal(nextQueueItem([attempted, pending]).id, "q2");
+  assert.equal(nextQueueItem([attempted, active, pending]).id, "q2");
+  assert.equal(nextQueueItem([pending, attempted]).id, "q2");
   assert.equal(nextQueueItem([pending]).id, "q1");
 });
 

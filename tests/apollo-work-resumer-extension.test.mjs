@@ -30,7 +30,8 @@ function fakeElement({
   testId = null,
   text = "",
   visible = true,
-  disabled = false
+  disabled = false,
+  onDispatch = null
 } = {}) {
   const attributes = {
     "aria-label": ariaLabel,
@@ -47,9 +48,10 @@ function fakeElement({
     parentElement: null,
     clicked: 0,
     getAttribute(name) { return attributes[name] ?? null; },
+    setAttribute(name, value) { attributes[name] = value; },
     getClientRects() { return visible ? [{}] : []; },
     focus() {},
-    dispatchEvent() {},
+    dispatchEvent() { onDispatch?.(); },
     click() { this.clicked += 1; }
   };
 }
@@ -107,6 +109,34 @@ test("content snapshot recognizes only a visible enabled send control plus compo
   assert.equal(snapshot.busy, false);
   assert.equal(snapshot.pageVisible, true);
   assert.equal(snapshot.sendControlVisible, true);
+  assert.equal(snapshot.sendControlEnabled, true);
+  assert.equal(snapshot.composerEmpty, true);
+});
+
+
+test("empty composer is idle when the visible Send control is disabled until text is entered", async () => {
+  const url = "https://chatgpt.com/c/abc";
+  const send = fakeElement({ ariaLabel: "Send prompt", disabled: true });
+  const composer = fakeElement({ tagName: "DIV" });
+  const { listener } = await loadContent({ url, buttons: [send], composers: [composer] });
+  let snapshot;
+  listener({ type: "APOLLO_SNAPSHOT" }, {}, value => { snapshot = value; });
+  assert.equal(snapshot.busy, false);
+  assert.equal(snapshot.sendControlVisible, true);
+  assert.equal(snapshot.sendControlEnabled, false);
+  assert.equal(snapshot.composerEmpty, true);
+});
+
+test("content submission refuses to replace an existing unsent composer draft", async () => {
+  const url = "https://chatgpt.com/c/abc";
+  const send = fakeElement({ ariaLabel: "Send prompt" });
+  const composer = fakeElement({ tagName: "DIV", text: "keep my unsent draft" });
+  const { listener } = await loadContent({ url, buttons: [send], composers: [composer] });
+  let result;
+  listener({ type: "APOLLO_SUBMIT", targetUrl: url, prompt: "queued task" }, {}, value => { result = value; });
+  assert.equal(result.clicked, false);
+  assert.equal(composer.textContent, "keep my unsent draft");
+  assert.equal(send.clicked, 0);
 });
 
 test("content submission refuses hidden send controls and exact-URL mismatches", async () => {
@@ -128,9 +158,17 @@ test("content submission refuses hidden send controls and exact-URL mismatches",
   assert.equal(send.clicked, 0);
 });
 
-test("content submission fills and clicks one visible send button only on the exact visible page", async () => {
+test("content submission enables a disabled empty-composer Send control, then clicks exactly once", async () => {
   const url = "https://chatgpt.com/c/abc";
-  const send = fakeElement({ ariaLabel: "Send prompt" });
+  let send;
+  send = fakeElement({
+    ariaLabel: "Send prompt",
+    disabled: true,
+    onDispatch() {
+      send.disabled = false;
+      send.setAttribute("aria-disabled", "false");
+    }
+  });
   const composer = fakeElement({ tagName: "DIV" });
   const { listener } = await loadContent({ url, buttons: [send], composers: [composer] });
   let result;

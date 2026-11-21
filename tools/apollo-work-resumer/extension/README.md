@@ -18,7 +18,7 @@ This is a desktop Chrome/Chromium helper for the work-resumer queue. It uses the
 2. Open the extension popup and set **Max cycles** to `1`.
 3. Add a harmless test prompt, for example: `For this test, do not take any external action. Reply with APOLLO_BULLETIN_TEST_DONE.`
 4. Copy the conversation's exact URL from the address bar into the URL field, then select **Add to queue**.
-5. Select **Run now**. The extension checks that exactly one tab matches the URL, that it is the active tab, and that the visible ChatGPT page shows an idle composer and enabled Send control before it clicks.
+5. Make sure the ChatGPT composer is empty, then select **Run now**. The extension checks that exactly one tab matches the URL, that it is active, and that the visible page is idle. ChatGPT may show its Send control as disabled while the composer is empty; the extension fills the empty composer first and requires Send to become visibly enabled before clicking.
 6. Confirm the prompt appears in that conversation. A recorded click means only that the visible Send control was clicked; it is not proof of delivery or task completion.
 7. After the response finishes, select **Run now** once more. If the task-specific completion marker is present, the item is marked complete. Otherwise the one-cycle limit stops further sends; inspect the conversation before choosing **Resume task** or **Mark complete**.
 
@@ -37,7 +37,7 @@ This is a desktop Chrome/Chromium helper for the work-resumer queue. It uses the
 
 - Requires desktop Chrome/Chromium and the user's own signed-in ChatGPT UI. It cannot control ChatGPT Android or this current ChatGPT conversation.
 - It never bypasses sign-in, calls private ChatGPT endpoints, or uses an API key.
-- Exact URL mismatch, duplicate target tabs, a background target tab, hidden/disabled controls, an unknown busy state, or a hidden page all block sending.
+- Exact URL mismatch, duplicate target tabs, a background target tab, a non-empty composer draft, hidden controls, a Send control that remains disabled after the prompt is filled, an unknown busy state, or a hidden page all block sending.
 - DOM changes may make the extension stop safely until its visible-control allowlist is updated.
 - A Send click is not delivery confirmation. The user must inspect the conversation and explicitly resolve uncertain attempts.
 - This is a local desktop prototype; no production deployment is part of this change.

@@ -56,9 +56,17 @@ function composer() {
       && element.getAttribute("aria-disabled") !== "true") || null;
 }
 
-function sendButton() {
-  return [...document.querySelectorAll("button")].find(button =>
-    isVisible(button)
+function composerText(element) {
+  if (!element) return "";
+  return element.tagName === "TEXTAREA" ? element.value : (element.textContent ?? "");
+}
+
+function visibleSendButton(buttons = [...document.querySelectorAll("button")]) {
+  return buttons.find(button => isVisible(button) && isSendButton(button)) || null;
+}
+
+function sendButton(buttons = [...document.querySelectorAll("button")]) {
+  return buttons.find(button => isVisible(button)
     && isSendButton(button)
     && !button.disabled
     && button.getAttribute("aria-disabled") !== "true"
@@ -68,12 +76,14 @@ function sendButton() {
 function snapshot() {
   const buttons = [...document.querySelectorAll("button")];
   const stopControlVisible = buttons.some(button => isVisible(button) && isStopButton(button));
-  const sendControlVisible = Boolean(sendButton());
+  const visibleSend = visibleSendButton(buttons);
+  const enabledSend = sendButton(buttons);
   const activeComposer = composer();
+  const composerEmpty = Boolean(activeComposer) && composerText(activeComposer).trim() === "";
   const busyText = [...document.querySelectorAll('[aria-busy="true"]')].some(isVisible);
   const busy = stopControlVisible || busyText
     ? true
-    : (sendControlVisible && activeComposer ? false : null);
+    : (visibleSend && activeComposer ? false : null);
   const assistants = [...document.querySelectorAll('[data-message-author-role="assistant"]')]
     .filter(isVisible);
   const lastAssistant = assistants.at(-1);
@@ -81,8 +91,10 @@ function snapshot() {
     url: location.href,
     busy,
     stopControlVisible,
-    sendControlVisible,
+    sendControlVisible: Boolean(visibleSend),
+    sendControlEnabled: Boolean(enabledSend),
     composerReady: Boolean(activeComposer),
+    composerEmpty,
     assistantText: lastAssistant ? (lastAssistant.innerText ?? lastAssistant.textContent ?? "") : "",
     pageVisible: document.visibilityState === "visible"
   };
@@ -100,14 +112,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       || initial.pageVisible !== true
       || initial.busy !== false
       || !initial.composerReady
+      || initial.composerEmpty !== true
       || !initial.sendControlVisible) {
-    respond({ clicked: false, reason: "guard-failed" });
+    respond({ clicked: false, reason: "guard-failed-or-composer-not-empty" });
     return;
   }
 
   const input = composer();
-  const button = sendButton();
-  if (!input || !button || typeof message.prompt !== "string" || !message.prompt.trim()) {
+  if (!input || typeof message.prompt !== "string" || !message.prompt.trim()) {
     respond({ clicked: false, reason: "missing-controls" });
     return;
   }
@@ -133,15 +145,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   const afterFill = snapshot();
   const currentInput = composer();
   const currentButton = sendButton();
-  const currentValue = currentInput?.tagName === "TEXTAREA"
-    ? currentInput.value
-    : currentInput?.textContent;
+  const currentValue = composerText(currentInput);
   if (message.targetUrl !== location.href
       || afterFill.url !== message.targetUrl
       || afterFill.pageVisible !== true
       || afterFill.busy !== false
       || !afterFill.composerReady
-      || !afterFill.sendControlVisible
+      || afterFill.sendControlEnabled !== true
       || currentValue !== message.prompt
       || !currentButton) {
     respond({ clicked: false, reason: "guard-failed-after-fill" });
