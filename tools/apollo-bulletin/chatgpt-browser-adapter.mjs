@@ -49,7 +49,7 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
     const current = await ensure(url);
     return current.evaluate(() => {
       const visible = element => {
-        if (!element || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
+        if (!element) return false;
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       };
@@ -59,7 +59,7 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
       return {
         url: location.href,
         loggedIn: Boolean(composer),
-        composerReady: visible(composer),
+        composerReady: visible(composer) && !composer.disabled && composer.getAttribute("aria-disabled") !== "true",
         sendControlVisible: visible(send),
         busy: Boolean(stop),
         stopControlVisible: Boolean(stop && visible(stop)),
