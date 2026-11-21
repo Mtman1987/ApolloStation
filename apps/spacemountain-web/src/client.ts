@@ -138,7 +138,7 @@ loginForm.addEventListener("submit", (event) => void submitLogin(event));
 apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 const recoveryStart = element<HTMLDivElement>("apollo-recovery-start");
-const recoveryPasswordPanel = element<HTMLDivElement>("apollo-recovery-password");
+const recoveryPasswordPanel = element<HTMLFormElement>("apollo-recovery-password");
 const recoveryDiscord = element<HTMLButtonElement>("apollo-recovery-discord");
 const recoveryTwitch = element<HTMLButtonElement>("apollo-recovery-twitch");
 const recoveryPasswordInput = element<HTMLInputElement>("apollo-recovery-password-value");
@@ -154,7 +154,7 @@ if (savedRecoveryUsername && recoveryUsernameInput && !recoveryUsernameInput.val
 if (recoveryReady || recoveryError) sessionStorage.removeItem("apollo-recovery-username");
 recoveryDiscord.addEventListener("click", () => startLinkedProviderRecovery("discord"));
 recoveryTwitch.addEventListener("click", () => startLinkedProviderRecovery("twitch"));
-recoverySubmit.addEventListener("click", () => void submitLinkedProviderRecovery());
+recoveryPasswordPanel.addEventListener("submit", (event) => { event.preventDefault(); void submitLinkedProviderRecovery(); });
 if (recoveryReady) {
   recoveryStart.hidden = true;
   recoveryPasswordPanel.hidden = false;
