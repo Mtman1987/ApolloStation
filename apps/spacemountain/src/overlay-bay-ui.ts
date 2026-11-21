@@ -14,6 +14,11 @@ const BULLETIN_COMPONENTS = [
   { id: "scheduler", title: "Scheduler", x: 52, y: 63, width: 46, height: 34 },
   { id: "history", title: "Task History", x: 2, y: 3, width: 48, height: 57 },
 ] as const;
+const BULLETIN_APP_FRAME_LAYOUT = [
+  { appId: "mission-control", x: 2, y: 3, width: 30, height: 25 },
+  { appId: "streamweaver", x: 35, y: 3, width: 30, height: 25 },
+  { appId: "discord-stream-hub", x: 68, y: 3, width: 30, height: 25 },
+] as const;
 
 function overlayIconUrl(snapshot: SpaceMountainShellSnapshotV1) {
   const workspace = record(snapshot.workspace);
@@ -106,10 +111,11 @@ export class OverlayBayParityController {
     }
     const widgets=[...widgetGroups].map(([appId,entries])=>`<details data-ob-section="widgets-${esc(appId)}"><summary>${esc(this.snapshot.apps?.find(app=>app.appId===appId)?.name??appId)} <small>${entries.length}</small></summary><div class="ob-widgets">${entries.join("")}</div></details>`).join("")||`<small>Installed apps have not registered widgets yet.</small>`;
     const bulletinWidgets=BULLETIN_COMPONENTS.map(item=>`<button type="button" data-ob-add-bulletin-widget="${item.id}">${item.title}</button>`).join("");
+    const appFrameButtons=this.snapshot.apps.filter(app=>app.installed&&app.enabled&&app.launchUrl&&app.surfaces.some(surface=>surface==="shell"||surface==="standalone")).map(app=>`<button type="button" data-ob-add-app-frame="${esc(app.appId)}">${esc(app.name)} · App frame</button>`).join("");
     const savedUrls=this.scenes.flatMap(saved=>saved.sources.filter(source=>source.kind==="web"||source.kind==="widget").map(source=>`<button type="button" data-ob-reuse-source="${esc(saved.id)}|${esc(source.id)}">${esc(source.name)}<small>${esc(saved.name)}</small></button>`)).join("");
     const sources = scene.sources.filter((source) => source.visible).map((source) => this.sourceCard(source)).join("") || `<div class="ob-empty">Add a source from the left. Nebula Arcade can contain any combination of all 20 games inside one source.</div>`;
     const issueButtons = owner ? `<button type="button" data-ob-copy-output="public">Copy Public URL</button><button type="button" data-ob-copy-output="personal">Copy Personal URL</button>` : "";
-    return `<div class="ob-shell"><aside class="ob-palette"><details data-ob-section="source-types"><summary>Add source</summary><div class="ob-source-kinds">${paletteKinds}</div></details><details data-ob-section="app-widgets" open><summary>App overlays</summary><button type="button" data-ob-refresh-widgets>Refresh app overlays</button><p class="ob-discovery-status">${esc(this.discoveryMessage)}</p>${widgets}</details><details data-ob-section="bulletin-components"><summary>Bulletin components</summary><div class="ob-widgets">${bulletinWidgets}</div></details><details data-ob-section="saved-urls"><summary>Saved overlay sources</summary><div class="ob-widgets">${savedUrls||"<p>No saved URL or widget sources.</p>"}</div></details><details data-ob-section="scene-sources" open><summary>Scene sources · ${scene.sources.length}</summary><div class="ob-layer-list">${scene.sources.map(source=>`<div><button type="button" data-ob-select="${esc(source.id)}" class="${source.id===this.selectedSourceId?"active":""}">${esc(source.name)}</button><label><input type="checkbox" data-ob-source-visible="${esc(source.id)}" ${source.visible?"checked":""}>Show</label><label><input type="checkbox" data-ob-source-locked="${esc(source.id)}" ${source.locked?"checked":""}>Lock</label></div>`).join("")||"<p>No sources yet.</p>"}</div></details></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button><span data-ob-save-state role="status">${esc(this.saveMessage)}</span>${issueButtons}</div><div class="ob-stage" data-ob-stage style="aspect-ratio:${scene.canvasWidth}/${scene.canvasHeight}">${sources}</div></main><aside class="ob-inspector"><details data-ob-section="source-properties" open><summary>${this.selectedSource()?"Source properties":"Scene properties"}</summary>${this.inspector(scene)}</details></aside></div>`;
+    return `<div class="ob-shell"><aside class="ob-palette"><details data-ob-section="source-types"><summary>Add source</summary><div class="ob-source-kinds">${paletteKinds}</div></details><details data-ob-section="app-widgets" open><summary>App overlays</summary><button type="button" data-ob-refresh-widgets>Refresh app overlays</button><p class="ob-discovery-status">${esc(this.discoveryMessage)}</p>${widgets}</details><details data-ob-section="bulletin-components"><summary>Bulletin components</summary><div class="ob-widgets">${bulletinWidgets}</div></details><details data-ob-section="app-frames"><summary>Installed app frames</summary><div class="ob-widgets">${appFrameButtons||"<small>No installed apps expose an embeddable shell or standalone URL.</small>"}</div></details><details data-ob-section="saved-urls"><summary>Saved overlay sources</summary><div class="ob-widgets">${savedUrls||"<p>No saved URL or widget sources.</p>"}</div></details><details data-ob-section="scene-sources" open><summary>Scene sources · ${scene.sources.length}</summary><div class="ob-layer-list">${scene.sources.map(source=>`<div><button type="button" data-ob-select="${esc(source.id)}" class="${source.id===this.selectedSourceId?"active":""}">${esc(source.name)}</button><label><input type="checkbox" data-ob-source-visible="${esc(source.id)}" ${source.visible?"checked":""}>Show</label><label><input type="checkbox" data-ob-source-locked="${esc(source.id)}" ${source.locked?"checked":""}>Lock</label></div>`).join("")||"<p>No sources yet.</p>"}</div></details></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button><span data-ob-save-state role="status">${esc(this.saveMessage)}</span>${issueButtons}</div><div class="ob-stage" data-ob-stage style="aspect-ratio:${scene.canvasWidth}/${scene.canvasHeight}">${sources}</div></main><aside class="ob-inspector"><details data-ob-section="source-properties" open><summary>${this.selectedSource()?"Source properties":"Scene properties"}</summary>${this.inspector(scene)}</details></aside></div>`;
   }
 
   private sourceCard(source: OverlaySceneSourceV1) {
@@ -168,6 +174,7 @@ export class OverlayBayParityController {
     bay.querySelector<HTMLElement>("[data-ob-refresh-widgets]")?.addEventListener("click",()=>void this.discoverWidgets(bay));
     bay.querySelector<HTMLElement>("[data-ob-bulletin]")?.addEventListener("click",()=>this.newBulletinScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-add-bulletin-widget]").forEach(node=>node.onclick=()=>this.addBulletinWidget(node.dataset.obAddBulletinWidget??"",bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-add-app-frame]").forEach(node=>node.onclick=()=>this.addAppFrame(node.dataset.obAddAppFrame??"",bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-broadcast]").forEach((node) => node.onclick = () => this.newBroadcastScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-output]").forEach((node) => node.onclick = () => { this.output = node.dataset.obOutput === "personal" ? "personal" : "public"; if(this.editVersion===this.savedVersion&&!this.saving)this.loadSnapshot(); this.render(bay); });
@@ -219,9 +226,31 @@ export class OverlayBayParityController {
     source.config={appId:"apollo-bulletin",widgetId:`bulletin:${component.id}`,rendererUrl:new URL(`/bulletin/widgets/${component.id}`,window.location.origin).href};
     return source;
   }
+  private appFrameSource(app: SpaceMountainShellSnapshotV1["apps"][number], layout: {x:number;y:number;width:number;height:number}) {
+    const source=createOverlaySource("web",`${app.name} · App frame`);
+    source.x=layout.x;source.y=layout.y;source.width=layout.width;source.height=layout.height;source.interactive=true;
+    source.config={url:app.launchUrl};
+    return source;
+  }
+  private addAppFrame(appId:string,bay:HTMLElement) {
+    const app=this.snapshot.apps.find(item=>item.appId===appId&&item.installed&&item.enabled&&item.launchUrl);
+    if(!app)return;
+    this.addSource(this.appFrameSource(app,{x:10,y:10,width:40,height:30}),bay);
+  }
   private newBulletinScene(bay: HTMLElement) {
     const existing=this.scenes.find(item=>item.name==="Personal Bulletin");
     if(existing){this.output="personal";this.activeSceneId=existing.id;this.selectedSourceId="";this.changed();this.render(bay);return;}
+    const scene=createOverlayScene("Personal Bulletin");
+    const appFrames=BULLETIN_APP_FRAME_LAYOUT.flatMap(layout=>{
+      const app=this.snapshot.apps.find(item=>item.appId===layout.appId&&item.installed&&item.enabled&&item.launchUrl);
+      return app?[this.appFrameSource(app,layout)]:[];
+    });
+    const taskQueue=this.bulletinSource(BULLETIN_COMPONENTS[0]);
+    taskQueue.x=2;taskQueue.y=34;taskQueue.width=32;taskQueue.height=38;
+    scene.sources=[...appFrames,taskQueue].map((source,index)=>({...source,zIndex:index}));
+    this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
+    this.changed();this.render(bay);
+  }
     const scene=createOverlayScene("Personal Bulletin");
     scene.sources=BULLETIN_COMPONENTS.filter(item=>item.id!=="history").map((item,index)=>({...this.bulletinSource(item),zIndex:index}));
     this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
