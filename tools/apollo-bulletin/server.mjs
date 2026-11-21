@@ -7,7 +7,7 @@ import { createChatGPTBrowserAdapter, browserControlPage } from "./chatgpt-brows
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
-  const form=kind==="tasks" ? '<p><a href="/bulletin/browser" target="_blank" rel="noopener">Open ChatGPT browser · sign in / choose conversation</a></p><form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/"><div class="schedule"><select name="schedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select><input name="runAt" type="datetime-local"></div><button>Create task</button></form>' : "";
+  const form=kind==="tasks" ? '<p><a href="/bulletin/browser" target="_blank" rel="noopener">Open ChatGPT browser · sign in / choose conversation</a></p><form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="Optional: use the conversation open in the ChatGPT browser"><div class="schedule"><select name="schedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select><input name="runAt" type="datetime-local"></div><button>Create task</button></form>' : "";
   const script=[
     '<script>',
     'const kind='+JSON.stringify(kind)+',api="/bulletin/api/tasks";',
@@ -49,6 +49,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         try {
           const result = await deliverPrompt(task);
           task.status = result?.submitted ? "dispatched" : "dispatch-uncertain";
+          if (result?.conversationUrl) task.conversationUrl = result.conversationUrl;
           task.lastEvent = result?.reason || (result?.submitted ? "Prompt sent once" : "Send not confirmed; manual review required");
           log(task.status, task.id);
         } catch (e) { task.status = "dispatch-uncertain"; task.lastEvent = String(e.message || e); log("dispatch-error-no-retry", task.id); }
@@ -83,7 +84,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const runAt = input.runAt ? new Date(input.runAt).getTime() : now() + 60_000;
         const id = randomUUID(); const reviewKey = randomUUID(); const reviewUrl = (process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app") + "/bulletin/review/" + reviewKey;
         const prompt = input.prompt.trim() + "\n\nAPOLLO BULLETIN HANDOFF: Keep the task documentation, TODO/checkpoint, and handoff current. Report completed work, remaining work, validation evidence, and blockers. Do not claim completion without updating the handoff. If owner review is needed, open this task review URL once and stop; do not continue or resend: " + reviewUrl;
-        const task = { id, name: input.name.trim(), prompt, conversationUrl: input.conversationUrl || "https://chatgpt.com/", schedule, status: schedule === "manual" ? "paused" : "scheduled", nextRunAt: schedule === "manual" ? null : (Number.isFinite(runAt) ? runAt : now()+60_000), createdAt: now(), reviewUrl, lastEvent: "Created" };
+        const task = { id, name: input.name.trim(), prompt, conversationUrl: input.conversationUrl?.trim() || null, schedule, status: schedule === "manual" ? "paused" : "scheduled", nextRunAt: schedule === "manual" ? null : (Number.isFinite(runAt) ? runAt : now()+60_000), createdAt: now(), reviewUrl, lastEvent: "Created" };
         task.reviewKey = reviewKey; state.tasks.push(task); log("task-created", task.id); await save(); return send(201, { task: { ...task, prompt: undefined } });
       }
       const action = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(run|pause|resume|complete)$/);
