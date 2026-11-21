@@ -87,6 +87,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - name: Build focused Node 1 and Node 2 Hostless runtime
+        run: npm run build:hostless
       - name: Check dedicated browser worker syntax
         run: node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs
 
