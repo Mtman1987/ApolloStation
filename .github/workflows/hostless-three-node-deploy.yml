@@ -231,12 +231,15 @@ jobs:
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The deployment script waits up to ten minutes after Hostless accepts the trigger.
+    # Leave two extra minutes for checkout, preflight, and Node 1 domain read-back.
+    timeout-minutes: 12
     environment: production
     strategy:
-      # Node 1 and Node 2 deploy in parallel. The shared concurrency group above
-      # still serialises whole release runs, so two releases never overlap.
-      fail-fast: false
+      # Hostless queued Node 2 while Node 1 was building this same repository.
+      # Deploy Node 1 first, then Node 2; stop the matrix if Node 1 fails.
+      fail-fast: true
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.detect-deploy-targets.outputs.matrix) }}
     steps:
       - name: Check out the exact validated commit
