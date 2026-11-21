@@ -20,7 +20,7 @@ This prototype uses the user's existing signed-in desktop Chrome/Chromium profil
 
 ## Queue behavior and safeguards
 
-- Manual queue entries require an exact `https://chatgpt.com/c/<id>` URL. A unique matching tab must be the active tab; duplicate matches, inactive tabs, and URL mismatches are skipped.
+- Manual queue entries require an exact `https://chatgpt.com/c/<id>` URL. A unique matching tab must be active in Chrome’s focused window; duplicate matches, inactive tabs, background-window tabs, and URL mismatches are skipped.
 - The composer must be empty before the extension fills it. A visible Send control must exist before filling and must become enabled afterward. Existing drafts are never overwritten.
 - Each task receives a unique completion marker. The extension checks only the latest assistant message after the UI is idle; the marker must appear on its own line.
 - The task queue is serialized. An uncertain send blocks later queue items until the owner explicitly marks it complete or confirms a manual retry. Uncertain sends are never automatically retried.
