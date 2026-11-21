@@ -57,3 +57,18 @@ test("a rejected or missing session always reveals the SPMT bridge recovery form
   assert.match(gate, /selectTab\("spmt"\)/);
   assert.match(gate, /reportBrowserDiagnostic\("auth-gate-shown"/);
 });
+test("account recovery accepts either Discord or Twitch independently", () => {
+  assert.match(client, /id="apollo-recovery-discord"/);
+  assert.match(client, /id="apollo-recovery-twitch"/);
+  assert.match(client, /linked-provider-recovery\/start\?provider=discord/);
+  assert.match(client, /linked-provider-recovery\/start\?provider=twitch/);
+  assert.doesNotMatch(client, /apollo-recovery-provider|apollo-recovery-verify/);
+
+  const start = service.slice(service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/start"'));
+  const callback = start.slice(0, start.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/password"'));
+  assert.match(callback, /provider !== "discord" && provider !== "twitch"/);
+  assert.match(callback, /accounts\.resolveProviderIdentity\(provider, identity\.id\)/);
+  assert.match(callback, /resolveDonorWorkspace\(/);
+  assert.match(callback, /issueHumanSession\(\{ userId: workspace\.profile\.userId, scopes: USER_SCOPES, tenantIds: workspace\.tenantIds \}\)/);
+  assert.doesNotMatch(callback, /both providers|required provider pair|identity_account_mismatch/);
+});
