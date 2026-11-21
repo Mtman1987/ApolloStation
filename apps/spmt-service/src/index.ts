@@ -245,7 +245,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     if (linkedUserId && !linkedProfile) {
       return { ok: false, status: 409, body: { error: "linked_account_unavailable", message: "The verified provider identity is linked, but its Apollo account record could not be loaded." } };
     }
-    const profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
+    let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
       linkedProfile ?? usernameProfile;
     if (!profile && (!allowBootstrap || (!ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1"))) {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
