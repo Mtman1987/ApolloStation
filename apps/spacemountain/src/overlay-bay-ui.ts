@@ -220,6 +220,8 @@ export class OverlayBayParityController {
     return source;
   }
   private newBulletinScene(bay: HTMLElement) {
+    const existing=this.scenes.find(item=>item.name==="Personal Bulletin");
+    if(existing){this.output="personal";this.activeSceneId=existing.id;this.selectedSourceId="";this.render(bay);return;}
     const scene=createOverlayScene("Personal Bulletin");
     scene.sources=BULLETIN_COMPONENTS.filter(item=>item.id!=="history").map((item,index)=>({...this.bulletinSource(item),zIndex:index}));
     this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
