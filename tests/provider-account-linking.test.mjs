@@ -105,6 +105,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       providerUserId: "twitch-owner-77",
       providerUsername: "owner_live",
     });
+    service.authority.linkProvider(account.userId, "discord", "discord-owner-00");
     service.authority.linkProvider(account.userId, "discord", "discord-owner-88");
     const username = account.profile.username;
     const tenantId = "tenant-recovery-owner";
@@ -201,7 +202,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     assert.equal(calls.length, 6);
     assert.deepEqual(
       service.authority.listProviderLinks(account.userId).map(link => link.provider + ":" + link.providerUserId).sort(),
-      ["discord:discord-owner-88", "twitch:twitch-owner-77"],
+      ["discord:discord-owner-00", "discord:discord-owner-88", "twitch:twitch-owner-77"],
       "recovery must not relink or replace either existing provider identity",
     );
   } finally {
