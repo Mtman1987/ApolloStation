@@ -88,3 +88,18 @@ test("tenant ownership and pre-linked provider identity never silently merge dif
     assert.throws(() => f.accounts.provisionAccount({ tenantId: "tenant-one", sourceAppId: "spacemountain", discord: { id: "discord-existing" } }), /migration review/);
   } finally { f.close(); }
 });
+
+test("linked provider recovery verifies the existing immutable link and consumes one ticket", () => {
+  const f = fixture();
+  try {
+    const invite = f.accounts.createDiscordInvite({ tenantId: "tenant-recovery", sourceAppId: "spacemountain", username: "recoverme", discord: { id: "discord-recovery-1" } });
+    const started = f.accounts.beginTwitchVerification(invite.ticket);
+    f.accounts.completeTwitchVerification(invite.ticket, started.state, { id: "twitch-recovery-1" });
+    f.accounts.completeFirstTimePassword(invite.ticket, "initial-recovery-password");
+    assert.throws(() => f.accounts.createLinkedProviderPasswordReset("recoverme", "discord", "discord-wrong"), /could not be verified/);
+    const reset = f.accounts.createLinkedProviderPasswordReset("recoverme", "discord", "discord-recovery-1");
+    f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "new-recovery-password-123");
+    assert.equal(f.data.login("recoverme", "new-recovery-password-123", ["workspace:read"]).profile.userId, invite.account.userId);
+    assert.throws(() => f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "another-recovery-password-123"), /already used/);
+  } finally { f.close(); }
+});

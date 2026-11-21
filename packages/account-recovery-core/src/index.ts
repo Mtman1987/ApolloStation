@@ -7,7 +7,7 @@ import type { PlatformDataStore, UserProfileV1 } from "@spmt/platform-data-core"
 
 export type CredentialStateV1 = "setup-required" | "password-set";
 export type SignInStateV1 = "not-found" | CredentialStateV1;
-export type SetupPurposeV1 = "first-time-setup" | "dm-password-reset";
+export type SetupPurposeV1 = "first-time-setup" | "dm-password-reset" | "linked-provider-password-reset";
 export type GrandfatherProviderV1 = "discord" | "twitch";
 
 export interface AccountProvisionInputV1 {
@@ -354,6 +354,39 @@ export class AccountRecoveryService {
     }else this.setPassword(ticket.userId, password);
     const usedAt = this.now();
     this.setupStore.putTicket({ ...ticket, usedAt });
+    return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };
+  }
+
+  createLinkedProviderPasswordReset(identifier: string, provider: GrandfatherProviderV1, verifiedProviderUserId: string) {
+    const username = normalizeUsername(identifier);
+    const profile = this.platformStore.getUserProfileByUsername(username);
+    if (!profile) throw new AccountSetupError("Account recovery could not be verified");
+    const linkedId = this.setupStore.findProviderUserId(profile.userId, provider);
+    if (!linkedId || linkedId !== requireProviderUserId(verifiedProviderUserId)) throw new AccountSetupError("Account recovery could not be verified");
+    const token = this.tokenFactory();
+    const now = this.now();
+    const ticket: AccountSetupTicketV1 = {
+      tokenHash: sha256(token),
+      purpose: "linked-provider-password-reset",
+      userId: profile.userId,
+      tenantId: profile.tenantIds[0] ?? `tenant_${profile.userId}`,
+      sourceAppId: "spmt",
+      ...(provider === "discord" ? { discordUserId: linkedId, discordVerifiedAt: now } : { twitchUserId: linkedId, twitchVerifiedAt: now }),
+      createdAt: now,
+      expiresAt: addMinutes(now, 15),
+    };
+    this.setupStore.putTicket(ticket);
+    return { ticket: token, userId: profile.userId, tenantId: ticket.tenantId };
+  }
+
+  completeLinkedProviderPasswordReset(ticketToken: string, password: string) {
+    const ticket = this.requireTicket(ticketToken, "linked-provider-password-reset");
+    if (!ticket.discordVerifiedAt && !ticket.twitchVerifiedAt) throw new AccountSetupError("A linked provider verification is required");
+    const linkedProvider = ticket.discordVerifiedAt ? "discord" : "twitch";
+    const linkedId = linkedProvider === "discord" ? ticket.discordUserId : ticket.twitchUserId;
+    if (!linkedId || this.setupStore.findProviderUserId(ticket.userId, linkedProvider) !== linkedId) throw new AccountSetupError("Account links changed; restart recovery");
+    this.setPassword(ticket.userId, password);
+    this.setupStore.putTicket({ ...ticket, usedAt: this.now() });
     return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };
   }
 
