@@ -135,6 +135,7 @@ async function run() {
     try {
       const pendingRestore = await request("/internal/profile/restore-next");
       if (pendingRestore.base64) await applyRestore(pendingRestore.base64);
+      else if (pendingRestore.empty) restorePending = false;
       const commandData = await request("/internal/commands/next");
       if (commandData.command) {
         const command = commandData.command;
