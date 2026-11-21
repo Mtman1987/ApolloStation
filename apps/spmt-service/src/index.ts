@@ -468,6 +468,55 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
 
       if (request.method === "GET" && url.pathname === "/v1/onboarding/twitch/callback") {
+        const recoveryRaw = cookie(request, "spmt_linked_recovery");
+        if (recoveryRaw) {
+          let recovery: { provider: "discord" | "twitch"; state: string } | undefined;
+          try { recovery = JSON.parse(Buffer.from(recoveryRaw, "base64url").toString("utf8")); } catch { recovery = undefined; }
+          const code = url.searchParams.get("code") ?? "";
+          const state = url.searchParams.get("state") ?? "";
+          const failRecovery = (reason: string) => {
+            const target = new URL("/", publicBaseUrl);
+            target.searchParams.set("recoveryError", reason);
+            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
+            return response.end();
+          };
+          if (!recovery || !code || !state || recovery.state !== state || (recovery.provider !== "discord" && recovery.provider !== "twitch")) {
+            return failRecovery("invalid_state");
+          }
+          let stage = "oauth_exchange";
+          try {
+            const provider = recovery.provider;
+            const client = accountProviderOAuthClient(options, provider);
+            if (!client) throw new Error("provider_unavailable");
+            const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/onboarding/twitch/callback`, client, fetchImpl);
+            stage = "identity_lookup";
+            const linked = accounts.resolveProviderIdentity(provider, identity.id);
+            if (!linked) return failRecovery("provider_not_linked");
+            stage = "workspace_restore";
+            const workspace = resolveDonorWorkspace({
+              id: linked.userId,
+              username: linked.profile.username,
+              ...(provider === "discord" ? { discordId: identity.id } : { twitchId: identity.id }),
+            }, false);
+            if (!workspace.ok) return failRecovery("workspace_unavailable");
+            stage = "session_issue";
+            const issued = auth.issueHumanSession({ userId: workspace.profile.userId, scopes: USER_SCOPES, tenantIds: workspace.tenantIds });
+            const browser = auth.issueBrowserSession(issued.accessToken);
+            response.writeHead(302, {
+              location: new URL("/", publicBaseUrl).toString(),
+              "cache-control": "no-store",
+              "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery")],
+            });
+            return response.end();
+          } catch (error) {
+            console.error("[spmt-account-recovery] failed", {
+              provider: recovery.provider,
+              stage,
+              error: error instanceof Error ? error.name : "unknown",
+            });
+            return failRecovery(stage === "oauth_exchange" ? "provider_verification_failed" : "recovery_failed");
+          }
+        }
         const pendingLink = decodeProviderLinkCookie(cookie(request, "spmt_provider_link"));
         if (pendingLink) {
           try {
@@ -706,7 +755,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
         const state = randomBytes(24).toString("base64url");
         const pending = Buffer.from(JSON.stringify({ provider, state }), "utf8").toString("base64url");
-        const redirectUri = `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`;
+        // Recovery reuses the already-registered Apollo provider callback.
+        const redirectUri = `${publicBaseUrl}/v1/onboarding/twitch/callback`;
         const authorizationUrl = provider === "twitch" ? new URL("https://id.twitch.tv/oauth2/authorize") : new URL("https://discord.com/oauth2/authorize");
         authorizationUrl.searchParams.set("client_id", client.clientId);
         authorizationUrl.searchParams.set("redirect_uri", redirectUri);
@@ -715,39 +765,6 @@ export function createSpmtService(options: SpmtServiceOptions) {
         authorizationUrl.searchParams.set("state", state);
         response.writeHead(302, { location: authorizationUrl.toString(), "cache-control": "no-store", "set-cookie": setupCookie("spmt_linked_recovery", pending) });
         return response.end();
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/callback") {
-        const pendingRaw = cookie(request, "spmt_linked_recovery");
-        let pending: { provider: "discord" | "twitch"; state: string } | undefined;
-        try { pending = pendingRaw ? JSON.parse(Buffer.from(pendingRaw, "base64url").toString("utf8")) : undefined; } catch { pending = undefined; }
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
-        if (!pending || !code || !state || pending.state !== state || !["discord", "twitch"].includes(pending.provider)) {
-          response.writeHead(302, { location: `${publicBaseUrl}/?recoveryError=verification_failed`, "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
-          return response.end();
-        }
-        try {
-          const provider = pending.provider;
-          const client = accountProviderOAuthClient(options, provider);
-          if (!client) throw new Error("Provider unavailable");
-          const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/auth/linked-provider-recovery/callback`, client, fetchImpl);
-          const linked = accounts.resolveProviderIdentity(provider, identity.id);
-          if (!linked) throw new Error("No existing Apollo account is linked to this provider identity");
-          const workspace = resolveDonorWorkspace({
-            id: linked.userId,
-            username: linked.profile.username,
-            ...(provider === "discord" ? { discordId: identity.id } : { twitchId: identity.id }),
-          }, false);
-          if (!workspace.ok) throw new Error("The linked Apollo workspace could not be restored");
-          const issued = auth.issueHumanSession({ userId: workspace.profile.userId, scopes: USER_SCOPES, tenantIds: workspace.tenantIds });
-          const browser = auth.issueBrowserSession(issued.accessToken);
-          response.writeHead(302, { location: new URL("/", publicBaseUrl).toString(), "cache-control": "no-store", "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery")] });
-          return response.end();
-        } catch {
-          response.writeHead(302, { location: `${publicBaseUrl}/?recoveryError=verification_failed`, "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
-          return response.end();
-        }
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/linked-provider-recovery/password") {
