@@ -12,5 +12,6 @@
   - Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1`, so the hosted service fails closed if the shared Turso URL or Node 1 read/write token is missing.
 - Added `tests/apollo-bulletin-hosted-worker.test.mjs` for exact target validation, required target input, persisted bounded continuation, Turso queue/session storage, and server-to-store wiring. The existing Overlay Bay test explicitly uses the simulator destination.
 - Previous PR validation exposed an escaped regular-expression syntax error in the URL validator; that was corrected. A later inspection also caught and corrected an incomplete persistence wiring change before the final PR head.
+- Documentation was corrected to remove the previously proposed Hostless `/data` volume; it now documents the existing shared Turso persistence and phone-operated owner browser console.
 - No production deployment has been performed by this branch.
 - Next: wait for PR #590 checks on the latest head, inspect/fix any failures, merge only when green, then deploy Node 1 and complete the owner sign-in and one-cycle smoke test from the phone.
