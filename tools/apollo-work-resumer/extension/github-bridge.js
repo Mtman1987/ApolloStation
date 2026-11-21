@@ -7,12 +7,10 @@ function parseComment(container) {
   const authorName = (author?.textContent || "").trim();
   const authorHref = author?.getAttribute("href") || "";
   if (authorName !== "github-actions[bot]" && !authorHref.endsWith("/github-actions[bot]")) return null;
-
   const body = container.querySelector(".comment-body, [data-testid='comment-body'], .markdown-body");
   const content = body?.innerText || body?.textContent || "";
   if (!content.includes(COMMAND_MARKER)) return null;
-
-  const jsonBlock = content.match(/\\{[\\s\\S]*\\}/);
+  const jsonBlock = content.match(/\{[\s\S]*\}/);
   if (!jsonBlock) return null;
   try {
     const command = JSON.parse(jsonBlock[0]);
@@ -40,11 +38,9 @@ async function poll() {
       if (!command || seen.has(command.id)) continue;
       try {
         const result = await chrome.runtime.sendMessage({ type: "APOLLO_GITHUB_COMMAND", command });
-        // A rejected command must remain eligible for a later poll after the queue is cleared.
-        // Mark it seen only after the background has durably accepted it or confirms a duplicate.
         if (result?.queued === true || result?.duplicate === true) seen.add(command.id);
       } catch {
-        // Leave the command unseen; the next poll will retry acceptance, not an uncertain send.
+        // Rejected or unconfirmed acceptance remains eligible for the next poll.
       }
     }
   } catch {
