@@ -214,7 +214,7 @@ jobs:
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 10
     environment: production
     strategy:
       # Node 1 and Node 2 deploy in parallel. The shared concurrency group above
