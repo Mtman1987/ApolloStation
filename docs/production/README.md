@@ -4,6 +4,8 @@ This directory contains only maintained operational references. Dated execution 
 
 ## Current operating sources
 
+- [Final Apollo pause handoff](APOLLO_FINAL_HANDOFF_2026-11-19.md) — latest environment walkthrough, verified changes, explicit unknowns, and ordered resume checklist. This is a handoff snapshot, not production certification.
+
 - [Current Apollo state](../CURRENT_STATE.md) — verified implementation, two-node deployment status, owner sign-in, persistence boundaries, and acceptance gaps.
 - [Production path](../PRODUCTION_PATH.md) — risk-ordered release, recovery, and cutover policy.
 - [Production rollout manifest](../../config/production-rollout.v1.json) — machine-checked rollout state.
