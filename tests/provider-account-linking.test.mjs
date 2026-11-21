@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { request as httpRequest } from "node:http";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 import { createSpaceMountainWebHost } from "../apps/spacemountain-web/dist/server.js";
 
@@ -125,16 +126,13 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     const missingUsername = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch", { redirect: "manual" });
     assert.equal(missingUsername.status, 400);
 
-    const customDomainStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=" + encodeURIComponent(username), {
-      headers: { host: "spacemountain.live" },
-      redirect: "manual",
-    });
+    const customDomainStart = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=" + encodeURIComponent(username), "spacemountain.live");
     assert.equal(customDomainStart.status, 302);
-    const canonicalStart = new URL(customDomainStart.headers.get("location"));
+    const canonicalStart = new URL(customDomainStart.headers.location);
     assert.equal(canonicalStart.origin, "https://apollo-node-1.hostless.app");
     assert.equal(canonicalStart.pathname, "/v1/auth/linked-provider-recovery/start");
     assert.equal(canonicalStart.searchParams.get("username"), username);
-    assert.equal(cookieValue(customDomainStart.headers.get("set-cookie"), "spmt_linked_recovery"), undefined,
+    assert.equal(cookieValue(customDomainStart.headers["set-cookie"], "spmt_linked_recovery"), undefined,
       "the custom alias must not receive host-bound OAuth state when the callback is on Node 1");
 
     const wrongStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
@@ -224,6 +222,19 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+function requestWithHost(value, host) {
+  const target = new URL(value);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({ hostname: target.hostname, port: Number(target.port), path: target.pathname + target.search, method: "GET", headers: { host } }, response => {
+      const chunks = [];
+      response.on("data", chunk => chunks.push(chunk));
+      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString("utf8") }));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
 
 function cookieValue(value, name) {
   const source = String(value ?? "");
