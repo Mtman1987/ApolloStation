@@ -70,7 +70,7 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     assert.equal(payload.task.status, "paused");
     assert.ok(payload.task.progressUrl);
     assert.ok(payload.task.completeUrl);
-    const progressPath = new URL(payload.task.progressUrl).pathname;
+    const progressPath = new URL(payload.task.progressUrl).pathname.replace(/^\\/bulletin/, "");
     const progressQuery = new URLSearchParams({
       summary: "Verified the first proof step",
       todo: JSON.stringify(["Connect browser", "Run one prompt"]),
@@ -83,7 +83,7 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     const progressPayload = await progress.json();
     assert.equal(progressPayload.task.handoff.summary, "Verified the first proof step");
     assert.deepEqual(progressPayload.task.handoff.todo, ["Connect browser", "Run one prompt"]);
-    const completePath = new URL(payload.task.completeUrl).pathname;
+    const completePath = new URL(payload.task.completeUrl).pathname.replace(/^\\/bulletin/, "");
     const completed = await fetch(origin + completePath);
     assert.equal(completed.status, 200);
     assert.equal((await completed.json()).task.status, "completed");
