@@ -1,13 +1,11 @@
 # Apollo Bulletin work resumer checkpoint
 
-- Foundation PR #552 was merged previously.
-- Earlier local Chrome extension PR #553 was closed without merging. Its CI validation passed on its last head, but it is not installed or active in production.
-- Current implementation is in PR #570: https://github.com/Mtman1987/ApolloStation/pull/570.
-- PR #570 adds a manual-only GitHub Actions workflow and a local Chrome MV3 extension bridge. The workflow posts a one-time command comment to the fixed private PR #553 inbox; the extension polls that signed-in GitHub page and sends the command into the exact open ChatGPT conversation tab.
-- This approach reuses the user's existing signed-in desktop Chrome session. It does not launch a headless browser, copy cookies, require a personal access token, or require a self-hosted runner/remote-debugging port.
-- Commands are accepted only from github-actions[bot], require a strict `https://chatgpt.com/c/<id>` URL, are deduplicated by workflow run ID, and are blocked while another local task is pending/active/uncertain.
-- The extension keeps the prior fail-closed visible UI checks and dispatch-intent-before-send/no-automatic-retry behavior. A send click is not independent proof of delivery; owner visual confirmation remains required.
-- The workflow is manual-only. No ChatGPT scheduled tasks are used or created.
-- The command prompt and conversation URL are visible in a PR #553 comment. Keep the repo private and use harmless test text; this is a development proof, not a multi-user-secure production design.
-- No Hostless application deployment is requested. The new workflow and local extension must pass CI before merge. After merge, the workflow becomes available under GitHub Actions and the extension can be loaded unpacked in desktop Chrome.
-- Next steps: verify the latest PR #570 head/CI, fix issues, merge only after green checks, then install the extension locally and run the first manual Actions-triggered test. Do not merge/deploy the separate headless browser PR #568 as part of this test.
+- Foundation PR #552 is merged after GitHub Actions validation.
+- PR #553 is the desktop Chrome/Chromium extension prototype; it is not merged or deployed.
+- The latest pre-fix head was `8e8e4b89f6603d4b6ef9bfc58fc73a56e5156d9d`. Its PR validation run #807 and Hostless release-gate run #582 completed successfully. The Hostless deployment matrix was empty and both deployment jobs were skipped; no production deployment was performed by this work.
+- Manual diff review found genuine safety/flow defects despite green CI: target lookup did not require the tab to be active; DOM checks did not verify visibility; an uncertain continuation retry could revert to the initial prompt; resuming a cycle-limited task did not reset its cycle budget; and an uncertain attempt could be bypassed by a later pending item.
+- Fixes in progress: require one exact matching tab and that it is active in the last-focused window; require a visible page, visible enabled Send button, and visible composer; treat missing positive idle evidence as ambiguous; re-check focus before send; persist attempt phase and restore it only after explicit retry; reset the cycle budget only on explicit cycle-limit resume; block the queue behind an unresolved uncertain attempt.
+- Queue dispatch remains local to the user's desktop browser profile and uses only the visible signed-in ChatGPT UI. There is no auth bypass, private endpoint, API key, cloud browser, or production deployment.
+- A Send click is not delivery confirmation. Uncertain sends are never retried automatically.
+- Automated validation and a real desktop browser smoke test are separate: CI can test logic, DOM visibility decisions, exact URL/focus guards, and script syntax; the owner still needs to perform the documented manual browser test after merge.
+- Next: validate the corrected PR head, fix any failing checks, merge only when the exact latest head is green, then leave the owner installation/manual-test steps ready. No production deployment.
