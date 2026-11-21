@@ -110,3 +110,5 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   const app = createBulletinServer(); await app.listen(); console.log("Apollo Bulletin prototype listening on loopback.");
 }
+
+// POC deployment marker: simulated browser only; real ChatGPT dispatch remains intentionally disabled.
