@@ -34,7 +34,7 @@ function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyCon
 }
 
 const node1 = [
-  ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STATE_PATH: process.env.APOLLO_BULLETIN_STATE_PATH ?? "/tmp/apollo-bulletin/state.json", APOLLO_BULLETIN_ENABLE_BROWSER: "1", APOLLO_BULLETIN_PUBLIC_URL: process.env.APOLLO_BULLETIN_PUBLIC_URL ?? "https://apollo-node-1.hostless.app", APOLLO_BROWSER_PROFILE_PATH: process.env.APOLLO_BROWSER_PROFILE_PATH ?? "/tmp/apollo-browser-profile" }],
+  ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STORE: "turso", TURSO_DATABASE_URL: process.env.TURSO_DATABASE_URL, TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN, APOLLO_BULLETIN_ENABLE_BROWSER: "1", APOLLO_BULLETIN_PUBLIC_URL: process.env.APOLLO_BULLETIN_PUBLIC_URL ?? "https://apollo-node-1.hostless.app" }],
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
 ];
 

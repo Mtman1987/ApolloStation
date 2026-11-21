@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeSchedule, nextScheduledAt, scheduleLabel } from "./schedule.mjs";
 import { simulatedAiReply } from "./test-simulator.mjs";
 import { createApolloChatGptBrowserWorkerFromEnvironment } from "./browser-worker.mjs";
+import { createAsyncJsonRecordStore } from "../../packages/async-json-store/factory.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
@@ -24,7 +25,9 @@ function bulletinWidgetHtml(kind) {
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#0b1220;color:#edf3ff;font:13px system-ui}body{padding:12px;overflow:auto}header{display:flex;justify-content:space-between;align-items:center;gap:8px}h1{font-size:15px;margin:0 0 8px}small{color:#9eacc8}article,form{border:1px solid #293956;background:#111b30;border-radius:10px;padding:10px;margin:8px 0}article p{margin:5px 0;color:#aebbd2;overflow-wrap:anywhere}button,input,textarea,select{font:inherit;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:7px;padding:7px;max-width:100%}button{cursor:pointer;background:#234879;margin:3px 4px 3px 0}input,textarea,select{width:100%;margin:4px 0}textarea{min-height:76px;resize:vertical}.schedule{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{color:#8ee6b6}.actions{display:flex;flex-wrap:wrap}.empty{padding:18px;border:1px dashed #405577;border-radius:10px;color:#9eacc8}a{color:#8bd}@media(max-width:420px){body{padding:8px}.schedule{grid-template-columns:1fr}}</style></head><body><header><h1>'+title+'</h1><small id="updated">Loading…</small></header>'+form+'<main id="content"><div class="empty">Loading Bulletin data…</div></main>'+script+'</body></html>';
 }
 
-export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, now = () => Date.now() } = {}) {
+export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, now = () => Date.now(), recordStore } = {}) {
+  const durableStore = recordStore ?? (process.env.APOLLO_BULLETIN_STORE === "turso" ? createAsyncJsonRecordStore({ service: "apollo-bulletin", mode: "turso" }) : null);
+  if (process.env.NODE_ENV === "production" && !durableStore) throw new Error("Production Apollo Bulletin requires APOLLO_BULLETIN_STORE=turso; ephemeral JSON state is disabled.");
   let state;
   let busy = false;
   let browserWorker;
@@ -34,14 +37,29 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     return browserWorker.sendTask(task);
   }
   async function save() {
+    if (durableStore) {
+      await durableStore.put("bulletin-state", "owner", "current", state);
+      return;
+    }
     await mkdir(dirname(statePath), { recursive: true });
     const temp = join(dirname(statePath), ".bulletin-state.tmp");
     await writeFile(temp, JSON.stringify(state, null, 2), { mode: 0o600 });
     await rename(temp, statePath);
   }
   async function load() {
-    try { state = JSON.parse(await readFile(statePath, "utf8")); }
-    catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
+    if (durableStore) {
+      await durableStore.initialize();
+      state = await durableStore.get("bulletin-state", "owner", "current");
+      if (!state) {
+        try { state = JSON.parse(await readFile(statePath, "utf8")); }
+        catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
+        state.tasks ||= []; state.activity ||= [];
+        await durableStore.put("bulletin-state", "owner", "current", state);
+      }
+    } else {
+      try { state = JSON.parse(await readFile(statePath, "utf8")); }
+      catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
+    }
     state.tasks ||= []; state.activity ||= [];
   }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
@@ -108,7 +126,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       send(404,{error:"not_found"});
     } catch (error) { send(500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(); browserWorker=browser.worker; await browserWorker.openLogin(); log("browser-started",null,"Dedicated Chromium opened simulated ChatGPT"); await save(); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); log("browser-start-failed",null,String(error?.message||error).slice(0,300)); await save(); } } const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(browserWorker) await browserWorker.close(); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
+  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(process.env, { recordStore: durableStore }); browserWorker=browser.worker; await browserWorker.openLogin(); log("browser-started",null,"Dedicated Chromium opened simulated ChatGPT"); await save(); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); log("browser-start-failed",null,String(error?.message||error).slice(0,300)); await save(); } } const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(browserWorker) await browserWorker.close(); if(durableStore) await durableStore.close(); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
