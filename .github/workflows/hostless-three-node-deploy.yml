@@ -315,6 +315,11 @@ jobs:
           SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
         run: node scripts/import-staged-nebula-tag-to-turso.mjs
+      - name: Audit both Hostless account plans and free allowances (read-only)
+        env:
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          HOSTLESS_NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+        run: node scripts/hostless/audit-account-plans.mjs
       - name: Install Hostless CLI
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
