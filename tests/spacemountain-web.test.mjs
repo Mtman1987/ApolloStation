@@ -23,6 +23,9 @@ test("bridge-login bootstraps the owner workspace on first sign-in and reuses it
   const block = service.slice(start, start + 4000);
   assert.match(service, /resolveDonorWorkspace\(\{ id: donorId/);
   assert.match(block, /data\.getProfileByUsername\(donorUsername\)/);
+  assert.match(block, /linkedProfile \?\? usernameProfile/, "verified provider-linked account outranks stale shell username");
+  assert.match(block, /linkedUserIds\.length > 1/, "conflicting Discord and Twitch links fail closed");
+  assert.match(block, /data\.setUserTenants\(ownerUserId, tenantIds\)/, "canonical owned tenant IDs replace stale profile tenant links");
   assert.match(block, /control\.registerTenant\(\{ tenantId, ownerUserId: userId/);
   assert.match(block, /data\.registerUser\(\{ userId, username: donorUsername/);
   assert.match(service, /issueHumanSession\(\{ userId: profile\.userId, scopes: USER_SCOPES, tenantIds \}\)/);
