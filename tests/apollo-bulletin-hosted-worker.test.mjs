@@ -120,3 +120,51 @@ test("Bulletin server reads and writes task state through the injected Turso sto
     await app.close();
   }
 });
+
+test("Hostless cron endpoint is authenticated and processes one due task per tick", async () => {
+  const priorCron = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
+  const priorToken = process.env.APOLLO_BULLETIN_CRON_TOKEN;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-test-token";
+  let persisted = {
+    tasks: [
+      { id: "one", name: "One", prompt: "one", destination: "test-simulator", status: "scheduled", nextRunAt: Date.now() - 1000, schedule: { type: "manual" } },
+      { id: "two", name: "Two", prompt: "two", destination: "test-simulator", status: "scheduled", nextRunAt: Date.now() - 1000, schedule: { type: "manual" } },
+    ],
+    activity: [],
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store, dispatch: async task => ({ submitted: true, receipt: { reply: "simulated" }, reason: task.id }) });
+  try {
+    const address = await app.listen();
+    const endpoint = "http://127.0.0.1:" + address.port + "/api/cron/tick";
+    const denied = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer wrong" } });
+    assert.equal(denied.status, 401);
+    const first = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), { processed: 1, busy: false });
+    assert.equal(persisted.tasks[0].status, "dispatched");
+    assert.equal(persisted.tasks[1].status, "scheduled");
+    const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
+    assert.deepEqual(await second.json(), { processed: 1, busy: false });
+    assert.equal(persisted.tasks[1].status, "dispatched");
+  } finally {
+    await app.close();
+    if (priorCron === undefined) delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON; else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = priorCron;
+    if (priorToken === undefined) delete process.env.APOLLO_BULLETIN_CRON_TOKEN; else process.env.APOLLO_BULLETIN_CRON_TOKEN = priorToken;
+  }
+});
+
+test("Hostless deploy config declares one named Bulletin dispatcher cron", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const hostless = await readFile(new URL("../hostless.yaml", import.meta.url), "utf8");
+  assert.match(hostless, /name: apollo-bulletin-resumer/);
+  assert.match(hostless, /command: "node tools\/apollo-bulletin\/cron-tick\.mjs"/);
+  assert.match(hostless, /schedule: "\*\/1 \* \* \* \*"/);
+  assert.equal((hostless.match(/^- name:/gm) || []).length, 0);
+});
