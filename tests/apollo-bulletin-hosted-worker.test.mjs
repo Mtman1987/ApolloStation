@@ -224,6 +224,14 @@ test("Hostless cron proxy uses a bearer secret and does not need an interactive 
   );
   assert.equal(denied.authorized, false);
   assert.equal(denied.status, 401);
+  const previewAllowed = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer preview-only-token" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    { APOLLO_PREVIEW_PASSWORD: "preview-only-token" },
+  );
+  assert.equal(previewAllowed.authorized, true);
 });
 
 test("Node 1 disables its private polling loop when Hostless cron owns scheduling", async () => {
@@ -371,4 +379,13 @@ test("Pause during an in-flight ChatGPT cycle resumes with a continuation, not t
     await app.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test("Hostless cron dispatcher uses the same token fallback order as gateway auth", async () => {
+  const { resolveCronToken } = await import("../tools/apollo-bulletin/cron-auth.mjs");
+  assert.equal(resolveCronToken({ APOLLO_BULLETIN_CRON_TOKEN: "cron", APOLLO_BROWSER_CONTROL_PASSWORD: "browser", APOLLO_PREVIEW_PASSWORD: "preview" }), "cron");
+  assert.equal(resolveCronToken({ APOLLO_BROWSER_CONTROL_PASSWORD: "browser", APOLLO_PREVIEW_PASSWORD: "preview" }), "browser");
+  assert.equal(resolveCronToken({ APOLLO_PREVIEW_PASSWORD: "preview" }), "preview");
+  assert.equal(resolveCronToken({}), "");
 });

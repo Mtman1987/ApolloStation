@@ -26,7 +26,7 @@ export async function authorizeBulletinRequest(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<{ authorized: boolean; status: number; reason: string }> {
   if (pathname === "/bulletin/api/cron/tick") {
-    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD;
+    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD;
     if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
     const authorization = request.headers.authorization || "";
     const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
@@ -64,7 +64,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
   for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
-    if (previewPassword && !["/health/ready", "/health/live", "/sandbox/health"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
+    if (previewPassword && !["/health/ready", "/health/live", "/sandbox/health", "/bulletin/api/cron/tick"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
       response.writeHead(401, { "www-authenticate": 'Basic realm="ApolloStation private preview", charset="UTF-8"', "cache-control": "no-store" });
       response.end("Private preview — sign in to continue.");
       return;
