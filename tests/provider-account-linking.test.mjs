@@ -95,7 +95,7 @@ test("signed-out provider recovery reuses the registered Apollo callback and res
     port: 0,
     publicBaseUrl: "https://apollo-node-1.hostless.app",
     fetchImpl: providerFetch,
-    providerOAuthClients: { twitch: { clientId: "twitch-client", clientSecret: "twitch-secret" } },
+    providerOAuthClients: { twitch: { clientId: "twitch-client", clientSecret: "twitch-secret" }, discord: { clientId: "discord-client", clientSecret: "discord-secret" } },
   });
   let web;
   try {
