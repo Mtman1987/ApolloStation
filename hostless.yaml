@@ -1,6 +1,6 @@
 build:
   system: auto
-  command: "npm ci && npm run build"
+  command: "npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless"
 working_directory: /
 build_context_directory: /
 start_command: "node scripts/hostless/start-node.mjs"
