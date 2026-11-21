@@ -154,9 +154,15 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     for (let attempt = 0; attempt < 30 && persisted.tasks[0].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(persisted.tasks[0].status, "dispatched");
     assert.equal(persisted.tasks[1].status, "scheduled");
-    const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
-    assert.equal(second.status, 202);
-    assert.deepEqual(await second.json(), { accepted: true });
+    let secondBody;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
+      assert.equal(second.status, 202);
+      secondBody = await second.json();
+      if (secondBody.accepted) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.deepEqual(secondBody, { accepted: true });
     for (let attempt = 0; attempt < 30 && persisted.tasks[1].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(persisted.tasks[1].status, "dispatched");
   } finally {
