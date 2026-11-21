@@ -166,6 +166,13 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       const ticket = cookieValue(callbackCookies, "spmt_linked_recovery_ticket");
       assert.ok(ticket);
 
+      const blockedCrossOrigin = await fetch(browserBase + "/v1/auth/linked-provider-recovery/password", {
+        method: "POST",
+        headers: { origin: "https://attacker.invalid", "content-type": "application/json", cookie: "spmt_linked_recovery_ticket=" + ticket },
+        body: JSON.stringify({ username, password: "cross-origin-attempt-123" }),
+      });
+      assert.equal(blockedCrossOrigin.status, 403, "the browser proxy rejects cross-origin password changes");
+
       const password = "recovered-" + provider + "-password-123";
       const complete = await fetch(browserBase + "/v1/auth/linked-provider-recovery/password", {
         method: "POST",
@@ -173,6 +180,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
         body: JSON.stringify({ username, password }),
       });
       assert.equal(complete.status, 200, await complete.text());
+      assert.match(complete.headers.get("set-cookie") ?? "", /spmt_linked_recovery_ticket=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
       const sessionCookie = cookiePair(complete.headers.get("set-cookie"));
       assert.match(sessionCookie, /^spmt_token=/);
       const check = await fetch(base + "/v1/auth/session/check", { headers: { cookie: sessionCookie } });
