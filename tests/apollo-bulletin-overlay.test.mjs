@@ -13,6 +13,8 @@ test("Personal Bulletin is created as a Personal Overlay Bay scene using reusabl
     schemaVersion: 1, id: "scene-existing", name: "Existing", canvasWidth: 1920, canvasHeight: 1080,
     sources: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   };
+  const previousWindow = globalThis.window;
+  globalThis.window = { location: { origin: "https://apollo.test" } };
   const ui = new OverlayBayParityController(root, {
     tenantId: "tenant-a",
     workspace: { revision: 1, overlayScenes: [scene], activePersonalOverlaySceneId: scene.id },
@@ -31,6 +33,8 @@ test("Personal Bulletin is created as a Personal Overlay Bay scene using reusabl
   ]);
   assert.ok(bulletin.sources.every(item => item.kind === "widget" && String(item.config.rendererUrl).includes("/bulletin/widgets/")));
   assert.ok(bulletin.sources.every(item => item.width > 0 && item.height > 0));
+  if (previousWindow === undefined) delete globalThis.window;
+  else globalThis.window = previousWindow;
 });
 
 test("Bulletin exposes embeddable task components and the task API without a separate dashboard", async () => {
