@@ -97,7 +97,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         if (verb === "run") { if (["dispatching","dispatched","awaiting_review","completed"].includes(task.status)) return send(409,{error:"This task has already been dispatched or resolved; create a new task to send again"}); task.status="scheduled";task.nextRunAt=now(); }
         if (verb === "pause") { task.status="paused";task.nextRunAt=null; }
         if (verb === "resume") { if (task.status==="awaiting_review") return send(409,{error:"Review the task first"});task.status="scheduled";task.nextRunAt=now()+1000; }
-        if (verb === "complete") { task.status="completed";task.nextRunAt=null; }
+        if (verb === "complete") { task.status="completed";task.nextRunAt=null;task.completedAt=now();task.handoff={...(task.handoff||{}),status:"completed",blocker:"",updatedAt:now()}; }
         task.lastEvent=verb;log("task-"+verb,task.id);await save();return send(200,{task:{...task,prompt:undefined}});
       }
       if (req.method === "GET" && url.pathname.startsWith("/progress/")) {
