@@ -7,21 +7,25 @@ function parseComment(container) {
   const authorName = (author?.textContent || "").trim();
   const authorHref = author?.getAttribute("href") || "";
   if (authorName !== "github-actions[bot]" && !authorHref.endsWith("/github-actions[bot]")) return null;
+
   const body = container.querySelector(".comment-body, [data-testid='comment-body'], .markdown-body");
   const content = body?.innerText || body?.textContent || "";
   if (!content.includes(COMMAND_MARKER)) return null;
-  const jsonBlock = content.match(/\{[\s\S]*\}/);
+
+  const jsonBlock = content.match(/\\{[\\s\\S]*\\}/);
   if (!jsonBlock) return null;
   try {
     const command = JSON.parse(jsonBlock[0]);
     if (!command || typeof command.id !== "string" || typeof command.prompt !== "string" ||
         typeof command.conversationUrl !== "string") return null;
     return command;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function poll() {
-  if (polling || !location.pathname.startsWith("/Mtman1987/ApolloStation/pull/553")) return;
+  if (polling || location.pathname !== "/Mtman1987/ApolloStation/pull/553") return;
   polling = true;
   try {
     const response = await fetch(location.href, { credentials: "include", cache: "no-store" });
@@ -34,8 +38,14 @@ async function poll() {
     for (const container of comments) {
       const command = parseComment(container);
       if (!command || seen.has(command.id)) continue;
-      seen.add(command.id);
-      chrome.runtime.sendMessage({ type: "APOLLO_GITHUB_COMMAND", command }).catch(() => {});
+      try {
+        const result = await chrome.runtime.sendMessage({ type: "APOLLO_GITHUB_COMMAND", command });
+        // A rejected command must remain eligible for a later poll after the queue is cleared.
+        // Mark it seen only after the background has durably accepted it or confirms a duplicate.
+        if (result?.queued === true || result?.duplicate === true) seen.add(command.id);
+      } catch {
+        // Leave the command unseen; the next poll will retry acceptance, not an uncertain send.
+      }
     }
   } catch {
     // GitHub can be temporarily unavailable or require sign-in; retry next interval.
@@ -43,5 +53,6 @@ async function poll() {
     polling = false;
   }
 }
+
 void poll();
 setInterval(() => void poll(), 8000);
