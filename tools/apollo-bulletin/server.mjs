@@ -4,6 +4,15 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createChatGPTBrowserAdapter, browserControlPage } from "./chatgpt-browser-adapter.mjs";
 
+function workerHandoffText({ progressUrl, completeUrl, reviewUrl }) {
+  return `APOLLO BULLETIN WORKER HANDOFF:
+You own execution and progress tracking; the scheduler only wakes you and delivers this prompt. At the start, open this progress URL to read the latest handoff: ${progressUrl}
+Maintain your own concise TODO list, completed steps, current progress, validation/evidence, next action, and blockers. After each meaningful work cycle, update the handoff by opening the progress URL with URL-encoded query parameters: ?summary=<current progress>&todo=<JSON array of remaining items>&completed=<JSON array of finished items>&next=<next action>&blocker=<current blocker or blank>. The app does not infer progress from your replies.
+When the goal is genuinely complete and verified, open this completion URL: ${completeUrl}
+If the same blocker repeats and you have no useful next action, open this review URL exactly once and stop; it pauses future wake-ups until the owner reviews it: ${reviewUrl}
+Never claim completion without using the completion URL. Do not ask the owner to type continue; rely on the scheduled wake-up for unfinished work.`;
+}
+
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
@@ -37,6 +46,22 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     try { state = JSON.parse(await readFile(statePath, "utf8")); }
     catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
     state.tasks ||= []; state.activity ||= [];
+    let migrated = false;
+    const publicBase = process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app";
+    for (const task of state.tasks) {
+      const reviewKey = task.reviewKey || String(task.reviewUrl || "").split("/").filter(Boolean).pop() || randomUUID();
+      if (task.reviewKey !== reviewKey) { task.reviewKey = reviewKey; migrated = true; }
+      if (!task.reviewUrl) { task.reviewUrl = publicBase + "/bulletin/review/" + reviewKey; migrated = true; }
+      if (!task.progressUrl) { task.progressUrl = publicBase + "/bulletin/progress/" + reviewKey; migrated = true; }
+      if (!task.completeUrl) { task.completeUrl = publicBase + "/bulletin/complete/" + reviewKey; migrated = true; }
+      if (!task.handoff) { task.handoff = { status: task.status === "completed" ? "completed" : "not_started", summary: "", todo: [], completed: [], next: "", blocker: "", updatedAt: null }; migrated = true; }
+      if (task.conversationUrl === "https://chatgpt.com/" || task.conversationUrl === "https://chatgpt.com") { task.conversationUrl = null; migrated = true; }
+      if (typeof task.prompt === "string" && !task.prompt.includes("APOLLO BULLETIN WORKER HANDOFF")) {
+        task.prompt += "\n\n" + workerHandoffText({ progressUrl: task.progressUrl, completeUrl: task.completeUrl, reviewUrl: task.reviewUrl });
+        migrated = true;
+      }
+    }
+    if (migrated) { log("legacy-tasks-migrated-for-browser-handoff"); await save(); }
   }
   function log(event, taskId) { state.activity.push({ at: now(), event, taskId }); state.activity = state.activity.slice(-300); }
   async function tick() {
