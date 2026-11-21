@@ -80,10 +80,12 @@ async function targetTab(url) {
 }
 
 async function runOnce(manual = false) {
-  if (running) return save(await getState(), "tick-skipped-already-running");
+  if (running) return getState();
   running = true;
+  let allowPausedManual = false;
   try {
     let state = await getState();
+    allowPausedManual = manual && state.paused === true;
     if (!state.enabled || (state.paused && !manual)) {
       return save(state, "tick-skipped-paused");
     }
@@ -158,6 +160,14 @@ async function runOnce(manual = false) {
       return save(state, "tick-skipped-target-tab-lost-focus-before-send");
     }
 
+    // Re-read state before persisting intent so Pause/Stop/Complete actions made
+    // during tab inspection are not overwritten by this tick's stale snapshot.
+    state = await getState();
+    const latestItem = state.queue.find(q => q.id === item.id);
+    if (!state.enabled || (state.paused && !allowPausedManual) || latestItem?.status !== item.status) {
+      return save(state, "tick-skipped-queue-state-changed-before-send");
+    }
+
     const attemptAt = Date.now();
     state.queue = state.queue.map(q => q.id === item.id
       ? markQueueAttempted(q, prompt, attemptAt)
@@ -166,6 +176,30 @@ async function runOnce(manual = false) {
     state.lastAttemptId = item.id;
     state = await save(state, manual ? "manual-send-intent" : "scheduled-send-intent");
 
+    // If the user paused, stopped, or completed the item while the intent was
+    // being persisted, restore the prior phase before any browser click occurs.
+    const beforeClick = await getState();
+    const attemptedItem = beforeClick.queue.find(q => q.id === item.id);
+    if (!beforeClick.enabled
+        || (beforeClick.paused && !allowPausedManual)
+        || attemptedItem?.status !== "attempted"
+        || attemptedItem.attemptedAt !== attemptAt) {
+      if (attemptedItem?.status === "attempted" && attemptedItem.attemptedAt === attemptAt) {
+        beforeClick.queue = beforeClick.queue.map(q => q.id === item.id
+          ? {
+              ...q,
+              status: q.resumeStatus === "active" ? "active" : "pending",
+              resumeStatus: null,
+              attemptedAt: null,
+              attemptedPrompt: null
+            }
+          : q);
+      }
+      const saved = await save(beforeClick, "send-cancelled-before-click-state-changed");
+      await ensureAlarm();
+      return saved;
+    }
+
     try {
       const result = await chrome.tabs.sendMessage(tab.id, {
         type: "APOLLO_SUBMIT",
@@ -173,6 +207,12 @@ async function runOnce(manual = false) {
         targetUrl: item.targetUrl
       });
       state = await getState();
+      const currentItem = state.queue.find(q => q.id === item.id);
+      if (currentItem?.status !== "attempted" || currentItem.attemptedAt !== attemptAt) {
+        const saved = await save(state, "send-result-ignored-queue-state-changed");
+        await ensureAlarm();
+        return saved;
+      }
       state.queue = state.queue.map(q => q.id === item.id
         ? recordQueueAttempt(q, result?.clicked === true, Date.now())
         : q);
@@ -183,7 +223,8 @@ async function runOnce(manual = false) {
       await ensureAlarm();
       return saved;
     } catch {
-      const saved = await save(await getState(), "send-error-no-auto-retry");
+      const currentState = await getState();
+      const saved = await save(currentState, "send-error-no-auto-retry");
       await ensureAlarm();
       return saved;
     }
