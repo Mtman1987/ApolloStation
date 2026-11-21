@@ -1,0 +1,77 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { normalizeChatGptConversationUrl } from "../tools/apollo-bulletin/browser-worker.mjs";
+import { createBulletinServer } from "../tools/apollo-bulletin/server.mjs";
+
+test("hosted browser accepts only an exact live ChatGPT conversation URL", () => {
+  assert.equal(normalizeChatGptConversationUrl("https://chatgpt.com/c/abc-123"), "https://chatgpt.com/c/abc-123");
+  for (const value of [
+    "",
+    "https://chatgpt.com/share/abc",
+    "https://chatgpt.com/c/abc?foo=bar",
+    "https://chatgpt.com/c/abc#fragment",
+    "https://example.com/c/abc",
+    "http://chatgpt.com/c/abc",
+    "https://chatgpt.com/",
+  ]) assert.throws(() => normalizeChatGptConversationUrl(value));
+});
+
+test("Bulletin requires the exact conversation URL for real ChatGPT tasks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-hosted-"));
+  const app = createBulletinServer({ statePath: join(directory, "state.json"), port: 0 });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const create = body => fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const invalid = await create({ name: "Bad target", prompt: "Do work", destination: "chatgpt", scheduleType: "manual" });
+    assert.equal(invalid.status, 400);
+    const valid = await create({ name: "Hosted task", prompt: "Do work", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/abc-123", maxCycles: 4, scheduleType: "manual" });
+    assert.equal(valid.status, 201);
+    const { task } = await valid.json();
+    assert.equal(task.destination, "chatgpt");
+    assert.equal(task.conversationUrl, "https://chatgpt.com/c/abc-123");
+    assert.equal(task.maxCycles, 4);
+    assert.equal(task.status, "paused");
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ChatGPT work continuation is bounded and persisted before the next scheduled cycle", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-continuation-"));
+  const statePath = join(directory, "state.json");
+  const app = createBulletinServer({
+    statePath, port: 0,
+    dispatch: async () => ({ submitted: true, receipt: { reply: "Partial progress. I updated the checkpoint." }, reason: "test response" }),
+  });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Continue me", prompt: "Implement the feature", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/abc-123", maxCycles: 2, scheduleType: "manual" }),
+    });
+    const { task } = await created.json();
+    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    let saved;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      saved = JSON.parse(await readFile(statePath, "utf8"));
+      if (saved.tasks[0]?.status === "scheduled") break;
+    }
+    assert.equal(saved.tasks[0].cycles, 1);
+    assert.equal(saved.tasks[0].status, "scheduled");
+    assert.match(saved.tasks[0].prompt, /^Continue the existing task/);
+    assert.equal(saved.tasks[0].maxCycles, 2);
+    assert.ok(saved.tasks[0].nextRunAt > Date.now());
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
