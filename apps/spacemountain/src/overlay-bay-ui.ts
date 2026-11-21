@@ -251,11 +251,6 @@ export class OverlayBayParityController {
     this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
     this.changed();this.render(bay);
   }
-    const scene=createOverlayScene("Personal Bulletin");
-    scene.sources=BULLETIN_COMPONENTS.filter(item=>item.id!=="history").map((item,index)=>({...this.bulletinSource(item),zIndex:index}));
-    this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
-    this.changed();this.render(bay);
-  }
   private addBulletinWidget(id:string,bay:HTMLElement) {
     const component=BULLETIN_COMPONENTS.find(item=>item.id===id);if(!component)return;
     this.addSource(this.bulletinSource(component),bay);
