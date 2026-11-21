@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Apollo Bulletin Work Resumer",
+  "version": "0.2.0",
+  "description": "Guarded local queue and hourly resume helper for ChatGPT conversations, with a GitHub Actions local-browser proof bridge.",
+  "permissions": ["storage", "alarms", "tabs", "notifications"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://github.com/Mtman1987/ApolloStation/pull/553*"
+  ],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Apollo Bulletin" },
+  "content_scripts": [
+    { "matches": ["https://chatgpt.com/*"], "js": ["content.js"], "run_at": "document_idle" },
+    { "matches": ["https://github.com/Mtman1987/ApolloStation/pull/553*"], "js": ["github-bridge.js"], "run_at": "document_idle" }
+  ]
+}
