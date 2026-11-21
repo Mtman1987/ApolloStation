@@ -10,6 +10,9 @@ async function getState() {
 async function notifyCompletion(allDone) {
   try { await chrome.notifications.create({ type: "basic", iconUrl: chrome.runtime.getURL("icon.svg"), title: "Apollo Bulletin", message: allDone ? "All queued tasks are complete. The hourly resumer stopped." : "A queued task is complete. The remaining queue will continue." }); } catch {}
 }
+async function notifyLimitReached() {
+  try { await chrome.notifications.create({ type: "basic", iconUrl: chrome.runtime.getURL("icon.svg"), title: "Apollo Bulletin", message: "A task reached its cycle limit. You can resume it or mark it complete in the queue." }); } catch {}
+}
 async function save(state, event) {
   state.activity = [...(state.activity || []), { at: Date.now(), event }].slice(-200);
   await chrome.storage.local.set({ state });
@@ -58,7 +61,9 @@ async function runOnce(manual = false) {
     if (taskCycleLimitReached(item, state.maxCycles)) {
       if (item.status === "active") {
         state.queue = state.queue.map(q => q.id === item.id ? { ...q, status: "limit-reached", limitReachedAt: Date.now() } : q);
-        return save(state, "task-cycle-limit-reached");
+        const saved = await save(state, "task-cycle-limit-reached");
+        await notifyLimitReached();
+        return saved;
       }
       return save(state, "tick-skipped-task-cycle-cap");
     }
