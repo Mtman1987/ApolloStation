@@ -7,7 +7,6 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 const root = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 8080);
 const workerToken = process.env.APOLLO_COCKPIT_WORKER_TOKEN || "";
-const ownerPassword = process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD || "";
 const ui = await readFile(join(root, "index.html"), "utf8");
 
 const commands = new Map();
@@ -41,13 +40,9 @@ async function body(req, limit = 2_000_000) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 function authorizedOwner(req) {
-  if (!ownerPassword) return false;
-  const value = req.headers.authorization || "";
-  if (!value.startsWith("Basic ")) return false;
-  let decoded = "";
-  try { decoded = Buffer.from(value.slice(6), "base64").toString("utf8"); } catch { return false; }
-  const split = decoded.indexOf(":");
-  return split > 0 && decoded.slice(0, split) === "owner" && safeEqual(decoded.slice(split + 1), ownerPassword);
+  const email = req.headers["x-hostless-access-email"];
+  const role = req.headers["x-hostless-access-role"];
+  return typeof email === "string" && email.trim().length > 0 && (role === "member" || role === "owner");
 }
 function authorizedWorker(req) {
   const value = req.headers.authorization || "";
@@ -156,11 +151,7 @@ const server = createServer(async (req, res) => {
       return send(res, 404, { error: "internal_not_found" });
     }
 
-    if (!authorizedOwner(req)) {
-      if (!ownerPassword) return send(res, 503, { error: "owner_password_not_configured" });
-      res.writeHead(401, { "www-authenticate": 'Basic realm="Apollo DevOps Cockpit"', "cache-control": "no-store" });
-      return res.end("Owner sign-in required");
-    }
+    if (!authorizedOwner(req)) return send(res, 403, { error: "hostless_owner_session_required" });
     if (req.method === "GET" && url.pathname === "/") return send(res, 200, ui, { "content-type": "text/html; charset=utf-8" });
     if (req.method === "GET" && url.pathname === "/api/status") {
       return send(res, 200, { worker, queueLength: queue.length, recentCommands: [...commands.values()].slice(-12).reverse() });
