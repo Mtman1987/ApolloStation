@@ -6,7 +6,7 @@ const endpoint = new URL("/bulletin/api/cron/tick", origin);
 const response = await fetch(endpoint, {
   method: "POST",
   headers: { authorization: `Bearer ${token}`, accept: "application/json" },
-  signal: AbortSignal.timeout(180_000),
+  signal: AbortSignal.timeout(30_000),
 });
 const body = await response.text();
 let result;
