@@ -39,6 +39,21 @@ jobs:
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
+      - name: Read Node 1 project ID and Hostless worker/cron create schemas
+        env:
+          NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+        run: |
+          set -euo pipefail
+          PROJECTS="$(curl -fsS --max-time 15 -H "Authorization: $NODE1_TOKEN" https://api.hostless.cloud/v1/projects)"
+          echo "=== Node 1 accessible Hostless projects ==="
+          echo "$PROJECTS" | jq -r 'if type == "array" then .[] | {id,name} else (.projects // [])[] | {id,name} end'
+          echo "=== Hostless MCP create-tool schemas ==="
+          curl -fsS --max-time 20 https://mcp.hostless.app/mcp \
+            -H "Authorization: $NODE1_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            | jq '.result.tools[] | select(.name == "workers_create" or .name == "cron_jobs_create" or .name == "projects_list" or .name == "workers_list" or .name == "cron_jobs_list") | {name,inputSchema}'
       - name: Inspect account scopes, current resources and CLI worker commands
         env:
           NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
