@@ -36,7 +36,9 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 ## Deliberate prototype boundary
 
 - The scheduler persists dispatch intent before invoking its adapter and never automatically resends an uncertain dispatch.
-- The ChatGPT browser adapter is still a stub (browser-adapter-not-connected). This PR does not claim that scheduled prompts are actually sent to ChatGPT.
+- ChatGPT tasks use the dedicated hosted Chromium browser and the visible signed-in ChatGPT UI. The owner signs in through the phone-accessible `/bulletin/browser` console; the worker accepts only exact `https://chatgpt.com/c/<id>` targets, never overwrites a draft, requires a visible enabled Send control, and waits for an assistant response.
+- ChatGPT tasks use a unique completion marker and a configurable 1–100 cycle limit (default 8). Incomplete responses schedule a continuation after 60 seconds. A completion marker ends the task; a cycle limit or explicit owner-review request pauses it for review. Uncertain sends are never retried automatically.
+- The simulator remains a separate safe test destination and does not exercise real ChatGPT delivery.
 - The existing repo documents the Apollo-native terminal backend as unfinished. No fake terminal frame or second terminal backend is introduced; the existing Mission Control/operations app frame is reusable, but a real terminal panel still needs the missing backend.
 - The open task review URL and task API remain private-development prototype surfaces and require hardening before public exposure.
 - No AI response monitoring, response parsing, or automatic continuation loop is implemented.
@@ -46,7 +48,7 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 
 Node 1 exposes the isolated Chromium browser at `/bulletin/browser`. The browser opens `https://chatgpt.com/` and provides a live screenshot, restricted navigation to ChatGPT/OpenAI sign-in domains, click, and text-entry controls. Its Chromium profile is separate from Lounge and all other application browsers.
 
-The browser profile is currently stored in the Hostless runtime's temporary directory. GitHub Actions artifact checkpoint/restore is the required next persistence step; do not treat the login as durable across container replacement until that is implemented and verified.
+The queue state and Chromium profile default to `/data/apollo-bulletin/state.json` and `/data/apollo-browser/profile`. Attach a persistent Hostless volume at `/data` on Node 1 before relying on scheduled work or a saved ChatGPT login. If the volume is absent, the browser session and queue may be lost when the container is replaced.
 
 
-The browser console is owner-protected with HTTP Basic authentication. Use username `owner` and the password configured as `APOLLO_BROWSER_CONTROL_PASSWORD`; if that is not set, the service falls back to `APOLLO_PREVIEW_PASSWORD`. If neither secret exists, the console fails closed rather than exposing a logged-in browser publicly.
+The browser console is owner-protected with HTTP Basic authentication. It is designed for mobile use: it streams a screenshot and accepts taps and text input so the owner can sign in without a desktop browser extension. Use username `owner` and the password configured as `APOLLO_BROWSER_CONTROL_PASSWORD`; if that is not set, the service falls back to `APOLLO_PREVIEW_PASSWORD`. If neither secret exists, the console fails closed rather than exposing a logged-in browser publicly.
