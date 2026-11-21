@@ -108,6 +108,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/api/tasks") return send(200, { tasks: state.tasks.map(t => ({ ...t, prompt: undefined })), activity: state.activity.slice(-100).reverse() });
       if (req.method === "POST" && url.pathname === "/api/tasks") {
         const input = await body(); if (!input.name?.trim() || !input.prompt?.trim()) return send(400, { error: "Task name and prompt are required" });
+        const destination = input.destination === "test-simulator" ? "test-simulator" : "chatgpt";
+        let conversationUrl = input.conversationUrl || "";
+        if (destination === "chatgpt") { try { conversationUrl = normalizeChatGptConversationUrl(conversationUrl); } catch (error) { return send(400, { error: error.message }); } }
         let schedule; try { schedule = normalizeSchedule({ type: input.scheduleType || input.schedule || "manual", runAt: input.runAt, every: input.every, unit: input.unit, weekdays: input.weekdays, time: input.time, day: input.day }, now()); } catch (error) { return send(400, { error: error.message }); }
         const runAt = nextScheduledAt(schedule, now());
         const id = randomUUID(); const reviewKey = randomUUID(); const reviewUrl = (process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app") + "/bulletin/review/" + reviewKey;
