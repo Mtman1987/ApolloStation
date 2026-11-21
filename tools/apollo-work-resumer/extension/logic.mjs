@@ -5,14 +5,10 @@ export const CONTINUATION_PREFIX = "Continue working on the task above from your
 
 export function nextQueueItem(queue = []) {
   if (!Array.isArray(queue)) return null;
-  // An uncertain send blocks the whole queue until the owner explicitly retries or completes it.
   if (queue.some(item => item?.status === "attempted")) return null;
-
   const active = queue.filter(item => item?.status === "active");
   if (active.length > 1) return null;
   if (active.length === 1) return active[0];
-
-  // An owner-confirmed retry takes priority over ordinary pending work.
   return queue.find(item => item?.status === "pending" && Number.isFinite(item.manualRetryAt))
     || queue.find(item => item?.status === "pending")
     || null;
@@ -27,8 +23,7 @@ export function buildTaskPrompt(item) {
 export function isTaskComplete(item, snapshot) {
   if (item?.status !== "active" || typeof item.completionToken !== "string" ||
       snapshot?.busy !== false || typeof snapshot.assistantText !== "string") return false;
-  const marker = item.completionToken.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
-  return new RegExp("(?:^|\\r?\\n)" + marker + "(?:\\r?\\n|$)").test(snapshot.assistantText);
+  return snapshot.assistantText.split(/\r?\n/).some(line => line.trim() === item.completionToken);
 }
 
 export function taskCycleLimitReached(item, maxCycles) {
@@ -40,7 +35,17 @@ export function allQueueCompleted(queue = []) {
 }
 
 export function isConversationUrl(value) {
-  return typeof value === "string" && /^https:\/\/chatgpt\\.com\/c\/[A-Za-z0-9-]+$/.test(value);
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.origin === "https://chatgpt.com" &&
+      url.pathname.split("/").length === 3 &&
+      url.pathname.split("/")[1] === "c" &&
+      /^[A-Za-z0-9-]+$/.test(url.pathname.split("/")[2]) &&
+      !url.search && !url.hash && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 export function selectUniqueActiveTab(matches, expectedUrl) {
@@ -64,8 +69,6 @@ export function createSerialRunner() {
 
 export function decideQueueItem({ item, prompt, snapshot, now = Date.now() }) {
   if (snapshot?.composerEmpty !== true) return { action: "noop", reason: "composer-not-empty" };
-  // Before filling, ChatGPT normally disables Send because the composer is empty.
-  // Require a visible Send control to exist here; content.js verifies it is enabled after fill.
   const preflightSnapshot = {
     ...snapshot,
     sendControlVisible: snapshot.sendControlPresent === true,
