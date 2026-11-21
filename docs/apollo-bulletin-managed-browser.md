@@ -4,13 +4,13 @@ Apollo Bulletin uses its existing Node 1 Playwright/Chromium worker. It never at
 
 ## Persistence
 
-No Hostless volume is used. The queue, activity log, and Playwright browser storage state (cookies, local storage, and IndexedDB) are stored in the existing shared Turso database.
+No Hostless volume is used. The queue, activity log, and Playwright browser storage state (cookies, local storage, and IndexedDB) are stored in the existing shared Turso database. A single embedded Hostless cron job, configured in `hostless.yaml`, wakes every minute and processes at most one due task. The Hostless app's in-process polling loop is disabled in production; Hostless owns the schedule and run history. This is one dispatcher for the queue, not one cron job per task.
 
 Node 1 requires:
 - `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`
 
-Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
+Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The cron command calls the owner-protected `/bulletin/api/cron/tick` endpoint using `APOLLO_BULLETIN_CRON_TOKEN` or `APOLLO_BROWSER_CONTROL_PASSWORD`. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
 
 ## Owner sign-in from a phone
 
