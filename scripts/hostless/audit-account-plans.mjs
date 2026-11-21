@@ -25,6 +25,12 @@ function safeIdentity(value) {
     accountCreatedAt: v?.accountCreatedAt ?? v?.account?.createdAt ?? v?.owner?.createdAt ?? null,
   };
 }
+function assessPolicyEvidence(evidence) {
+  const joined = JSON.stringify(evidence).toLowerCase();
+  if (joined.includes("legacy")) return "legacy terms explicitly identified by Hostless response";
+  if (joined.includes("shared")) return "shared account-wide allowance explicitly identified by Hostless response";
+  return "not conclusively identified in API response; inspect billing cycle details";
+}
 function collectAllowance(value, out = []) {
   if (!value || typeof value !== "object") return out;
   if (Array.isArray(value)) { for (const x of value) collectAllowance(x, out); return out; }
@@ -80,6 +86,7 @@ for (const [node, token] of accounts) {
       available: billing.available,
       dateRange: { startDate, endDate },
       appliedPolicyEvidence: billing.available ? collectAllowance(billing.data) : [],
+      policyAssessment: billing.available ? assessPolicyEvidence(collectAllowance(billing.data)) : "billing breakdown unavailable to this API key",
       cycles: cycles.available ? rows(cycles, ["cycles", "items"]) : null,
       rawShapeKeys: billing.available && billing.data && typeof billing.data === "object" ? Object.keys(billing.data) : [],
     },
