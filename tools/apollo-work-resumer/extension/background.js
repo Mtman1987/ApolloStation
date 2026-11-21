@@ -16,6 +16,7 @@ if(m?.type==="APOLLO_ENQUEUE"){const s=await getState();if(typeof m.prompt!=="st
 if(m?.type==="APOLLO_PAUSE"){const s=await getState(),r=await save({...s,paused:true},"paused");await ensureAlarm();return r}
 if(m?.type==="APOLLO_RESUME"){const s=await getState(),r=await save({...s,paused:false,enabled:true},"resumed");await ensureAlarm();return r}
 if(m?.type==="APOLLO_STOP"){const s=await getState(),r=await save({...s,enabled:false,paused:true},"stopped");await ensureAlarm();return r}
+if(m?.type==="APOLLO_SET_MAX_CYCLES"){const n=Number(m.maxCycles);if(!Number.isInteger(n)||n<1||n>100)throw Error("Max cycles must be 1–100");const s=await getState();return save({...s,maxCycles:n},"max-cycles-updated")}
 if(m?.type==="APOLLO_RUN_NOW")return runOnce(true);
 if(m?.type==="APOLLO_COMPLETE"){const s=await getState();s.queue=s.queue.map(q=>q.id===m.id?{...q,status:"completed",completedAt:Date.now()}:q);s.completed=s.queue.length>0&&s.queue.every(q=>q.status==="completed");return save(s,"queue-item-completed")}
 })().then(respond).catch(e=>respond({error:e.message||"Action failed"}));return true});
