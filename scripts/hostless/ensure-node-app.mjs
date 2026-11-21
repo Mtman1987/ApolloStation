@@ -82,13 +82,13 @@ function selectProject(projects, key) {
 }
 
 function runCli(args, description) {
-  // Bound every CLI call so a stalled API/CLI cannot occupy a GitHub runner
-  // indefinitely. Deploy itself has a 30-minute Hostless wait limit below.
+  // Bound each CLI call so a stalled Hostless API cannot occupy the release job.
+  // The deployment status loop below owns the explicit ten-minute wait limit.
   const result = spawnSync("hostless", args, {
     encoding: "utf8",
     env: process.env,
     maxBuffer: 20 * 1024 * 1024,
-    timeout: 35 * 60 * 1000,
+    timeout: 90 * 1000,
     killSignal: "SIGTERM",
   });
   if (result.stdout) process.stdout.write(result.stdout);
@@ -304,7 +304,7 @@ function tryCliJson(args) {
     encoding: "utf8",
     env: process.env,
     maxBuffer: 20 * 1024 * 1024,
-    timeout: 3 * 60 * 1000,
+    timeout: 30 * 1000,
     killSignal: "SIGTERM",
   });
   if (result.status !== 0 || result.error) {
@@ -335,6 +335,7 @@ console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 const deadline = Date.now() + 10 * 60 * 1000;
 let pollFailures = 0;
 let lastStatus = "unknown";
+let lastStatusLogAt = 0;
 while (Date.now() < deadline) {
   await sleep(15000);
   const poll = tryCliJson(["deploy", "status", String(deploymentId), "--json", ...scope]);
@@ -345,7 +346,12 @@ while (Date.now() < deadline) {
     continue;
   }
   pollFailures = 0;
-  lastStatus = normalizeHostlessDeploymentStatus(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown");
+  const nextStatus = normalizeHostlessDeploymentStatus(poll.value?.status ?? poll.value?.deployment?.status ?? "unknown");
+  if (nextStatus !== lastStatus || Date.now() - lastStatusLogAt >= 60000) {
+    console.log(`Hostless deployment ${deploymentId} for ${node.app}: ${nextStatus}`);
+    lastStatusLogAt = Date.now();
+  }
+  lastStatus = nextStatus;
   if (isHostlessDeploymentSuccessful(lastStatus)) break;
   if (isHostlessDeploymentFailure(lastStatus)) {
     const reason = poll.value?.failReason ?? poll.value?.deployment?.failReason ?? poll.value?.message ?? poll.value?.error;
@@ -353,7 +359,7 @@ while (Date.now() < deadline) {
     fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${lastStatus}${detail}.`);
   }
 }
-if (!isHostlessDeploymentSuccessful(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 40 minutes (last status: ${lastStatus}).`);
+if (!isHostlessDeploymentSuccessful(lastStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state within 10 minutes (last status: ${lastStatus}).`);
 
 console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${lastStatus}.`);
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
