@@ -1,4 +1,4 @@
-import { buildTaskPrompt, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
+import { allQueueCompleted, buildTaskPrompt, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
 const ALARM = "apollo-bulletin-hourly";
 const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [] };
 let running = false;
@@ -45,8 +45,11 @@ async function runOnce(manual = false) {
       state.queue = state.queue.map(q => q.id === item.id
         ? { ...q, status: "completed", completedAt: Date.now(), completionDetected: true }
         : q);
-      state.completed = state.queue.length > 0 && state.queue.every(q => q.status === "completed");
-      return save(state, "task-completion-marker-detected");
+      state.completed = allQueueCompleted(state.queue);
+      if (state.completed) { state.enabled = false; state.paused = true; }
+      const saved = await save(state, "task-completion-marker-detected");
+      if (state.completed) await ensureAlarm();
+      return saved;
     }
     if (taskCycleLimitReached(item, state.maxCycles)) return save(state, "tick-skipped-task-cycle-cap");
     if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < state.cooldownMs) {
@@ -126,8 +129,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       state.queue = state.queue.map(q => q.id === message.id
         ? { ...q, status: "completed", completedAt: Date.now(), completionDetected: false }
         : q);
-      state.completed = state.queue.length > 0 && state.queue.every(q => q.status === "completed");
-      return save(state, "queue-item-completed");
+      state.completed = allQueueCompleted(state.queue);
+      if (state.completed) { state.enabled = false; state.paused = true; }
+      const saved = await save(state, "queue-item-completed");
+      if (state.completed) await ensureAlarm();
+      return saved;
     }
   })().then(respond).catch(error => respond({ error: error.message || "Action failed" }));
   return true;
