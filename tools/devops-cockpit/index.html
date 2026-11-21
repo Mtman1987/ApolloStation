@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apollo DevOps Cockpit</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1220;color:#e8eef9;font:14px system-ui,sans-serif}header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #263650;background:#111b2d;position:sticky;top:0}h1{font-size:17px;margin:0}small,.muted{color:#9aabc5}.layout{max-width:1200px;margin:0 auto;padding:16px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:14px}.panel{background:#111b2d;border:1px solid #2b3b57;border-radius:12px;padding:14px;min-width:0}.panel h2{font-size:14px;margin:0 0 12px}.screen{background:#05080f;border:1px solid #344560;border-radius:8px;min-height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden}.screen img{width:100%;height:auto;display:block}.screen .empty{padding:36px;color:#9aabc5;text-align:center}button,input,textarea,select{font:inherit;color:inherit;background:#0a1425;border:1px solid #3b506f;border-radius:7px;padding:9px;max-width:100%}button{cursor:pointer;background:#234879}button:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:9px 0}.row input{flex:1;min-width:100px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid button{width:100%}textarea{width:100%;min-height:80px;resize:vertical}.status{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.pill{border:1px solid #405574;border-radius:99px;padding:4px 9px;font-size:12px}.good{color:#9ae6b4}.bad{color:#ffb4a9}.log{font:12px ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#091221;padding:10px;border-radius:8px}.hint{font-size:12px;color:#9aabc5;line-height:1.5}.danger{background:#6b2c36}.wide{width:100%}@media(max-width:850px){.layout{grid-template-columns:1fr;padding:10px}.screen{min-height:240px}header{padding:12px}}
+</style>
+</head>
+<body>
+<header><div><h1>Apollo DevOps Cockpit</h1><small>Dedicated ChatGPT browser · separate Hostless runtime</small></div><span id="connection" class="pill">Connecting…</span></header>
+<main class="layout">
+<section class="panel">
+<h2>Dedicated ChatGPT browser</h2>
+<div class="status"><span id="browserState" class="pill">Browser starting</span><span id="loginState" class="pill">Login not checked</span><span id="urlState" class="pill">No page</span></div>
+<div class="screen"><img id="screen" alt="Live browser screenshot" hidden><div class="empty" id="screenEmpty">Waiting for the dedicated Chromium browser…</div></div>
+<div class="row"><input id="navUrl" value="https://chatgpt.com/" aria-label="ChatGPT URL"><button id="navigate">Open</button><button id="refresh">Refresh view</button></div>
+<p class="hint">Sign in to ChatGPT in this isolated browser. Click the screenshot to send a click at that position. For text entry, use the text box below and press Type, then use the key controls.</p>
+<div class="row"><input id="typeText" placeholder="Text to type into the browser"><button id="type">Type / paste</button></div>
+<div class="grid">
+<button data-key="Enter">Enter</button><button data-key="Tab">Tab</button><button data-key="Escape">Escape</button><button data-key="Backspace">Backspace</button>
+</div>
+</section>
+<aside class="panel">
+<h2>Prompt dispatch</h2>
+<p class="hint">The worker sends prompts through the ChatGPT composer. It confirms submission but does not scrape or monitor the reply.</p>
+<textarea id="prompt">Reply with exactly: APOLLO_BROWSER_CONNECTED</textarea>
+<div class="row"><button class="wide" id="send">Send test prompt once</button></div>
+<div class="row"><button class="wide danger" id="queueCron">Queue saved test prompt</button></div>
+<h2 style="margin-top:18px">Worker status</h2>
+<div id="status" class="log">Loading…</div>
+<h2 style="margin-top:18px">Latest command</h2>
+<div id="command" class="log">No commands yet.</div>
+</aside>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let lastCommand=null;
+async function api(path,options={}){const r=await fetch(path,{cache:"no-store",headers:{"content-type":"application/json",...(options.headers||{})},...options});const d=options.raw? r : await r.json();if(!r.ok)throw new Error(d.error||r.statusText);return d;}
+async function command(payload){const d=await api("/api/input",{method:"POST",body:JSON.stringify(payload)});lastCommand=d.command.id;$("command").textContent="Queued "+lastCommand;await waitCommand(lastCommand);}
+async function waitCommand(id){for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,500));const d=await api("/api/commands/"+encodeURIComponent(id));if(d.command.status==="completed"||d.command.status==="failed"){$("command").textContent=JSON.stringify(d.command.result,null,2);return d.command;}}$("command").textContent="Still processing: "+id;}
+async function refresh(){try{const d=await api("/api/status");const w=d.worker||{};$("connection").textContent="Cockpit connected";$("connection").className="pill good";$("browserState").textContent=w.browserReady?"Chromium ready":"Browser starting";$("browserState").className="pill "+(w.browserReady?"good":"");$("loginState").textContent=w.loggedIn?"ChatGPT signed in":"ChatGPT sign-in required";$("loginState").className="pill "+(w.loggedIn?"good":"bad");$("urlState").textContent=w.url||"No page";$("status").textContent=JSON.stringify({workerConnected:w.connected,browserReady:w.browserReady,loggedIn:w.loggedIn,busy:w.busy,restorePending:w.restorePending,lastSeenAt:w.lastSeenAt?new Date(w.lastSeenAt).toLocaleString():null,lastError:w.lastError,queueLength:d.queueLength},null,2);if(w.browserReady){$("screen").src="/api/screenshot?ts="+Date.now();$("screen").hidden=false;$("screenEmpty").hidden=true;}}catch(e){$("connection").textContent="Disconnected";$("connection").className="pill bad";$("status").textContent=e.message;}}
+$("screen").addEventListener("click",e=>{const r=$("screen").getBoundingClientRect();command({action:"click",x:Math.round((e.clientX-r.left)*1280/r.width),y:Math.round((e.clientY-r.top)*900/r.height)}).catch(e=>alert(e.message));});
+$("navigate").onclick=()=>command({action:"navigate",url:$("navUrl").value}).catch(e=>alert(e.message));
+$("refresh").onclick=refresh;
+$("type").onclick=()=>command({action:"type",text:$("typeText").value}).then(()=>$("typeText").value="").catch(e=>alert(e.message));
+document.querySelectorAll("[data-key]").forEach(b=>b.onclick=()=>command({action:"press",key:b.dataset.key}).catch(e=>alert(e.message)));
+$("send").onclick=async()=>{try{const d=await api("/api/dispatch",{method:"POST",body:JSON.stringify({prompt:$("prompt").value})});lastCommand=d.command.id;$("command").textContent="Queued "+lastCommand;await waitCommand(lastCommand);}catch(e){alert(e.message);}};
+$("queueCron").onclick=async()=>{try{const d=await api("/api/test",{method:"POST",body:"{}"});lastCommand=d.command.id;$("command").textContent="Queued saved test prompt "+lastCommand;await waitCommand(lastCommand);}catch(e){alert(e.message);}};
+refresh();setInterval(refresh,2500);
+</script>
+</body></html>
