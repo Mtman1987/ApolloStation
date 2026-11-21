@@ -300,3 +300,62 @@ test("uncertain sends cannot be hidden by Pause or Stop and require manual resol
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("Pause during an in-flight ChatGPT cycle resumes with a continuation, not the original prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-pause-inflight-"));
+  const statePath = join(directory, "state.json");
+  let releaseFirst;
+  const prompts = [];
+  const app = createBulletinServer({
+    statePath, port: 0,
+    dispatch: async task => {
+      prompts.push(task.prompt);
+      if (prompts.length === 1) return new Promise(resolve => { releaseFirst = () => resolve({ submitted: true, receipt: { reply: "Partial work; checkpoint updated." }, reason: "first cycle" }); });
+      return { submitted: true, receipt: { reply: "Work complete.\n" + task.completionMarker }, reason: "completion marker" };
+    },
+  });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Pause safely", prompt: "Implement the requested feature", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/pause-test", maxCycles: 3, scheduleType: "manual" }),
+    });
+    const { task } = await created.json();
+    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    let status;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const data = await (await fetch(origin + "/api/tasks")).json();
+      status = data.tasks.find(item => item.id === task.id)?.status;
+      if (status === "dispatching") break;
+    }
+    assert.equal(status, "dispatching");
+    const paused = await fetch(origin + "/api/tasks/" + task.id + "/pause", { method: "POST" });
+    assert.equal(paused.status, 200);
+    await paused.text();
+    releaseFirst();
+    let saved;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      saved = JSON.parse(await readFile(statePath, "utf8"));
+      if (saved.tasks[0]?.status === "paused") break;
+    }
+    assert.equal(saved.tasks[0].status, "paused");
+    assert.match(saved.tasks[0].prompt, /^Continue the existing task/);
+    const resumed = await fetch(origin + "/api/tasks/" + task.id + "/resume", { method: "POST" });
+    assert.equal(resumed.status, 200);
+    await resumed.text();
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      saved = JSON.parse(await readFile(statePath, "utf8"));
+      if (saved.tasks[0]?.status === "completed") break;
+    }
+    assert.equal(saved.tasks[0].status, "completed");
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1], /^Continue the existing task/);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
