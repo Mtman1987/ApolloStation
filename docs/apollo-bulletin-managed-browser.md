@@ -7,8 +7,8 @@ Apollo Bulletin uses its existing Node 1 Playwright/Chromium worker. It never at
 No Hostless volume is used. The queue, activity log, and Playwright browser storage state (cookies, local storage, and IndexedDB) are stored in the existing shared Turso database.
 
 Node 1 requires:
-- `SHARED_TURSO_DATABASE_URL` (or the existing `TURSO_DATABASE_URL` alias)
-- `NODE1_TURSO_AUTH_TOKEN` (or the existing `TURSO_AUTH_TOKEN` alias)
+- `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`
 
 Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
 
