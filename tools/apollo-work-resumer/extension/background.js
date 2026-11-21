@@ -1,4 +1,4 @@
-import { allQueueCompleted, buildTaskPrompt, isConversationUrl, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
+import { allQueueCompleted, buildTaskPrompt, decideQueueItem, isConversationUrl, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
 const ALARM = "apollo-bulletin-hourly";
 const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [] };
 let running = false;
@@ -42,10 +42,7 @@ async function runOnce(manual = false) {
     let snapshot;
     try { snapshot = await chrome.tabs.sendMessage(tab.id, { type: "APOLLO_SNAPSHOT" }); }
     catch { return save(state, "tick-skipped-content-script-unavailable"); }
-    if (!snapshot || snapshot.url !== item.targetUrl || snapshot.busy !== false ||
-        snapshot.composerReady !== true || snapshot.sendControlVisible !== true) {
-      return save(state, "tick-skipped-ambiguous-ui");
-    }
+    if (!snapshot || snapshot.url !== item.targetUrl) return save(state, "tick-skipped-conversation-mismatch");
 
     if (isTaskComplete(item, snapshot)) {
       state.queue = state.queue.map(q => q.id === item.id
@@ -72,6 +69,8 @@ async function runOnce(manual = false) {
     }
 
     const prompt = buildTaskPrompt(item);
+    const decision = decideQueueItem({ item, prompt, snapshot, now: Date.now() });
+    if (decision.action !== "submit") return save(state, "tick-skipped-guard:" + decision.reason);
     state.queue = state.queue.map(q => q.id === item.id ? { ...q, status: "attempted", attemptedAt: Date.now() } : q);
     state.lastAttemptAt = Date.now();
     state.lastAttemptId = item.id;
