@@ -8,6 +8,7 @@ on:
       - "packages/**"
       - "services/**"
       - "scripts/**"
+      - "tools/apollo-bulletin/**"
       - "tests/**"
       - "package.json"
       - "package-lock.json"
