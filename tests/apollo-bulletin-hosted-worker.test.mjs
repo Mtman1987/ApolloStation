@@ -277,7 +277,8 @@ test("uncertain sends cannot be hidden by Pause or Stop and require manual resol
       body: JSON.stringify({ name: "Uncertain send", prompt: "Inspect before retry", destination: "test-simulator", scheduleType: "manual" }),
     });
     const { task } = await created.json();
-    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    await runResponse.text();
     let status;
     for (let attempt = 0; attempt < 30; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
