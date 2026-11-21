@@ -521,6 +521,8 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
+  if (pathname === "/v1/auth/linked-provider-recovery/start" || pathname === "/v1/auth/linked-provider-recovery/callback") return method === "GET";
+  if (pathname === "/v1/auth/linked-provider-recovery/password") return method === "POST";
   if(pathname==="/v1/identity/twitch-bots")return ["GET","POST"].includes(method);
   if(/^\/v1\/identity\/twitch-bots\/(start|callback)$/.test(pathname))return method==="GET";
   if (["/v1/assistant/conversation", "/v1/assistant/conversation/feed", "/v1/assistant/public-memory", "/v1/assistant/streams"].includes(pathname)) return method === "GET" || (method === "POST" && pathname === "/v1/assistant/conversation");
