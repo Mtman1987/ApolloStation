@@ -54,3 +54,10 @@ test("a rejected or missing session always reveals the SPMT bridge recovery form
   assert.match(gate, /selectTab\("spmt"\)/);
   assert.match(gate, /reportBrowserDiagnostic\("auth-gate-shown"/);
 });
+
+
+test("SPMT proxy promise rejections are caught by the HTTP handler", () => {
+  const server = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
+  assert.match(server, /return await proxy\(response,request,url,spmtOrigin,fetchImpl,false,true\);/);
+  assert.match(server, /return await proxy\(response, request, url, spmtOrigin, fetchImpl\);/);
+});
