@@ -58,14 +58,14 @@ test("an explicitly confirmed retry is prioritized over ordinary pending work", 
 
 test("initial and continuation prompts carry the unique completion marker", () => {
   assert.match(buildTaskPrompt(item), /Finish task/);
-  assert.match(buildTaskPrompt(item), /TODO\\/checkpoint/);
+  assert.match(buildTaskPrompt(item), /TODO\/checkpoint/);
   assert.match(buildTaskPrompt(item), /APOLLO_TASK_COMPLETE:q1/);
   assert.match(buildTaskPrompt({ ...item, status: "active" }), /Continue working/);
 });
 
 test("completion marker must occupy its own line in the idle latest assistant response", () => {
   const active = { ...item, status: "active" };
-  assert.equal(isTaskComplete(active, { busy: false, assistantText: "Done\\nAPOLLO_TASK_COMPLETE:q1\\n" }), true);
+  assert.equal(isTaskComplete(active, { busy: false, assistantText: "Done\nAPOLLO_TASK_COMPLETE:q1\n" }), true);
   assert.equal(isTaskComplete(active, { busy: false, assistantText: "I saw APOLLO_TASK_COMPLETE:q1 in the prompt" }), false);
   assert.equal(isTaskComplete(active, { busy: true, assistantText: "APOLLO_TASK_COMPLETE:q1" }), false);
   assert.equal(isTaskComplete(item, { busy: false, assistantText: "APOLLO_TASK_COMPLETE:q1" }), false);
