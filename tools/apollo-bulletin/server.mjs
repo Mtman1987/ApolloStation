@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createChatGPTBrowserAdapter, browserControlPage } from "./chatgpt-browser-adapter.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
@@ -21,7 +22,9 @@ function bulletinWidgetHtml(kind) {
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#0b1220;color:#edf3ff;font:13px system-ui}body{padding:12px;overflow:auto}header{display:flex;justify-content:space-between;align-items:center;gap:8px}h1{font-size:15px;margin:0 0 8px}small{color:#9eacc8}article,form{border:1px solid #293956;background:#111b30;border-radius:10px;padding:10px;margin:8px 0}article p{margin:5px 0;color:#aebbd2;overflow-wrap:anywhere}button,input,textarea,select{font:inherit;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:7px;padding:7px;max-width:100%}button{cursor:pointer;background:#234879;margin:3px 4px 3px 0}input,textarea,select{width:100%;margin:4px 0}textarea{min-height:76px;resize:vertical}.schedule{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{color:#8ee6b6}.actions{display:flex;flex-wrap:wrap}.empty{padding:18px;border:1px dashed #405577;border-radius:10px;color:#9eacc8}a{color:#8bd}@media(max-width:420px){body{padding:8px}.schedule{grid-template-columns:1fr}}</style></head><body><header><h1>'+title+'</h1><small id="updated">Loading…</small></header>'+form+'<main id="content"><div class="empty">Loading Bulletin data…</div></main>'+script+'</body></html>';
 }
 
-export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch = async () => ({ submitted: false, reason: "browser-adapter-not-connected" }), now = () => Date.now() } = {}) {
+export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch = null, browserAdapter = null, now = () => Date.now() } = {}) {
+  const chatBrowser = browserAdapter || (dispatch ? null : createChatGPTBrowserAdapter());
+  const deliverPrompt = dispatch || chatBrowser.dispatch;
   let state;
   let busy = false;
   async function save() {
@@ -44,7 +47,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         // Claim and persist before touching the browser. An uncertain send is never retried.
         task.status = "dispatching"; task.lastDispatchAt = now(); task.nextRunAt = null; log("dispatch-intent-persisted", task.id); await save();
         try {
-          const result = await dispatch(task);
+          const result = await deliverPrompt(task);
           task.status = result?.submitted ? "dispatched" : "dispatch-uncertain";
           task.lastEvent = result?.reason || (result?.submitted ? "Prompt sent once" : "Send not confirmed; manual review required");
           log(task.status, task.id);
@@ -61,6 +64,18 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/") return send(200, '<!doctype html><meta name="viewport" content="width=device-width"><title>Apollo Bulletin</title><body style="font:16px system-ui;background:#080d1c;color:#edf3ff;padding:28px"><h1>Apollo Bulletin</h1><p>Bulletin lives inside Workspace → Overlay Bay. Open Overlay Bay and choose Personal Bulletin to add the task components to your Personal overlay.</p><a style="color:#8bd" href="/?view=workspace">Open Apollo Workspace</a></body>', "text/html; charset=utf-8");
       const widgetRoute = req.method === "GET" && url.pathname.match(/^\/widgets\/(tasks|active|reviews|activity|scheduler|history)$/);
       if (widgetRoute) return send(200, bulletinWidgetHtml(widgetRoute[1]), "text/html; charset=utf-8");
+      if (req.method === "GET" && url.pathname === "/browser") return send(200, browserControlPage(), "text/html; charset=utf-8");
+      if (req.method === "GET" && url.pathname === "/browser/status") return send(200, chatBrowser ? await chatBrowser.status() : { connected: false, error: "Browser adapter was injected by the test harness" });
+      if (req.method === "GET" && url.pathname === "/browser/screenshot") {
+        if (!chatBrowser) return send(503, { error: "Browser screenshot unavailable" });
+        const screenshot = await chatBrowser.screenshot();
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        return res.end(screenshot);
+      }
+      if (req.method === "POST" && url.pathname === "/browser/input") {
+        if (!chatBrowser) return send(503, { error: "Browser input unavailable" });
+        return send(200, await chatBrowser.input(await body()));
+      }
       if (req.method === "GET" && url.pathname === "/api/tasks") return send(200, { tasks: state.tasks.map(t => ({ ...t, prompt: undefined })), activity: state.activity.slice(-100).reverse() });
       if (req.method === "POST" && url.pathname === "/api/tasks") {
         const input = await body(); if (!input.name?.trim() || !input.prompt?.trim()) return send(400, { error: "Task name and prompt are required" });
@@ -90,7 +105,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       send(404,{error:"not_found"});
     } catch (error) { send(500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
+  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); await chatBrowser?.close?.(); } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
