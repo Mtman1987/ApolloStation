@@ -9,6 +9,7 @@ on:
       - "services/**"
       - "scripts/**"
       - "tests/**"
+      - "tools/apollo-bulletin/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"
