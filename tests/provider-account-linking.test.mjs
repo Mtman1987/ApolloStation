@@ -125,7 +125,19 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     const missingUsername = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch", { redirect: "manual" });
     assert.equal(missingUsername.status, 400);
 
-    const wrongStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", { redirect: "manual" });
+    const customDomainStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=" + encodeURIComponent(username), {
+      headers: { host: "spacemountain.live" },
+      redirect: "manual",
+    });
+    assert.equal(customDomainStart.status, 302);
+    const canonicalStart = new URL(customDomainStart.headers.get("location"));
+    assert.equal(canonicalStart.origin, "https://apollo-node-1.hostless.app");
+    assert.equal(canonicalStart.pathname, "/v1/auth/linked-provider-recovery/start");
+    assert.equal(canonicalStart.searchParams.get("username"), username);
+    assert.equal(cookieValue(customDomainStart.headers.get("set-cookie"), "spmt_linked_recovery"), undefined,
+      "the custom alias must not receive host-bound OAuth state when the callback is on Node 1");
+
+    const wrongStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
     assert.equal(wrongStart.status, 302);
     const wrongAuthorization = new URL(wrongStart.headers.get("location"));
     const wrongPending = cookiePair(wrongStart.headers.get("set-cookie"));
@@ -136,13 +148,13 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     assert.equal(new URL(wrongCallback.headers.get("location")).searchParams.get("recoveryError"), "recovery_failed");
     assert.equal(cookieValue(wrongCallback.headers.get("set-cookie"), "spmt_linked_recovery_ticket"), undefined);
 
-    const stateStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=discord&username=" + encodeURIComponent(username), { redirect: "manual" });
+    const stateStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=discord&username=" + encodeURIComponent(username), { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
     const stateCookie = cookiePair(stateStart.headers.get("set-cookie"));
     const badState = await fetch(browserBase + "/v1/onboarding/twitch/callback?state=wrong-state&code=discord-valid-code", { headers: { cookie: stateCookie }, redirect: "manual" });
     assert.equal(new URL(badState.headers.get("location")).searchParams.get("recoveryError"), "invalid_state");
 
     for (const provider of ["twitch", "discord"]) {
-      const start = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=" + provider + "&username=" + encodeURIComponent(username), { redirect: "manual" });
+      const start = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=" + provider + "&username=" + encodeURIComponent(username), { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
       assert.equal(start.status, 302);
       const authorization = new URL(start.headers.get("location"));
       assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
@@ -160,6 +172,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       });
       assert.equal(callback.status, 302);
       assert.equal(new URL(callback.headers.get("location")).searchParams.get("recovery"), "verified");
+      assert.equal(new URL(callback.headers.get("location")).searchParams.get("recoveryUsername"), username);
       const callbackCookies = callback.headers.get("set-cookie") ?? "";
       assert.match(callbackCookies, /spmt_linked_recovery_ticket=/);
       assert.doesNotMatch(callbackCookies, /spmt_token=/, "OAuth verification alone must not establish the Apollo session");
