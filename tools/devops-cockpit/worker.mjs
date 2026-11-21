@@ -73,10 +73,11 @@ async function dispatch(prompt) {
   busy = true;
   try {
     const state = await status();
-    if (!state.loggedIn || !state.composerReady || !state.sendVisible) return { ok: false, reason: "ChatGPT sign-in or composer is not ready" };
+    if (!state.loggedIn || !state.composerReady) return { ok: false, reason: "ChatGPT sign-in or composer is not ready" };
     const composer = page.locator("#prompt-textarea,[contenteditable='true'][role='textbox'],textarea").first();
     await composer.fill(prompt);
     const send = page.locator("[data-testid='send-button'],button[aria-label*='Send']").first();
+    await send.waitFor({ state: "visible", timeout: 10000 });
     await send.click();
     await page.waitForTimeout(700);
     const cleared = await composer.evaluate(element => {
@@ -121,7 +122,10 @@ async function applyRestore(base64) {
   await mkdir(profileDir, { recursive: true, mode: 0o700 });
   const archivePath = join("/tmp", "apollo-cockpit-restore.tar.gz");
   await writeFile(archivePath, Buffer.from(base64, "base64"), { mode: 0o600 });
+  const entries = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8", maxBuffer: 2 * 1024 * 1024 }).split("\n").filter(Boolean);
+  if (entries.some(entry => entry.startsWith("/") || entry.split("/").includes(".."))) throw new Error("Rejected unsafe browser profile archive");
   execFileSync("tar", ["-xzf", archivePath, "-C", profileDir], { maxBuffer: 80 * 1024 * 1024 });
+  lastSnapshotAt = 0;
   restorePending = false;
   await launchBrowser();
   lastError = null;
@@ -154,7 +158,6 @@ async function run() {
       }
       await takeSnapshot();
       if (restorePending && current.loggedIn) restorePending = false;
-      lastError = null;
     } catch (error) {
       lastError = String(error.message || error).slice(0, 300);
       await request("/internal/heartbeat", { method: "POST", body: JSON.stringify({ connected: false, browserReady: Boolean(page && !page.isClosed()), restorePending, lastError }) }).catch(() => {});
