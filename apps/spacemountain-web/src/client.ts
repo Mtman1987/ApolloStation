@@ -139,14 +139,12 @@ apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); 
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 const recoveryToggle = document.getElementById("apollo-recover-account") as HTMLButtonElement | null;
 const recoveryStart = document.getElementById("apollo-recovery-start") as HTMLDivElement | null;
-const recoveryVerify = document.getElementById("apollo-recovery-verify") as HTMLButtonElement | null;
-const recoveryProvider = document.getElementById("apollo-recovery-provider") as HTMLSelectElement | null;
+const recoveryDiscord = document.getElementById("apollo-recovery-discord") as HTMLButtonElement | null;
+const recoveryTwitch = document.getElementById("apollo-recovery-twitch") as HTMLButtonElement | null;
 const recoveryMessage = document.getElementById("apollo-recovery-message") as HTMLParagraphElement | null;
 recoveryToggle?.addEventListener("click", () => { if (recoveryStart) recoveryStart.hidden = !recoveryStart.hidden; });
-recoveryVerify?.addEventListener("click", () => {
-  const provider = recoveryProvider?.value === "twitch" ? "twitch" : "discord";
-  window.location.assign(`/v1/auth/linked-provider-recovery/start?provider=${provider}`);
-});
+recoveryDiscord?.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=discord"));
+recoveryTwitch?.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=twitch"));
 const recoveryError = new URLSearchParams(window.location.search).get("recoveryError");
 if (recoveryError && recoveryMessage) recoveryMessage.textContent = "We couldn't match that verified provider account to an existing Apollo account. Try the other provider or contact the workspace owner.";
 
