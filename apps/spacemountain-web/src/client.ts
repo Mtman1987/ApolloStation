@@ -898,9 +898,10 @@ function showAuth(detail: string) {
   shellView.hidden = true;
   authView.hidden = false;
   authView.dataset.mode = "signin";
-  // Always return to the owner-approved bridge flow after a rejected or missing
-  // session. A stale tab selection must never leave the gate looking empty.
-  selectTab("spmt");
+  // A missing session is the expected starting point for recovery. Show the
+  // Apollo account tab first so the provider-recovery actions are immediately visible;
+  // the SPMT bridge remains available as an explicit alternate sign-in method.
+  selectTab("apollo");
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
   reportBrowserDiagnostic("auth-gate-shown", { mode: authView.dataset.mode, bridgeFormVisible: !loginForm.hidden });
 }
