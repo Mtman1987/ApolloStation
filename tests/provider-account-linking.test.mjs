@@ -52,12 +52,12 @@ test("signed-in users can verify and link Twitch and Discord through the existin
     for (const provider of ["twitch", "discord"]) {
       const start = await fetch(`${browserBase}/v1/identity/providers/${provider}/start?tenantId=${encodeURIComponent(tenantId)}`, { headers: { cookie: sessionCookie }, redirect: "manual" });
       assert.equal(start.status, 302);
-      const authorization = new URL(start.headers.get("location"));
+      const authorization = new URL(start.headers.location);
       assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
       assert.equal(authorization.searchParams.get("redirect_uri"), "https://spmt.test/v1/onboarding/twitch/callback");
       const state = authorization.searchParams.get("state");
       assert.ok(state);
-      const pendingCookie = cookiePair(start.headers.get("set-cookie"));
+      const pendingCookie = cookiePair(start.headers["set-cookie"]);
       assert.match(pendingCookie, /^spmt_provider_link=/);
       const callback = await fetch(`${browserBase}/v1/onboarding/twitch/callback?state=${encodeURIComponent(state)}&code=${provider}-code`, { headers: { cookie: `${sessionCookie}; ${pendingCookie}` }, redirect: "manual" });
       assert.equal(callback.status, 302);
@@ -135,10 +135,10 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     assert.equal(cookieValue(customDomainStart.headers["set-cookie"], "spmt_linked_recovery"), undefined,
       "the custom alias must not receive host-bound OAuth state when the callback is on Node 1");
 
-    const wrongStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
+    const wrongStart = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", "apollo-node-1.hostless.app");
     assert.equal(wrongStart.status, 302);
-    const wrongAuthorization = new URL(wrongStart.headers.get("location"));
-    const wrongPending = cookiePair(wrongStart.headers.get("set-cookie"));
+    const wrongAuthorization = new URL(wrongStart.headers.location);
+    const wrongPending = cookiePair(wrongStart.headers["set-cookie"]);
     const wrongCallback = await fetch(browserBase + "/v1/onboarding/twitch/callback?state=" + encodeURIComponent(wrongAuthorization.searchParams.get("state")) + "&code=twitch-valid-code", {
       headers: { cookie: wrongPending },
       redirect: "manual",
@@ -146,13 +146,13 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     assert.equal(new URL(wrongCallback.headers.get("location")).searchParams.get("recoveryError"), "recovery_failed");
     assert.equal(cookieValue(wrongCallback.headers.get("set-cookie"), "spmt_linked_recovery_ticket"), undefined);
 
-    const stateStart = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=discord&username=" + encodeURIComponent(username), { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
-    const stateCookie = cookiePair(stateStart.headers.get("set-cookie"));
+    const stateStart = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=discord&username=" + encodeURIComponent(username), "apollo-node-1.hostless.app");
+    const stateCookie = cookiePair(stateStart.headers["set-cookie"]);
     const badState = await fetch(browserBase + "/v1/onboarding/twitch/callback?state=wrong-state&code=discord-valid-code", { headers: { cookie: stateCookie }, redirect: "manual" });
     assert.equal(new URL(badState.headers.get("location")).searchParams.get("recoveryError"), "invalid_state");
 
     for (const provider of ["twitch", "discord"]) {
-      const start = await fetch(browserBase + "/v1/auth/linked-provider-recovery/start?provider=" + provider + "&username=" + encodeURIComponent(username), { headers: { host: "apollo-node-1.hostless.app" }, redirect: "manual" });
+      const start = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=" + provider + "&username=" + encodeURIComponent(username), "apollo-node-1.hostless.app");
       assert.equal(start.status, 302);
       const authorization = new URL(start.headers.get("location"));
       assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
