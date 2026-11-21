@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createPublicKey, randomUUID, timingSafeEqual, verify as verifySignature } from "node:crypto";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 8080);
@@ -39,10 +39,33 @@ async function body(req, limit = 2_000_000) {
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-function authorizedOwner(req) {
-  const email = req.headers["x-hostless-access-email"];
-  const role = req.headers["x-hostless-access-role"];
-  return typeof email === "string" && email.trim().length > 0 && (role === "member" || role === "owner");
+let hostlessJwks = { keys: [], expiresAt: 0 };
+async function authorizedOwner(req) {
+  try {
+    const token = String(req.headers["x-hostless-access-jwt"] || "");
+    const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
+    if (!encodedHeader || !encodedPayload || !encodedSignature) return false;
+    const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"));
+    const claims = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    if (header.alg !== "EdDSA" || !header.kid || !claims.exp || claims.exp * 1000 <= Date.now()) return false;
+    if (claims.role !== "member" || req.headers["x-hostless-access-role"] !== "member") return false;
+    if (!claims.email || claims.email !== req.headers["x-hostless-access-email"]) return false;
+    const appId = process.env.HOSTLESS_APP_ID || "";
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (!appId || !audiences.includes(appId)) return false;
+    if (hostlessJwks.expiresAt < Date.now()) {
+      const response = await fetch("https://api.hostless.cloud/v1/access/jwks.json", { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) return false;
+      const value = await response.json();
+      hostlessJwks = { keys: Array.isArray(value.keys) ? value.keys : [], expiresAt: Date.now() + 60 * 60 * 1000 };
+    }
+    const jwk = hostlessJwks.keys.find(key => key.kid === header.kid);
+    if (!jwk) return false;
+    const publicKey = createPublicKey({ key: jwk, format: "jwk" });
+    return verifySignature(null, Buffer.from(encodedHeader + "." + encodedPayload), publicKey, Buffer.from(encodedSignature, "base64url"));
+  } catch {
+    return false;
+  }
 }
 function authorizedWorker(req) {
   const value = req.headers.authorization || "";
@@ -151,7 +174,7 @@ const server = createServer(async (req, res) => {
       return send(res, 404, { error: "internal_not_found" });
     }
 
-    if (!authorizedOwner(req)) return send(res, 403, { error: "hostless_owner_session_required" });
+    if (!(await authorizedOwner(req))) return send(res, 403, { error: "hostless_owner_session_required" });
     if (req.method === "GET" && url.pathname === "/") return send(res, 200, ui, { "content-type": "text/html; charset=utf-8" });
     if (req.method === "GET" && url.pathname === "/api/status") {
       return send(res, 200, { worker, queueLength: queue.length, recentCommands: [...commands.values()].slice(-12).reverse() });
