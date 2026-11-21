@@ -48,10 +48,11 @@ export function isConversationUrl(value) {
   }
 }
 
-export function selectUniqueActiveTab(matches, expectedUrl) {
+export function selectUniqueActiveTab(matches, expectedUrl, focusedWindow) {
   if (!Array.isArray(matches) || matches.length !== 1) return null;
   const tab = matches[0];
-  return tab?.active === true && tab.url === expectedUrl ? tab : null;
+  return tab?.active === true && tab.url === expectedUrl &&
+    focusedWindow?.focused === true && tab.windowId === focusedWindow.id ? tab : null;
 }
 
 export function createSerialRunner() {
