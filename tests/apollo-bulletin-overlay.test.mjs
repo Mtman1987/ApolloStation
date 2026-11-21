@@ -18,7 +18,11 @@ test("Personal Bulletin is created as a Personal Overlay Bay scene using reusabl
   const ui = new OverlayBayParityController(root, {
     tenantId: "tenant-a",
     workspace: { revision: 1, overlayScenes: [scene], activePersonalOverlaySceneId: scene.id },
-    apps: [],
+    apps: [
+      { appId: "mission-control", name: "Mission Control", launchUrl: "https://apollo.test/mission-control", installed: true, enabled: true, surfaces: ["shell"] },
+      { appId: "streamweaver", name: "StreamWeaver", launchUrl: "https://apollo.test/streamweaver", installed: true, enabled: true, surfaces: ["standalone"] },
+      { appId: "discord-stream-hub", name: "Discord Stream Hub", launchUrl: "https://apollo.test/discord-stream-hub", installed: true, enabled: true, surfaces: ["shell"] },
+    ],
     session: { scopes: ["workspace:write", "overlay:outputs:write"] },
   });
   ui.changed = () => {};
@@ -28,10 +32,15 @@ test("Personal Bulletin is created as a Personal Overlay Bay scene using reusabl
   assert.ok(bulletin);
   assert.equal(ui.output, "personal");
   assert.equal(ui.activeSceneId, bulletin.id);
-  assert.deepEqual(bulletin.sources.map(item => item.config.widgetId), [
-    "bulletin:tasks", "bulletin:active", "bulletin:reviews", "bulletin:activity", "bulletin:scheduler",
+  const taskWidgets=bulletin.sources.filter(item=>item.kind==="widget");
+  const appFrames=bulletin.sources.filter(item=>item.kind==="web");
+  assert.deepEqual(taskWidgets.map(item => item.config.widgetId), ["bulletin:tasks"]);
+  assert.equal(appFrames.length, 3);
+  assert.deepEqual(appFrames.map(item=>item.config.url), [
+    "https://apollo.test/mission-control", "https://apollo.test/streamweaver", "https://apollo.test/discord-stream-hub",
   ]);
-  assert.ok(bulletin.sources.every(item => item.kind === "widget" && String(item.config.rendererUrl).includes("/bulletin/widgets/")));
+  assert.equal(taskWidgets[0].x, 2);
+  assert.equal(taskWidgets[0].y, 34);
   assert.ok(bulletin.sources.every(item => item.width > 0 && item.height > 0));
   if (previousWindow === undefined) delete globalThis.window;
   else globalThis.window = previousWindow;
