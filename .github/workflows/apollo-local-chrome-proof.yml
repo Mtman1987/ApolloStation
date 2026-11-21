@@ -33,7 +33,7 @@ jobs:
             const prompt = process.env.TASK_PROMPT || "";
             let url;
             try { url = new URL(rawUrl); } catch { throw new Error("Enter a valid ChatGPT conversation URL."); }
-            if (url.origin !== "https://chatgpt.com" || !/^\\/c\\/[A-Za-z0-9-]+$/.test(url.pathname) || url.search || url.hash) {
+            if (url.origin !== "https://chatgpt.com" || !/^\/c\/[A-Za-z0-9-]+$/.test(url.pathname) || url.search || url.hash) {
               throw new Error("Only an exact https://chatgpt.com/c/<conversation-id> URL is accepted. Shared /share/ links are not supported.");
             }
             if (!prompt.trim() || prompt.length > 6000) throw new Error("Prompt must contain 1–6000 characters.");
