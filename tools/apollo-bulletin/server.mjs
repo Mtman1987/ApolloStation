@@ -7,7 +7,7 @@ import { createChatGPTBrowserAdapter, browserControlPage } from "./chatgpt-brows
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
-  const form=kind==="tasks" ? '<form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/"><div class="schedule"><select name="schedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select><input name="runAt" type="datetime-local"></div><button>Create task</button></form>' : "";
+  const form=kind==="tasks" ? '<p><a href="/bulletin/browser" target="_blank" rel="noopener">Open ChatGPT browser · sign in / choose conversation</a></p><form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/"><div class="schedule"><select name="schedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select><input name="runAt" type="datetime-local"></div><button>Create task</button></form>' : "";
   const script=[
     '<script>',
     'const kind='+JSON.stringify(kind)+',api="/bulletin/api/tasks";',
