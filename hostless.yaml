@@ -1,6 +1,6 @@
 build:
   system: auto
-  command: "npm ci && npm run build && npm run setup:browser"
+  command: "npm ci && npm run build"
 working_directory: /
 build_context_directory: /
 start_command: "node scripts/hostless/start-node.mjs"
