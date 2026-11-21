@@ -262,3 +262,41 @@ test("work resumer checkpoint records the phone-hosted implementation and remain
   assert.match(checkpoint, /Apollo session gate/);
   assert.match(checkpoint, /No production deployment/);
 });
+
+test("uncertain sends cannot be hidden by Pause or Stop and require manual resolution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-uncertain-"));
+  const app = createBulletinServer({
+    statePath: join(directory, "state.json"), port: 0,
+    dispatch: async () => ({ submitted: false, reason: "browser-dispatch-uncertain-no-retry: test timeout" }),
+  });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Uncertain send", prompt: "Inspect before retry", destination: "test-simulator", scheduleType: "manual" }),
+    });
+    const { task } = await created.json();
+    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    let status;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const data = await (await fetch(origin + "/api/tasks")).json();
+      status = data.tasks.find(item => item.id === task.id)?.status;
+      if (status === "dispatch-uncertain") break;
+    }
+    assert.equal(status, "dispatch-uncertain");
+    const pause = await fetch(origin + "/api/tasks/" + task.id + "/pause", { method: "POST" });
+    assert.equal(pause.status, 409);
+    await pause.text();
+    const stop = await fetch(origin + "/api/tasks/" + task.id + "/stop", { method: "POST" });
+    assert.equal(stop.status, 409);
+    await stop.text();
+    const complete = await fetch(origin + "/api/tasks/" + task.id + "/complete", { method: "POST" });
+    assert.equal(complete.status, 200);
+    assert.equal((await complete.json()).task.status, "completed");
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
