@@ -67,12 +67,18 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
           <button type="submit">Sign in</button>
           <button type="button" id="create-apollo-account" class="secondary-button">Create Apollo account</button>
           <div id="apollo-recovery-start">
-            <p class="spmt-auth-help">No local password yet? Start recovery with either provider already linked to your Apollo account. You only need one.</p>
+            <p class="spmt-auth-help">Enter your Apollo username above, then choose the Discord or Twitch account already linked to it.</p>
             <div class="auth-actions">
-              <button type="button" id="apollo-recovery-discord">Continue with Discord</button>
-              <button type="button" id="apollo-recovery-twitch" class="secondary-button">Continue with Twitch</button>
+              <button type="button" id="apollo-recovery-discord">Verify with Discord</button>
+              <button type="button" id="apollo-recovery-twitch" class="secondary-button">Verify with Twitch</button>
             </div>
-            <p class="spmt-auth-help">Apollo verifies the provider ID, finds your existing account, and restores its workspace. Recovery does not create a new account.</p>
+            <p class="spmt-auth-help">Apollo checks the provider's immutable account ID against your existing link. This does not create an account or change provider links.</p>
+          </div>
+          <div id="apollo-recovery-password" hidden>
+            <p class="spmt-auth-help">Your linked identity is verified. Set a new password to finish signing in.</p>
+            <label>New password<input id="apollo-recovery-password-value" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
+            <label>Confirm new password<input id="apollo-recovery-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
+            <button type="button" id="apollo-recovery-submit">Set password and sign in</button>
           </div>
           <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
           <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
