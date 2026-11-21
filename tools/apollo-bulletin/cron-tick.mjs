@@ -1,4 +1,4 @@
-const token = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD;
+const token = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD || process.env.BOSS_KEY;
 if (!token) throw new Error("Set APOLLO_BULLETIN_CRON_TOKEN or APOLLO_BROWSER_CONTROL_PASSWORD for the Hostless cron dispatcher");
 
 const origin = new URL(process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app");
