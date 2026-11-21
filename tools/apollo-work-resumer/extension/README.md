@@ -4,7 +4,7 @@ Load this folder using **Load unpacked** in the Chrome/Chromium extensions page.
 
 ## Controls and behavior
 - Add a task using its exact ChatGPT conversation URL.
-- Run now (only when the target conversation is the active tab).
+- Run now (only when the target conversation tab is open).
 - Hourly alarm; runs only when the queued conversation is the active tab.
 - Pause, resume, stop, max cycles (1–100), and activity log.
 - Queue and checkpoint state are stored in Chrome local storage.
@@ -18,7 +18,7 @@ Load this folder using **Load unpacked** in the Chrome/Chromium extensions page.
 
 ## Limitations and safeguards
 - Requires Chrome/Chromium desktop and user installation. It cannot control the ChatGPT Android app or this current ChatGPT conversation.
-- The target tab must be active when a scheduled tick occurs; otherwise the task is skipped and logged.
+- The exact target conversation tab must be open when a scheduled tick occurs. If no unique tab matches, the task is skipped and logged.
 - A send click is not proof that ChatGPT accepted or completed the task.
 - DOM selectors may change. Unknown UI state blocks sending.
 - Prototype only; no deployment or auth bypass.
