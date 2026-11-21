@@ -18,9 +18,12 @@ Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings
 2. Open `/bulletin/browser` on the Apollo Node 1 origin.
 3. Authenticate with the existing owner-protected browser console.
 4. Use the live screenshot, tap controls, and text field to sign in to ChatGPT in the isolated Apollo browser.
-5. Wait for the browser status to show the signed-in ChatGPT page. Browser interactions persist the updated storage state to Turso.
+5. Open the conversation for the assistant/custom GPT you want the resumer to use (for example, your SPMT helper conversation), then copy that conversation's exact URL into the Bulletin task.
+6. Wait for the browser status to show the signed-in ChatGPT page. Browser interactions persist the updated storage state to Turso.
 
 The ChatGPT browser session is separate from the ChatGPT app session on the phone. The console lets the owner operate that dedicated hosted browser from the phone; it does not take control of the ChatGPT Android app or this current conversation.
+
+The worker does not choose or switch custom GPTs, models, or connected apps. It continues only the exact conversation URL supplied with the task, so select the intended helper conversation first.
 
 ## Dispatch behavior
 
