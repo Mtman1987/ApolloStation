@@ -51,6 +51,11 @@ on:
           - node2
           - both
         default: node1
+      detect_changes:
+        description: "Use change detection (on) or force the selected node deployment (off)"
+        required: true
+        type: boolean
+        default: true
       skip_validation:
         description: "Skip typecheck only for a manual recovery deploy"
         required: true
@@ -116,12 +121,36 @@ jobs:
           fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TARGET="${{ inputs.node }}"
-            case "$TARGET" in
-              node1) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=false" >> "$GITHUB_OUTPUT" ;;
-              node2) echo "node1=false" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT" ;;
-              both) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT ;;
-              *) echo "Invalid manual node selection: $TARGET"; exit 1 ;;
-            esac
+            if [ "${{ inputs.detect_changes }}" = "false" ]; then
+              echo "Change detection disabled: force-deploying the selected node(s)."
+              case "$TARGET" in
+                node1) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=false" >> "$GITHUB_OUTPUT" ;;
+                node2) echo "node1=false" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT" ;;
+                both) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT" ;;
+                *) echo "Invalid manual node selection: $TARGET"; exit 1 ;;
+              esac
+            else
+              echo "Change detection enabled: checking the latest commit."
+              CHANGED="$(git diff --name-only HEAD^ HEAD)"
+              NODE1=false
+              NODE2=false
+              while IFS= read -r file; do
+                case "$file" in
+                  apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|tools/apollo-bulletin/*|.github/workflows/hostless-three-node-deploy.yml) NODE1=true ;;
+                esac
+                case "$file" in
+                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|.github/workflows/hostless-three-node-deploy.yml) NODE2=true ;;
+                esac
+              done <<< "$CHANGED"
+              case "$TARGET" in
+                node1) NODE2=false ;;
+                node2) NODE1=false ;;
+                both) ;;
+                *) echo "Invalid manual node selection: $TARGET"; exit 1 ;;
+              esac
+              echo "node1=$NODE1" >> "$GITHUB_OUTPUT"
+              echo "node2=$NODE2" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
