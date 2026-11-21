@@ -1,40 +1,35 @@
-name: Deploy standalone Apollo DevOps Cockpit
+name: Inspect Hostless standalone worker capacity
 
 on:
   push:
     branches:
       - feat/standalone-devops-cockpit
     paths:
-      - "hostless.yaml"
+      - ".github/workflows/deploy-devops-cockpit.yml"
       - "tools/devops-cockpit/**"
       - "scripts/hostless/deploy-devops-cockpit.mjs"
-      - ".github/workflows/deploy-devops-cockpit.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
-  group: apollo-devops-cockpit-hostless
+  group: hostless-cockpit-discovery
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Validate and deploy cockpit
+  inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out the exact branch commit
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Validate JavaScript syntax
+      - name: Validate browser worker source
         run: |
           node --check tools/devops-cockpit/server.mjs
           node --check tools/devops-cockpit/worker.mjs
@@ -44,13 +39,39 @@ jobs:
         run: |
           curl -fsSL https://hostless.cloud/install.sh | bash
           hostless --version
-      - name: Provision the separate Hostless cockpit app
+      - name: Inspect account scopes, current resources and CLI worker commands
         env:
-          HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
-          HOSTLESS_NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
-          NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
-          NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          TURSO_API_TOKEN: ${{ secrets.TURSO_API_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/hostless/deploy-devops-cockpit.mjs
+          NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          NODE3_TOKEN: ${{ secrets.HOSTLESS_NODE3_TOKEN }}
+        run: |
+          set +e
+          inspect_account() {
+            label="$1"
+            token="$2"
+            [ -n "$token" ] || { echo "=== $label: no token configured ==="; return; }
+            echo "=== $label credential scopes ==="
+            curl -sS -H "Authorization: $token" https://api.hostless.cloud/v1/api-keys/current | jq '{name,prefix,scopes,projects}'
+            echo "=== $label projects ==="
+            curl -sS -H "Authorization: $token" https://api.hostless.cloud/v1/projects | jq '[.projects[]? | {id,name}]'
+            echo "=== $label workers ==="
+            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/workers' | jq '[.workers[]? | {name,projectId,status,resources}]'
+            echo "=== $label cron jobs ==="
+            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/cron-jobs' | jq '[.cronJobs[]? | {name,projectId,status,schedule}]'
+            echo "=== $label billing breakdown (if permitted) ==="
+            curl -sS -H "Authorization: $token" 'https://api.hostless.cloud/v1/billing/breakdown' | jq '{usage,allowance,resources,totals}'
+          }
+          inspect_account "Hostless Node 1" "$NODE1_TOKEN"
+          inspect_account "Hostless Node 2" "$NODE2_TOKEN"
+          inspect_account "Hostless Node 3" "$NODE3_TOKEN"
+          echo "=== Hostless CLI top-level commands ==="
+          hostless --help
+          echo "=== Hostless CLI create commands ==="
+          hostless create --help
+          echo "=== Hostless CLI worker commands ==="
+          hostless worker --help
+          hostless workers --help
+          echo "=== Hostless CLI cron commands ==="
+          hostless cron --help
+          hostless cron-job --help
+          hostless cron-jobs --help
