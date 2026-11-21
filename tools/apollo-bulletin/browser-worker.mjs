@@ -55,7 +55,13 @@ export class ApolloChatGptBrowserWorker {
     };
   }
 
-  async navigate(targetUrl) {\n    const target = new URL(targetUrl);\n    if (target.protocol !== "https:" || !["chatgpt.com", "auth.openai.com", "openai.com"].some(host => target.hostname === host || target.hostname.endsWith("." + host))) throw new Error("Browser navigation is limited to ChatGPT and OpenAI sign-in domains");\n    await this.#requirePage().goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });\n    return this.status();\n  }\n\n  async screenshot() {
+  async navigate(targetUrl) {
+    const target = new URL(targetUrl);
+    if (target.protocol !== "https:" || !["chatgpt.com", "auth.openai.com", "openai.com"].some(host => target.hostname === host || target.hostname.endsWith("." + host))) throw new Error("Browser navigation is limited to ChatGPT and OpenAI sign-in domains");
+    await this.#requirePage().goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    return this.status();
+  }
+\n  async screenshot() {
     const page = this.#requirePage();
     return page.screenshot({ type: "png", fullPage: false });
   }
