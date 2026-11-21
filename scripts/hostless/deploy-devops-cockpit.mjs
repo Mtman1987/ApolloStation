@@ -1,140 +1,103 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
 
-const apiBase = "https://api.hostless.cloud/v1";
+const base = process.env.HOSTLESS_API_URL || "https://api.hostless.cloud/v1";
+const token = process.env.HOSTLESS_TOKEN;
+const password = process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD;
 const appName = "apollo-devops-cockpit";
-const repoName = process.env.GITHUB_REPOSITORY || "Mtman1987/ApolloStation";
-const token = process.env.HOSTLESS_TOKEN || "";
-const password = process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD || "";
-const workerToken = process.env.APOLLO_COCKPIT_WORKER_TOKEN || password;
-const commit = process.env.GITHUB_SHA || "";
-const secrets = [token, password, workerToken, process.env.TURSO_AUTH_TOKEN || ""].filter(Boolean);
+const branch = process.env.GITHUB_REF_NAME || "feat/standalone-devops-cockpit";
+const commit = process.env.GITHUB_SHA;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function redact(value) {
-  let result = String(value || "");
-  for (const secret of secrets) result = result.split(secret).join("[redacted]");
-  return result;
+function fail(message) { console.error("::error::" + message); process.exit(1); }
+function rows(value, key) { return Array.isArray(value) ? value : value?.[key] || value?.data?.[key] || value?.data || null; }
+function idOf(value) { return value?.id ?? value?._id ?? value?.projectId ?? null; }
+function norm(value) { return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function cli(args, timeout = 180000) {
+  const r = spawnSync("hostless", args, { encoding: "utf8", env: process.env, timeout, maxBuffer: 10 * 1024 * 1024 });
+  if (r.error || r.status !== 0) fail("Hostless CLI failed: " + String(r.stderr || r.error?.message || r.status).slice(-1000));
+  return r.stdout || "";
 }
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { encoding: "utf8", timeout: 8 * 60 * 1000, ...options });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const detail = redact((result.stderr || result.stdout || "").trim()).slice(-1800);
-    throw new Error(command + " failed (" + result.status + "): " + detail);
+async function get(path) {
+  const r = await fetch(base + path, { headers: { Authorization: token, Accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+  const raw = await r.text(); let v = {};
+  try { v = raw ? JSON.parse(raw) : {}; } catch {}
+  if (!r.ok) throw new Error("Hostless API " + path + " returned HTTP " + r.status);
+  return v;
+}
+function originOf(value) {
+  const found = [];
+  function walk(v) {
+    if (!v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) {
+      if (/^(url|appUrl|publicUrl|defaultDomain|primaryDomain|domain|hostname)$/i.test(k)) {
+        for (const item of Array.isArray(x) ? x : [x]) {
+          const raw = typeof item === "string" ? item : item?.url || item?.domain || item?.hostname;
+          if (!raw) continue;
+          try { const u = new URL(raw.includes("://") ? raw : "https://" + raw); if (u.protocol === "https:" && u.pathname === "/" && !u.search && !u.hash) found.push(u.origin); } catch {}
+        }
+      }
+      if (x && typeof x === "object") walk(x);
+    }
   }
-  return result.stdout || "";
-}
-async function api(method, path, body) {
-  const response = await fetch(apiBase + path, {
-    method,
-    headers: {
-      authorization: token,
-      accept: "application/json",
-      ...(body ? { "content-type": "application/json" } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  const raw = await response.text();
-  let value = {};
-  try { value = raw ? JSON.parse(raw) : {}; } catch { value = { message: raw.slice(0, 500) }; }
-  if (!response.ok) throw new Error("Hostless API " + method + " " + path + " returned " + response.status + ": " + redact(value.message || value.error || raw).slice(0, 500));
-  return value;
-}
-function unwrap(value) {
-  return value?.app || value?.data?.app || value?.data || value;
-}
-function listOf(value, key) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.[key])) return value[key];
-  if (Array.isArray(value?.data?.[key])) return value.data[key];
-  if (Array.isArray(value?.data)) return value.data;
-  return [];
-}
-function parseCliJson(output) {
-  return output.split(/\r?\n/).filter(line => line.trim().startsWith("{")).flatMap(line => {
-    try { return [JSON.parse(line)]; } catch { return []; }
-  });
-}
-function appUrl(app, cliRecords = []) {
-  const candidates = [
-    app?.defaultDomain, app?.domain, app?.hostname, app?.publicUrl, app?.defaultUrl, app?.url,
-    ...cliRecords.map(record => record.app?.defaultDomain || record.app?.domain || record.app?.publicUrl || record.app?.url),
-  ].filter(value => typeof value === "string" && value.trim());
-  for (const candidate of candidates) {
-    const value = candidate.startsWith("http") ? candidate : "https://" + candidate;
-    try {
-      const parsed = new URL(value);
-      if (parsed.protocol === "https:") return parsed.origin;
-    } catch {}
-  }
-  return "https://" + appName + ".hostless.app";
-}
-async function waitForHealth(url, timeoutMs = 180_000) {
-  const until = Date.now() + timeoutMs;
-  let last = "not checked";
-  while (Date.now() < until) {
-    try {
-      const response = await fetch(url + "/health/ready", { signal: AbortSignal.timeout(8000), cache: "no-store" });
-      const value = await response.json().catch(() => ({}));
-      if (response.ok && value.ready === true && value.service === "apollo-devops-cockpit") return value;
-      last = "HTTP " + response.status;
-    } catch (error) { last = String(error.message || error).slice(0, 160); }
-    await new Promise(resolve => setTimeout(resolve, 5000));
-  }
-  throw new Error("Cockpit health check did not pass within 3 minutes: " + last);
+  walk(value);
+  const unique = [...new Set(found)];
+  if (unique.length !== 1) fail("Hostless did not return exactly one public cockpit origin; refusing to guess the sign-in URL.");
+  return unique[0];
 }
 
-if (!token) throw new Error("HOSTLESS_NODE1_TOKEN is required");
-if (!password) throw new Error("Set APOLLO_BROWSER_CONTROL_PASSWORD or APOLLO_PREVIEW_PASSWORD in GitHub Actions secrets");
-if (!commit) throw new Error("GITHUB_SHA is required");
+if (!token || !password || !commit) fail("HOSTLESS_TOKEN, APOLLO_PREVIEW_PASSWORD (or APOLLO_BROWSER_CONTROL_PASSWORD), and GITHUB_SHA are required.");
 
-const node1Response = await api("GET", "/apps/apollo-node-1");
-const node1 = unwrap(node1Response);
-const projectId = node1.projectId || node1.project?.id || node1.project_id || process.env.HOSTLESS_NODE1_PROJECT_ID;
-if (!projectId) throw new Error("Could not resolve the Hostless project that owns apollo-node-1");
+const projects = rows(await get("/projects"), "projects");
+if (!projects) fail("Unexpected Hostless project-list response.");
+const matches = projects.filter(p => norm(p.name || p.projectName) === norm("apollo-node-1"));
+if (matches.length > 1 || (!matches.length && projects.length !== 1)) fail("Could not uniquely resolve the existing Node 1 Hostless project.");
+const project = matches[0] || projects[0];
+const projectId = idOf(project);
+if (!projectId) fail("The Node 1 Hostless project has no readable ID.");
 
-let existing = null;
-try { existing = unwrap(await api("GET", "/apps/" + appName)); }
-catch (error) { if (!String(error.message).includes("returned 404")) throw error; }
-let createRecords = [];
-if (!existing) {
-  console.log("[cockpit] Creating a separate Hostless app in the existing Node 1 project; Apollo Node 1 is not modified.");
-  const output = run("hostless", ["create", "app", appName, "--project", String(projectId), "--yes", "--wait", "--json"]);
-  createRecords = parseCliJson(output);
-  if (!createRecords.some(record => record.type === "app" || record.app)) console.log(redact(output).slice(-3000));
-} else {
-  console.log("[cockpit] Standalone app already exists; Hostless Git integration handles this branch deployment.");
+const apps = rows(await get("/projects/" + encodeURIComponent(projectId) + "/apps"), "apps");
+if (!apps) fail("Unexpected Hostless project-apps response.");
+const existing = apps.filter(a => norm(a.name || a.appName) === norm(appName));
+if (existing.length > 1) fail("More than one cockpit app exists; refusing to guess.");
+if (!existing.length) cli(["create", "app", appName, "--project", String(projectId), "--branch", branch, "--yes", "--wait", "--json"], 7 * 60 * 1000);
+
+const secretArgs = ["env", "set", "APOLLO_BROWSER_CONTROL_PASSWORD=" + password, "APOLLO_COCKPIT_WORKER_TOKEN=" + (process.env.APOLLO_COCKPIT_WORKER_TOKEN || password), "--write-only", "--app", appName, "--project", String(projectId)];
+cli(secretArgs);
+const urlArgs = ["env", "set", "APOLLO_COCKPIT_PUBLIC_URL=https://" + appName + ".hostless.app", "--app", appName, "--project", String(projectId)];
+cli(urlArgs);
+
+const trigger = spawnSync("hostless", ["deploy", "--json", "--yes", "--app", appName, "--project", String(projectId), "--commit", commit], { encoding: "utf8", env: process.env, timeout: 180000 });
+if (trigger.status !== 0 || trigger.error) fail("Could not trigger cockpit deployment: " + String(trigger.stderr || trigger.error?.message || trigger.status).slice(-800));
+let deployment;
+try { deployment = JSON.parse(trigger.stdout || "{}"); } catch { fail("Hostless deploy returned invalid JSON."); }
+const deploymentId = deployment.id || deployment.deployment?.id || deployment.deploymentId;
+if (!deploymentId) fail("Hostless deploy returned no deployment ID.");
+
+const deadline = Date.now() + 9 * 60 * 1000;
+let state = "unknown";
+while (Date.now() < deadline) {
+  await sleep(12000);
+  const poll = spawnSync("hostless", ["deploy", "status", String(deploymentId), "--json", "--app", appName, "--project", String(projectId)], { encoding: "utf8", env: process.env, timeout: 60000 });
+  if (poll.status !== 0) continue;
+  let result; try { result = JSON.parse(poll.stdout || "{}"); } catch { continue; }
+  state = normalizeHostlessDeploymentStatus(result.status || result.deployment?.status);
+  if (isHostlessDeploymentSuccessful(state)) break;
+  if (isHostlessDeploymentFailure(state)) fail("Cockpit deployment failed with status " + state);
 }
-const cockpit = existing || unwrap(await api("GET", "/apps/" + appName));
-const url = appUrl(cockpit, createRecords);
+if (!isHostlessDeploymentSuccessful(state)) fail("Cockpit deployment did not become ready within 9 minutes.");
 
-if (!existing) {
-  const secretArgs = [
-    "env", "set",
-    "APOLLO_BROWSER_CONTROL_PASSWORD=" + password,
-    "APOLLO_COCKPIT_WORKER_TOKEN=" + workerToken,
-    "HOSTLESS_TOKEN=" + token,
-  ];
-  if (process.env.TURSO_AUTH_TOKEN) secretArgs.push("TURSO_AUTH_TOKEN=" + process.env.TURSO_AUTH_TOKEN);
-  if (process.env.TURSO_API_TOKEN) secretArgs.push("TURSO_API_TOKEN=" + process.env.TURSO_API_TOKEN);
-  secretArgs.push("--write-only", "--app", appName, "--project", String(projectId));
-  run("hostless", secretArgs);
-
-  const publicArgs = ["env", "set", "APOLLO_COCKPIT_PUBLIC_URL=" + url];
-  if (process.env.TURSO_DATABASE_URL) publicArgs.push("TURSO_DATABASE_URL=" + process.env.TURSO_DATABASE_URL);
-  publicArgs.push("--app", appName, "--project", String(projectId), "--deploy");
-  run("hostless", publicArgs);
-}
-
-run("hostless", ["deploy", "--commit", commit, "--wait", "--timeout", "480", "--app", appName, "--project", String(projectId), "--json"]);
-await waitForHealth(url);
-console.log("[cockpit] Verified live URL: " + url);
+const detail = await get("/apps/" + appName);
+const url = originOf(detail);
+const health = await fetch(url + "/health/ready", { signal: AbortSignal.timeout(10000) });
+const healthBody = await health.json().catch(() => ({}));
+if (!health.ok || healthBody.ready !== true || healthBody.service !== "apollo-devops-cockpit") fail("The live cockpit URL failed its readiness check.");
 
 if (process.env.GH_TOKEN) {
-  run("gh", ["variable", "set", "APOLLO_COCKPIT_URL", "--body", url, "--repo", repoName], { env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN } });
+  const r = spawnSync("gh", ["variable", "set", "APOLLO_COCKPIT_URL", "--body", url, "--repo", process.env.GITHUB_REPOSITORY || "Mtman1987/ApolloStation"], { encoding: "utf8", env: process.env, timeout: 30000 });
+  if (r.status !== 0) fail("Could not save the verified cockpit URL to GitHub Actions variables.");
 }
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "cockpit_url=" + url + "\n");
-if (process.env.GITHUB_STEP_SUMMARY) {
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, "## Apollo DevOps Cockpit\n\n<" + url + ">\n\n- Standalone Hostless app; separate from Apollo Node 1 and Node 2\n- Persistent Chromium worker and paused test-prompt cron are configured\n- Hostless app terminal includes GitHub CLI, Turso CLI, Hostless CLI, Git, Node and Python\n");
-}
-console.log("[cockpit] Deployment verification passed");
+if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, "## Apollo DevOps Cockpit\n\n<" + url + ">\n\nStandalone Hostless browser app, worker and paused prompt cron.\n");
+console.log("Verified live cockpit URL: " + url);
