@@ -55,7 +55,13 @@ async function runOnce(manual = false) {
       if (state.completed) await ensureAlarm();
       return saved;
     }
-    if (taskCycleLimitReached(item, state.maxCycles)) return save(state, "tick-skipped-task-cycle-cap");
+    if (taskCycleLimitReached(item, state.maxCycles)) {
+      if (item.status === "active") {
+        state.queue = state.queue.map(q => q.id === item.id ? { ...q, status: "limit-reached", limitReachedAt: Date.now() } : q);
+        return save(state, "task-cycle-limit-reached");
+      }
+      return save(state, "tick-skipped-task-cycle-cap");
+    }
     if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < state.cooldownMs) {
       return save(state, "tick-skipped-cooldown");
     }
@@ -128,6 +134,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return save({ ...await getState(), maxCycles }, "max-cycles-updated");
     }
     if (message?.type === "APOLLO_RUN_NOW") return runOnce(true);
+    if (message?.type === "APOLLO_REQUEUE") {
+      const state = await getState();
+      state.queue = state.queue.map(q => q.id === message.id && q.status === "limit-reached" ? { ...q, status: "active", resumedAt: Date.now() } : q);
+      return save(state, "task-resumed-after-cycle-limit");
+    }
     if (message?.type === "APOLLO_COMPLETE") {
       const state = await getState();
       state.queue = state.queue.map(q => q.id === message.id
