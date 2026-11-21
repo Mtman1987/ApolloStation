@@ -88,7 +88,7 @@ test("extension manifest grants only ChatGPT UI and the fixed Apollo inbox", asy
     "https://chatgpt.com/*",
     "https://github.com/Mtman1987/ApolloStation/pull/553*",
   ]);
-  assert.ok(manifest.permissions.includes("storage") && manifest.permissions.includes("alarms") && manifest.permissions.includes("notifications"));
+  assert.ok(manifest.permissions.includes("storage") && manifest.permissions.includes("alarms") && manifest.permissions.includes("tabs") && manifest.permissions.includes("windows") && manifest.permissions.includes("notifications"));
   assert.ok(manifest.content_scripts.some(script =>
     script.matches.includes("https://github.com/Mtman1987/ApolloStation/pull/553*") &&
     script.js.includes("github-bridge.js")
@@ -181,7 +181,8 @@ test("content fails closed for missing Send, busy UI, wrong URL, or a Send butto
 
 test("background requires a unique active exact tab and uses a serialized runner", async () => {
   const background = await readFile(join(dir, "background.js"), "utf8");
-  assert.match(background, /return selectUniqueActiveTab\(matches, url\)/);
+  assert.match(background, /chrome\.windows\.get\(matches\[0\]\.windowId\)/);
+  assert.match(background, /selectUniqueActiveTab\(matches, url, focusedWindow\)/);
   assert.match(background, /createSerialRunner\(\)/);
   assert.match(background, /tick-skipped-uncertain-send-no-retry/);
   assert.match(background, /if \(!manual && state\.lastAttemptAt/);
