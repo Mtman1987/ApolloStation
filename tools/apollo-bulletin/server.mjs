@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { normalizeSchedule, nextScheduledAt, scheduleLabel } from "./schedule.mjs";
 import { simulatedAiReply } from "./test-simulator.mjs";
 import { createApolloChatGptBrowserWorkerFromEnvironment } from "./browser-worker.mjs";
@@ -66,6 +66,19 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://bulletin.local");
     const send = (status, value, type = "application/json; charset=utf-8") => { const body = type.startsWith("text/html") ? value : JSON.stringify(value); res.writeHead(status, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
+    const browserControlRoute = url.pathname === "/browser" || url.pathname.startsWith("/api/browser/");
+    if (browserControlRoute) {
+      const password = process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD;
+      if (!password) { res.writeHead(503, { "cache-control": "no-store" }); res.end("Browser control is locked: configure APOLLO_BROWSER_CONTROL_PASSWORD or APOLLO_PREVIEW_PASSWORD."); return; }
+      const authorization = req.headers.authorization || "";
+      const supplied = authorization.startsWith("Basic ") ? Buffer.from(authorization.slice(6), "base64") : Buffer.alloc(0);
+      const expected = Buffer.from("owner:" + password);
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+        res.writeHead(401, { "www-authenticate": 'Basic realm="Apollo dedicated browser", charset="UTF-8"', "cache-control": "no-store" });
+        res.end("Owner authentication required.");
+        return;
+      }
+    }
     const body = async () => { let raw=""; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; };
     try {
       if (req.method === "GET" && url.pathname === "/") return send(200, '<!doctype html><meta name="viewport" content="width=device-width"><title>Apollo Bulletin</title><body style="font:16px system-ui;background:#080d1c;color:#edf3ff;padding:28px"><h1>Apollo Bulletin</h1><p>Bulletin lives inside Workspace → Overlay Bay. Open Overlay Bay and choose Personal Bulletin to add the task components to your Personal overlay.</p><a style="color:#8bd" href="/?view=workspace">Open Apollo Workspace</a></body>', "text/html; charset=utf-8");

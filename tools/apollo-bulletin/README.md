@@ -47,3 +47,6 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 Node 1 exposes the isolated Chromium browser at `/bulletin/browser`. The browser opens `https://chatgpt.com/` and provides a live screenshot, restricted navigation to ChatGPT/OpenAI sign-in domains, click, and text-entry controls. Its Chromium profile is separate from Lounge and all other application browsers.
 
 The browser profile is currently stored in the Hostless runtime's temporary directory. GitHub Actions artifact checkpoint/restore is the required next persistence step; do not treat the login as durable across container replacement until that is implemented and verified.
+
+
+The browser console is owner-protected with HTTP Basic authentication. Use username `owner` and the password configured as `APOLLO_BROWSER_CONTROL_PASSWORD`; if that is not set, the service falls back to `APOLLO_PREVIEW_PASSWORD`. If neither secret exists, the console fails closed rather than exposing a logged-in browser publicly.
