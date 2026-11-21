@@ -94,9 +94,9 @@ const node1 = unwrap(node1Response);
 const projectId = node1.projectId || node1.project?.id || node1.project_id || process.env.HOSTLESS_NODE1_PROJECT_ID;
 if (!projectId) throw new Error("Could not resolve the Hostless project that owns apollo-node-1");
 
-const appsResponse = await api("GET", "/apps?projectId=" + encodeURIComponent(projectId));
-const apps = listOf(appsResponse, "apps");
-const existing = apps.find(item => (item.appName || item.name) === appName);
+let existing = null;
+try { existing = unwrap(await api("GET", "/apps/" + appName)); }
+catch (error) { if (!String(error.message).includes("returned 404")) throw error; }
 let createRecords = [];
 if (!existing) {
   console.log("[cockpit] Creating a separate Hostless app in the existing Node 1 project; Apollo Node 1 is not modified.");
@@ -106,10 +106,7 @@ if (!existing) {
 } else {
   console.log("[cockpit] Standalone app already exists; Hostless Git integration handles this branch deployment.");
 }
-
-const afterCreate = await api("GET", "/apps?projectId=" + encodeURIComponent(projectId));
-const refreshedApps = listOf(afterCreate, "apps");
-const cockpit = refreshedApps.find(item => (item.appName || item.name) === appName) || {};
+const cockpit = existing || unwrap(await api("GET", "/apps/" + appName));
 const url = appUrl(cockpit, createRecords);
 
 if (!existing) {
