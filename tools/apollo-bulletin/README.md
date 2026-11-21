@@ -31,7 +31,7 @@ Installed app frames are populated from the existing SpaceMountain app registry 
 
 Node 1 starts the Bulletin API/renderer on loopback port 3210. SpaceMountain's existing integrated server proxies /bulletin/* to that service. The Personal Overlay output embeds the widget renderers through the existing SPMT output gateway.
 
-Set `APOLLO_BULLETIN_PUBLIC_URL` to the public Node 1 origin if it differs from the current default. Queue and browser session persistence use the existing shared Turso database, not a Hostless volume. Node 1 requires `SHARED_TURSO_DATABASE_URL` and `NODE1_TURSO_AUTH_TOKEN`.
+Set `APOLLO_BULLETIN_PUBLIC_URL` to the public Node 1 origin if it differs from the current default. Queue and browser session persistence use the existing shared Turso database, not a Hostless volume. Node 1 accepts `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`, paired with `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`.
 
 ## Deliberate prototype boundary
 
