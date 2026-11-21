@@ -250,3 +250,11 @@ test("Bulletin Stop is terminal and Hostless mode rejects sub-minute task schedu
     if (priorCron === undefined) delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON; else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = priorCron;
   }
 });
+
+test("work resumer checkpoint records the phone-hosted implementation and remaining smoke test", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const checkpoint = await readFile(new URL("../tools/apollo-work-resumer/CHECKPOINT.md", import.meta.url), "utf8");
+  assert.match(checkpoint, /Hostless owns scheduling/);
+  assert.match(checkpoint, /Apollo session gate/);
+  assert.match(checkpoint, /No production deployment/);
+});
