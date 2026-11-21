@@ -28,7 +28,8 @@ jobs:
       - name: Check out the exact branch commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,8 +47,10 @@ jobs:
       - name: Provision the separate Hostless cockpit app
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
-          APOLLO_BROWSER_CONTROL_PASSWORD: ${{ secrets.APOLLO_BROWSER_CONTROL_PASSWORD }}
-          APOLLO_PREVIEW_PASSWORD: ${{ secrets.APOLLO_PREVIEW_PASSWORD }}
-          APOLLO_COCKPIT_WORKER_TOKEN: ${{ secrets.APOLLO_COCKPIT_WORKER_TOKEN }}
+          HOSTLESS_NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+          NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+          NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-east-1.turso.io' }}
+          TURSO_API_TOKEN: ${{ secrets.TURSO_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/hostless/deploy-devops-cockpit.mjs
