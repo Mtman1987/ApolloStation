@@ -61,7 +61,8 @@ export class ApolloChatGptBrowserWorker {
     await this.#requirePage().goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
     return this.status();
   }
-\n  async screenshot() {
+
+  async screenshot() {
     const page = this.#requirePage();
     return page.screenshot({ type: "png", fullPage: false });
   }
