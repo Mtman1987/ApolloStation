@@ -166,7 +166,7 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
   assert.match(hostless, /name: apollo-bulletin-resumer/);
   assert.match(hostless, /command: "node tools\/apollo-bulletin\/cron-tick\.mjs"/);
   assert.match(hostless, /schedule: "\*\/1 \* \* \* \*"/);
-  assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 0);
+  assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 1);
 });
 
 test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes", async () => {
