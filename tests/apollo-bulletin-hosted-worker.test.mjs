@@ -59,7 +59,7 @@ test("ChatGPT work continuation is bounded and persisted before the next schedul
       body: JSON.stringify({ name: "Continue me", prompt: "Implement the feature", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/abc-123", maxCycles: 2, scheduleType: "manual" }),
     });
     const { task } = await created.json();
-    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });\n    await runResponse.text();
     let saved;
     for (let attempt = 0; attempt < 30; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -239,7 +239,7 @@ test("Bulletin Stop is terminal and Hostless mode rejects sub-minute task schedu
     const stopped = await fetch(origin + "/api/tasks/" + task.id + "/stop", { method: "POST" });
     assert.equal(stopped.status, 200);
     assert.equal((await stopped.json()).task.status, "stopped");
-    const rerun = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    const rerun = const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });\n    await runResponse.text();
     assert.equal(rerun.status, 409);
     await rerun.text();
     const seconds = await fetch(origin + "/api/tasks", {
@@ -277,7 +277,7 @@ test("uncertain sends cannot be hidden by Pause or Stop and require manual resol
       body: JSON.stringify({ name: "Uncertain send", prompt: "Inspect before retry", destination: "test-simulator", scheduleType: "manual" }),
     });
     const { task } = await created.json();
-    const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    const runResponse = const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });\n    await runResponse.text();
     await runResponse.text();
     let status;
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -323,7 +323,7 @@ test("Pause during an in-flight ChatGPT cycle resumes with a continuation, not t
       body: JSON.stringify({ name: "Pause safely", prompt: "Implement the requested feature", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/pause-test", maxCycles: 3, scheduleType: "manual" }),
     });
     const { task } = await created.json();
-    await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    const runResponse = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });\n    await runResponse.text();
     let status;
     for (let attempt = 0; attempt < 30; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 50));
