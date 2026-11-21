@@ -67,27 +67,37 @@ test("SPMT proxy promise rejections are caught by the HTTP handler", () => {
   assert.match(server, /return await proxy\(response,request,url,spmtOrigin,fetchImpl,false,true\);/);
   assert.match(server, /return await proxy\(response, request, url, spmtOrigin, fetchImpl\);/);
 });
-test("account recovery accepts either Discord or Twitch independently", () => {
+test("linked-provider recovery is username-bound, password-setting, and automatically signs into Apollo", () => {
   assert.match(page, /id="apollo-recovery-discord"/);
   assert.match(page, /id="apollo-recovery-twitch"/);
-  assert.doesNotMatch(page, /id="apollo-recover-account"/);
+  assert.match(page, /id="apollo-recovery-password" hidden/);
+  assert.match(page, /id="apollo-recovery-password-value" type="password"[^>]*minlength="12"/);
+  assert.match(page, /id="apollo-recovery-password-confirm"/);
+  assert.match(page, /id="apollo-recovery-submit"/);
   assert.doesNotMatch(page, /id="apollo-recovery-start" hidden/);
-  assert.match(client, /recoveryDiscord\.addEventListener\("click", \(\) => window\.location\.assign/);
-  assert.match(client, /recoveryTwitch\.addEventListener\("click", \(\) => window\.location\.assign/);
-  assert.match(client, /linked-provider-recovery\/start\?provider=discord/);
-  assert.match(client, /linked-provider-recovery\/start\?provider=twitch/);
-  assert.doesNotMatch(client, /apollo-recovery-provider|apollo-recovery-verify/);
+  assert.match(client, /startLinkedProviderRecovery\("discord"\)/);
+  assert.match(client, /startLinkedProviderRecovery\("twitch"\)/);
+  assert.match(client, /new URLSearchParams\(\{ provider, username \}\)/);
+  assert.match(client, /sessionStorage\.setItem\("apollo-recovery-username"/);
+  assert.match(client, /fetch\("\/v1\/auth\/linked-provider-recovery\/password"/);
+  assert.match(client, /await hasSavedSessionCookie\(\)/);
 
   const start = service.slice(service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/start"'), service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/password"'));
   const callbackStart = service.indexOf('url.pathname === "/v1/onboarding/twitch/callback"');
-  const callback = service.slice(callbackStart, service.indexOf('url.pathname === "/v1/onboarding/twitch/start"', callbackStart));
+  const callback = service.slice(callbackStart, service.indexOf("const pendingLink = decodeProviderLinkCookie", callbackStart));
+  const password = service.slice(service.indexOf('url.pathname === "/v1/auth/linked-provider-recovery/password"'), service.indexOf('url.pathname === "/v1/auth/login"'));
   assert.match(start, /provider !== "discord" && provider !== "twitch"/);
-  assert.match(start, /redirectUri = `\$\{publicBaseUrl\}\/v1\/onboarding\/twitch\/callback`/);
-  assert.doesNotMatch(service, /linked-provider-recovery\/callback/);
-  assert.match(callback, /accounts\.resolveProviderIdentity\(provider, identity\.id\)/);
-  assert.match(callback, /resolveDonorWorkspace\(/);
-  assert.match(callback, /issueHumanSession\(\{ userId: workspace\.profile\.userId, scopes: USER_SCOPES, tenantIds: workspace\.tenantIds \}\)/);
-  assert.doesNotMatch(callback, /both providers|required provider pair|identity_account_mismatch/);
+  assert.match(start, /url\.searchParams\.get\("username"\)/);
+  assert.match(start, /state, username/);
+  assert.match(start, /onboarding\/twitch\/callback/);
+  assert.match(callback, /timingSafeEqual\(Buffer\.from\(state\), Buffer\.from\(recovery\.state\)\)/);
+  assert.match(callback, /accounts\.createLinkedProviderPasswordReset\(recovery\.username, provider, identity\.id, state\)/);
+  assert.doesNotMatch(callback, /issueBrowserSession|resolveDonorWorkspace/);
+  assert.match(password, /completeLinkedProviderPasswordReset\(ticket, username, password\)/);
+  assert.match(password, /auth\.issueBrowserSession\(result\.tokens\.accessToken\)/);
+
+  const server = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
+  assert.match(server, /linked-provider-recovery\/password"\) return method === "POST"/);
 });
 
 test("missing local Apollo passwords immediately expose direct provider recovery", () => {
@@ -95,8 +105,8 @@ test("missing local Apollo passwords immediately expose direct provider recovery
   assert.match(login, /valid local password/);
   assert.match(login, /recoveryStart\.hidden = false/);
   assert.match(login, /recoveryDiscord\.focus/);
-  assert.match(page, /Continue with Discord/);
-  assert.match(page, /Continue with Twitch/);
+  assert.match(page, /Verify with Discord/);
+  assert.match(page, /Verify with Twitch/);
   assert.match(page, /data-tab="apollo" aria-selected="true"/);
   assert.match(page, /data-tab="spmt" aria-selected="false"/);
 });
