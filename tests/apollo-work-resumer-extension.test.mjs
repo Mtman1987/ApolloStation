@@ -8,7 +8,7 @@ test("extension manifest is valid and only grants ChatGPT host access",async()=>
  const m=JSON.parse(await readFile(join(dir,"manifest.json"),"utf8"));
  assert.equal(m.manifest_version,3);
  assert.deepEqual(m.host_permissions,["https://chatgpt.com/*"]);
- assert.ok(m.permissions.includes("storage")&&m.permissions.includes("alarms"));
+ assert.ok(m.permissions.includes("storage")&&m.permissions.includes("alarms")&&m.permissions.includes("notifications"));
 });
 test("extension scripts parse",()=>{
  for(const file of ["background.js","content.js","popup.js"]){
