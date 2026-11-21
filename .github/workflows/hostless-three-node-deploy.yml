@@ -147,7 +147,7 @@ jobs:
                   tools/apollo-bulletin/*|.github/workflows/hostless-three-node-deploy.yml) NODE1=true ;;
                 esac
                 case "$file" in
-                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|.github/workflows/hostless-three-node-deploy.yml) NODE2=true ;;
+                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs) NODE2=true ;;
                 esac
               done <<< "$CHANGED"
               case "$TARGET" in
@@ -184,7 +184,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|.github/workflows/hostless-three-node-deploy.yml)
+              apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs)
                 NODE2=true
                 ;;
             esac
