@@ -16,7 +16,7 @@ export function normalizeChatGptConversationUrl(value) {
 }
 
 export class ApolloChatGptBrowserWorker {
-  constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/data/apollo-browser/profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium) }) {
+  constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium), sessionStore }) {
     this.profilePath = resolve(profilePath);
     this.allowedOrigin = new URL(allowedOrigin).origin;
     this.now = now;
@@ -25,13 +25,16 @@ export class ApolloChatGptBrowserWorker {
     this.page = undefined;
     this.busy = false;
     this.lastReceipt = undefined;
+    this.sessionStore = sessionStore;
   }
 
   async start() {
     await mkdir(dirname(this.profilePath), { recursive: true, mode: 0o700 });
     try { await access(this.profilePath); } catch { await mkdir(this.profilePath, { recursive: true, mode: 0o700 }); }
     const executablePath = await localBrowserPath();
+    const storageState = await this.sessionStore?.loadBrowserState?.();
     this.context = await this.launch(this.profilePath, {
+      ...(storageState ? { storageState } : {}),
       executablePath,
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
@@ -45,6 +48,7 @@ export class ApolloChatGptBrowserWorker {
   async openLogin() {
     const page = this.#requirePage();
     await page.goto("https://chatgpt.com/", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await this.#persistSession();
     return this.status();
   }
 
@@ -69,6 +73,7 @@ export class ApolloChatGptBrowserWorker {
     const target = new URL(targetUrl);
     if (target.protocol !== "https:" || !["chatgpt.com", "auth.openai.com", "openai.com"].some(host => target.hostname === host || target.hostname.endsWith("." + host))) throw new Error("Browser navigation is limited to ChatGPT and OpenAI sign-in domains");
     await this.#requirePage().goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await this.#persistSession();
     return this.status();
   }
 
@@ -83,12 +88,14 @@ export class ApolloChatGptBrowserWorker {
     }
     const page = this.#requirePage();
     await page.mouse.click(x, y);
+    await this.#persistSession();
     return this.status();
   }
 
   async type(text) {
     if (typeof text !== "string" || text.length > 4000) throw new Error("Browser input must be text no longer than 4000 characters");
     await this.#requirePage().keyboard.insertText(text);
+    await this.#persistSession();
     return this.status();
   }
 
@@ -97,6 +104,7 @@ export class ApolloChatGptBrowserWorker {
       throw new Error("That keyboard action is not allowed in the browser control surface");
     }
     await this.#requirePage().keyboard.press(key);
+    await this.#persistSession();
     return this.status();
   }
 
@@ -135,6 +143,7 @@ export class ApolloChatGptBrowserWorker {
       const submittedAt = this.now();
       clickAttempted = true;
       await sendButton.click();
+      await this.#persistSession();
       await page.waitForFunction(
         previous => document.querySelectorAll("[data-message-author-role='assistant']").length > previous,
         before,
@@ -172,15 +181,21 @@ export class ApolloChatGptBrowserWorker {
     this.page = undefined;
   }
 
+  async #persistSession() {
+    if (!this.sessionStore?.saveBrowserState || !this.context) return;
+    const state = await this.context.storageState({ indexedDB: true });
+    await this.sessionStore.saveBrowserState(state);
+  }
+
   #requirePage() {
     if (!this.context || !this.page) throw new Error("Dedicated ChatGPT browser is not started");
     return this.page;
   }
 }
 
-export async function createApolloChatGptBrowserWorkerFromEnvironment(environment = process.env) {
-  const profilePath = environment.APOLLO_BROWSER_PROFILE_PATH || "/data/apollo-browser/profile";
-  const worker = new ApolloChatGptBrowserWorker({ profilePath, allowedOrigin: environment.APOLLO_BROWSER_ALLOWED_ORIGIN || environment.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app" });
+export async function createApolloChatGptBrowserWorkerFromEnvironment(environment = process.env, { sessionStore } = {}) {
+  const profilePath = environment.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile";
+  const worker = new ApolloChatGptBrowserWorker({ profilePath, sessionStore, allowedOrigin: environment.APOLLO_BROWSER_ALLOWED_ORIGIN || environment.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app" });
   await worker.start();
   return { enabled: true, worker };
 }
