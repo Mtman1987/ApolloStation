@@ -51,6 +51,11 @@ on:
           - node2
           - both
         default: node1
+      detect_changes:
+        description: "Use change detection (on) or force the selected node deployment (off)"
+        required: true
+        type: boolean
+        default: true
       skip_validation:
         description: "Skip typecheck only for a manual recovery deploy"
         required: true
@@ -116,6 +121,9 @@ jobs:
           fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TARGET="${{ inputs.node }}"
+            if [ "${{ inputs.detect_changes }}" = "false" ]; then
+              echo "Change detection disabled: force-deploying the selected node(s)."
+            fi
             case "$TARGET" in
               node1) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=false" >> "$GITHUB_OUTPUT" ;;
               node2) echo "node1=false" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT" ;;
