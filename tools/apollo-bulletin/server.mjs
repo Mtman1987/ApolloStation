@@ -29,6 +29,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let state;
   let busy = false;
   let browserWorker;
+  let timer;
   const persistence = store ?? createTursoBulletinStoreFromEnvironment();
   if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires TURSO_DATABASE_URL or SHARED_TURSO_DATABASE_URL and TURSO_AUTH_TOKEN or NODE1_TURSO_AUTH_TOKEN");
   async function deliver(task) {
@@ -51,7 +52,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
   async function tick() {
-    if (busy) return; busy = true;
+    if (busy) return { processed: 0, busy: true };
+    busy = true;
+    let processed = 0;
     try {
       for (const task of state.tasks) {
         if (task.status !== "scheduled" || !task.nextRunAt || task.nextRunAt > now()) continue;
@@ -65,8 +68,11 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           if (result?.submitted && task.destination === "chatgpt") { task.cycles = (task.cycles || 0) + 1; const reply = String(result.receipt?.reply || ""); const complete = reply.split(/\r?\n/).some(line => line.trim() === task.completionMarker); const reviewRequested = reply.includes(task.reviewUrl) || /owner review required|blocked pending owner/i.test(reply); if (complete) { task.status = "completed"; task.nextRunAt = null; task.lastEvent = "Completion marker observed after " + task.cycles + " cycle(s)"; log("task-completion-marker-observed", task.id); } else if (reviewRequested || task.cycles >= task.maxCycles) { task.status = "awaiting_review"; task.nextRunAt = null; task.lastEvent = reviewRequested ? "ChatGPT requested owner review" : "Cycle limit reached without completion marker; owner review required"; log(reviewRequested ? "owner-review-requested" : "cycle-limit-owner-review", task.id); } else { task.prompt = "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; task.status = "scheduled"; task.nextRunAt = now() + 60_000; task.lastEvent = "Cycle " + task.cycles + "/" + task.maxCycles + " returned without completion marker; continuation queued"; log("continuation-queued", task.id); } } else if (result?.submitted && ["interval","weekly","monthly"].includes(task.schedule?.type)) { task.status = "scheduled"; task.nextRunAt = nextScheduledAt(task.schedule, now()); task.lastEvent = result?.reason || "Simulator receipt recorded; next occurrence scheduled"; log("recurrence-rearmed", task.id); } else if (result?.submitted) { task.status = "dispatched"; task.lastEvent = result?.reason || "Simulator receipt recorded"; } else { task.status = "dispatch-uncertain"; task.lastEvent = result?.reason || "Send not confirmed; manual review required"; log(task.status, task.id); }
         } catch (e) { task.status = "dispatch-uncertain"; task.lastEvent = String(e.message || e); log("dispatch-error-no-retry", task.id); }
         await save();
+        processed += 1;
+        break; // One bounded task per Hostless cron tick.
       }
     } finally { busy = false; }
+    return { processed, busy: false };
   }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://bulletin.local");
@@ -86,6 +92,15 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     }
     const body = async () => { let raw=""; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; };
     try {
+      if (req.method === "POST" && url.pathname === "/api/cron/tick") {
+        const expected = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD;
+        if (!expected) return send(503, { error: "Bulletin cron authentication is not configured" });
+        const authorization = req.headers.authorization || "";
+        const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+        const expectedBytes = Buffer.from(expected);
+        if (supplied.length !== expectedBytes.length || !timingSafeEqual(supplied, expectedBytes)) return send(401, { error: "Cron authentication required" });
+        return send(200, await tick());
+      }
       if (req.method === "GET" && url.pathname === "/") return send(200, '<!doctype html><meta name="viewport" content="width=device-width"><title>Apollo Bulletin</title><body style="font:16px system-ui;background:#080d1c;color:#edf3ff;padding:28px"><h1>Apollo Bulletin</h1><p>Bulletin lives inside Workspace → Overlay Bay. Open Overlay Bay and choose Personal Bulletin to add the task components to your Personal overlay.</p><a style="color:#8bd" href="/?view=workspace">Open Apollo Workspace</a></body>', "text/html; charset=utf-8");
       const widgetRoute = req.method === "GET" && url.pathname.match(/^\/widgets\/(tasks|active|reviews|activity|scheduler|history)$/);
       if (req.method === "GET" && url.pathname === "/widgets/proof") return send(200, `<!doctype html><meta name=\"viewport\" content=\"width=device-width\"><title>Apollo Scheduler Proof</title><body style=\"font:15px system-ui;background:#0b1220;color:#edf3ff;padding:18px;max-width:760px;margin:auto\"><h1>Scheduler delivery proof</h1><p>Isolated simulated receiver. This does not log into ChatGPT, send to a real AI, or launch a GitHub workflow.</p><label>Task name<input id=\"name\" value=\"5-minute scheduler proof\" style=\"display:block;width:100%;padding:8px;margin:8px 0\"></label><label>Prompt<textarea id=\"prompt\" style=\"display:block;width:100%;min-height:100px;padding:8px;margin:8px 0\">APOLLO SCHEDULE TEST: Respond with a receipt and summarize this prompt.</textarea></label><label>Repeat every <input id=\"every\" type=\"number\" min=\"1\" value=\"5\" style=\"width:90px;padding:8px\"> minutes</label><button id=\"create\" style=\"padding:10px;margin:12px 0\">Create scheduled test</button><p id=\"status\"></p><pre id=\"history\" style=\"white-space:pre-wrap;background:#111b30;padding:12px;border-radius:8px\"></pre><script>const status=document.querySelector(\"#status\"),history=document.querySelector(\"#history\");async function refresh(){const r=await fetch(\"/bulletin/api/tasks\",{cache:\"no-store\"}),d=await r.json();const t=d.tasks.filter(x=>x.destination===\"test-simulator\");history.textContent=t.map(x=>x.name+" — "+x.status+"\\nSchedule: "+(x.scheduleLabel||"")+"; next: "+(x.nextRunAt?new Date(x.nextRunAt).toLocaleString():"—")+"\\nLast result: "+(x.lastEvent||"—")+"\\nReceipts:\\n"+(x.receiptHistory||[]).map(q=>"Run #"+q.runNumber+" · "+new Date(q.receivedAt).toLocaleString()+"\\n"+q.reply).join("\\n\\n")).join("\\n\\n")||"No simulator tasks yet."; }document.querySelector(\"#create\").onclick=async()=>{const r=await fetch(\"/bulletin/api/tasks\",{method:\"POST\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({name:document.querySelector(\"#name\").value,prompt:document.querySelector(\"#prompt\").value,scheduleType:\"interval\",every:document.querySelector(\"#every\").value,unit:\"minutes\",destination:\"test-simulator\"})});const d=await r.json();status.textContent=r.ok?\"Scheduled. It will deliver automatically; pause or complete it from Task Queue.\":(d.error||\"Failed\");refresh();};refresh();setInterval(refresh,3000);</script></body>`, "text/html; charset=utf-8");
