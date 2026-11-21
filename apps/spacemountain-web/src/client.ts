@@ -137,14 +137,12 @@ const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
-const recoveryToggle = document.getElementById("apollo-recover-account") as HTMLButtonElement | null;
-const recoveryStart = document.getElementById("apollo-recovery-start") as HTMLDivElement | null;
-const recoveryDiscord = document.getElementById("apollo-recovery-discord") as HTMLButtonElement | null;
-const recoveryTwitch = document.getElementById("apollo-recovery-twitch") as HTMLButtonElement | null;
-const recoveryMessage = document.getElementById("apollo-recovery-message") as HTMLParagraphElement | null;
-recoveryToggle?.addEventListener("click", () => { if (recoveryStart) recoveryStart.hidden = !recoveryStart.hidden; });
-recoveryDiscord?.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=discord"));
-recoveryTwitch?.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=twitch"));
+const recoveryStart = element<HTMLDivElement>("apollo-recovery-start");
+const recoveryDiscord = element<HTMLButtonElement>("apollo-recovery-discord");
+const recoveryTwitch = element<HTMLButtonElement>("apollo-recovery-twitch");
+const recoveryMessage = element<HTMLParagraphElement>("apollo-recovery-message");
+recoveryDiscord.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=discord"));
+recoveryTwitch.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=twitch"));
 const recoveryError = new URLSearchParams(window.location.search).get("recoveryError");
 if (recoveryError && recoveryMessage) recoveryMessage.textContent = "We couldn't match that verified provider account to an existing Apollo account. Try the other provider or contact the workspace owner.";
 
@@ -928,7 +926,18 @@ function refreshOnceSignedIn() {
 
 async function submitApolloLogin() {
   try { await authRequest("/auth/login", authInput(apolloLoginForm), apolloLoginForm); }
-  catch (error) { setStatus(message(error), "error"); }
+  catch (error) {
+    const detail = message(error);
+    if (detail.toLowerCase().includes("valid local password") || (error instanceof SpmtApiError && error.status === 401)) {
+      recoveryStart.hidden = false;
+      recoveryMessage.textContent = "This account needs provider recovery. Continue with the Discord or Twitch account already linked to it.";
+      setStatus("Choose a linked provider to recover your existing Apollo account.", "error");
+      recoveryStart.scrollIntoView({ behavior: "smooth", block: "center" });
+      recoveryDiscord.focus({ preventScroll: true });
+      return;
+    }
+    setStatus(detail, "error");
+  }
 }
 
 async function submitApolloRegistration() {
