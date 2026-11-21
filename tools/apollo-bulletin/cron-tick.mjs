@@ -1,5 +1,7 @@
-const token = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD;
-if (!token) throw new Error("Set APOLLO_BULLETIN_CRON_TOKEN or APOLLO_BROWSER_CONTROL_PASSWORD for the Hostless cron dispatcher");
+import { resolveCronToken } from "./cron-auth.mjs";
+
+const token = resolveCronToken(process.env);
+if (!token) throw new Error("Set APOLLO_BULLETIN_CRON_TOKEN, APOLLO_BROWSER_CONTROL_PASSWORD, or APOLLO_PREVIEW_PASSWORD for the Hostless cron dispatcher");
 
 const origin = new URL(process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app");
 const endpoint = new URL("/bulletin/api/cron/tick", origin);
