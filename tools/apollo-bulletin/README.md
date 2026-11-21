@@ -48,7 +48,7 @@ Set APOLLO_BULLETIN_PUBLIC_URL to the public Node 1 origin if it differs from th
 
 Node 1 exposes the isolated Chromium browser at `/bulletin/browser`. The browser opens `https://chatgpt.com/` and provides a live screenshot, restricted navigation to ChatGPT/OpenAI sign-in domains, click, and text-entry controls. Its Chromium profile is separate from Lounge and all other application browsers.
 
-The queue state and Chromium profile default to `/data/apollo-bulletin/state.json` and `/data/apollo-browser/profile`. Attach a persistent Hostless volume at `/data` on Node 1 before relying on scheduled work or a saved ChatGPT login. If the volume is absent, the browser session and queue may be lost when the container is replaced.
+Node 1 uses the existing shared Turso database for the queue, activity log, and Playwright browser storage state (cookies, local storage, and IndexedDB). The Chromium working directory is temporary; the authenticated browser storage state is restored from Turso on startup and saved after owner browser interactions and task sends. Node 1 requires `SHARED_TURSO_DATABASE_URL` and `NODE1_TURSO_AUTH_TOKEN`; it fails closed at startup if those are missing. No Hostless persistent volume is required.
 
 
 The browser console is owner-protected with HTTP Basic authentication. It is designed for mobile use: it streams a screenshot and accepts taps and text input so the owner can sign in without a desktop browser extension. Use username `owner` and the password configured as `APOLLO_BROWSER_CONTROL_PASSWORD`; if that is not set, the service falls back to `APOLLO_PREVIEW_PASSWORD`. If neither secret exists, the console fails closed rather than exposing a logged-in browser publicly.
