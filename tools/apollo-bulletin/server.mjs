@@ -114,7 +114,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const destination = input.destination === "test-simulator" ? "test-simulator" : "chatgpt";
         let conversationUrl = input.conversationUrl || "";
         if (destination === "chatgpt") { try { conversationUrl = normalizeChatGptConversationUrl(conversationUrl); } catch (error) { return send(400, { error: error.message }); } }
-        let schedule; try { schedule = normalizeSchedule({ type: input.scheduleType || input.schedule || "manual", runAt: input.runAt, every: input.every, unit: input.unit, weekdays: input.weekdays, time: input.time, day: input.day }, now()); } catch (error) { return send(400, { error: error.message }); }
+        let schedule; try { schedule = normalizeSchedule({ type: input.scheduleType || input.schedule || "manual", runAt: input.runAt, every: input.every, unit: input.unit, weekdays: input.weekdays, time: input.time, timeZone: input.timeZone, day: input.day }, now()); } catch (error) { return send(400, { error: error.message }); }
         if (process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON === "1" && schedule.type === "interval" && schedule.unit === "seconds") return send(400, { error: "Hostless cron runs once per minute; use a minimum interval of one minute." });
         const runAt = nextScheduledAt(schedule, now());
         const id = randomUUID(); const reviewKey = randomUUID(); const reviewUrl = (process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app") + "/bulletin/review/" + reviewKey;
