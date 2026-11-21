@@ -50,7 +50,7 @@ jobs:
               "```json",
               JSON.stringify(command),
               "```"
-            ].join("\\n");
+            ].join("\n");
             const response = await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
