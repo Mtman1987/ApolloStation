@@ -19,10 +19,10 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
   let opening;
   let lastError = null;
 
-  async function ensure(url = CHATGPT_ORIGIN) {
-    const target = safeConversationUrl(url);
+  async function ensure(url = null) {
+    const target = url ? safeConversationUrl(url) : null;
     if (page && !page.isClosed()) {
-      if (page.url() !== target && page.url() === "about:blank") await page.goto(target, { waitUntil: "domcontentloaded", timeout: 45000 });
+      if (target && page.url() !== target) await page.goto(target || CHATGPT_ORIGIN, { waitUntil: "domcontentloaded", timeout: 45000 });
       return page;
     }
     if (opening) { await opening; return ensure(target); }
