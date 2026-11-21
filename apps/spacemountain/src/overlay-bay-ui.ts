@@ -5,6 +5,16 @@ const NEBULA_GAMES = [
   ["tag","Tag"],["quackverse","Quackverse"],["bingo","Bingo"],["chaosmode","Chaos Mode"],["chatgarden","Chat Garden"],["chatwars","Chat Wars"],["chickenroyale","Chicken Royale"],["colorsymphony","Color Symphony"],["colorwars","Color Wars"],["dancingparade","Dancing Parade"],["emojirain","Emoji Rain"],["emojitower","Emoji Tower"],["memorylane","Memory Lane"],["petrace","Pet Race"],["phraseguess","Phrase Guess"],["pixelbattle","Pixel Battle"],["rhythmpulse","Rhythm Pulse"],["treasurehunt","Treasure Hunt"],["wordchain","Word Chain"],["wordstorm","Word Storm"],
 ] as const;
 
+// Existing Overlay Bay widget sources backed by the Bulletin task API.
+const BULLETIN_COMPONENTS = [
+  { id: "tasks", title: "Task Queue", x: 2, y: 3, width: 48, height: 57 },
+  { id: "active", title: "Active Task", x: 52, y: 3, width: 46, height: 27 },
+  { id: "reviews", title: "Review Requests", x: 52, y: 34, width: 46, height: 25 },
+  { id: "activity", title: "Activity Log", x: 2, y: 63, width: 48, height: 34 },
+  { id: "scheduler", title: "Scheduler", x: 52, y: 63, width: 46, height: 34 },
+  { id: "history", title: "Task History", x: 2, y: 3, width: 48, height: 57 },
+] as const;
+
 function overlayIconUrl(snapshot: SpaceMountainShellSnapshotV1) {
   const workspace = record(snapshot.workspace);
   const appearance = record(workspace?.appearance);
@@ -74,7 +84,7 @@ export class OverlayBayParityController {
     const expanded = new Map([...bay.querySelectorAll<HTMLDetailsElement>("details[data-ob-section]")].map(node => [node.dataset.obSection,node.open]));
     const scene = this.activeScene();
     const owner = hasScope(this.snapshot.session, "overlay:outputs:write");
-    const headActions = [`<button type="button" data-ob-avatar-studio>3D Avatar Studio</button>`, `<button type="button" data-ob-broadcast>24/7 channel</button>`, `<button type="button" data-ob-new>New scene</button>`];
+    const headActions = [`<button type="button" data-ob-avatar-studio>3D Avatar Studio</button>`, `<button type="button" data-ob-broadcast>24/7 channel</button>`, `<button type="button" data-ob-bulletin>Personal Bulletin</button>`, `<button type="button" data-ob-new>New scene</button>`];
     if (scene) headActions.push(`<button type="button" data-ob-duplicate>Duplicate</button>`, `<button type="button" data-ob-delete>Delete</button>`);
     const tabs = this.scenes.length ? this.scenes.map((item) => `<button type="button" data-ob-scene="${esc(item.id)}" class="${item.id === this.activeSceneId ? "active" : ""}">${esc(item.name)}</button>`).join("") : `<span>No saved scenes yet.</span>`;
     const body = scene ? this.editor(scene, owner) : `<div class="ob-first"><h3>Create your first overlay scene</h3><p>Combine app widgets, a Nebula Game Mix, URLs, images, video, transparent frames, text, alerts, camera, screen, Xbox, links, ticker, and weather in one final browser source.</p><button type="button" data-ob-broadcast class="primary">Create 24/7 channel</button><button type="button" data-ob-new>Create blank scene</button></div>`;
@@ -95,10 +105,11 @@ export class OverlayBayParityController {
       entries.push(`<button type="button" data-ob-add-widget="${esc(appId)}|${esc(widgetId)}" data-renderer="${esc(text(manifest?.rendererUrl))}">${esc(title)}</button>`);widgetGroups.set(appId,entries);
     }
     const widgets=[...widgetGroups].map(([appId,entries])=>`<details data-ob-section="widgets-${esc(appId)}"><summary>${esc(this.snapshot.apps?.find(app=>app.appId===appId)?.name??appId)} <small>${entries.length}</small></summary><div class="ob-widgets">${entries.join("")}</div></details>`).join("")||`<small>Installed apps have not registered widgets yet.</small>`;
+    const bulletinWidgets=BULLETIN_COMPONENTS.map(item=>`<button type="button" data-ob-add-bulletin-widget="${item.id}">${item.title}</button>`).join("");
     const savedUrls=this.scenes.flatMap(saved=>saved.sources.filter(source=>source.kind==="web"||source.kind==="widget").map(source=>`<button type="button" data-ob-reuse-source="${esc(saved.id)}|${esc(source.id)}">${esc(source.name)}<small>${esc(saved.name)}</small></button>`)).join("");
     const sources = scene.sources.filter((source) => source.visible).map((source) => this.sourceCard(source)).join("") || `<div class="ob-empty">Add a source from the left. Nebula Arcade can contain any combination of all 20 games inside one source.</div>`;
     const issueButtons = owner ? `<button type="button" data-ob-copy-output="public">Copy Public URL</button><button type="button" data-ob-copy-output="personal">Copy Personal URL</button>` : "";
-    return `<div class="ob-shell"><aside class="ob-palette"><details data-ob-section="source-types"><summary>Add source</summary><div class="ob-source-kinds">${paletteKinds}</div></details><details data-ob-section="app-widgets" open><summary>App overlays</summary><button type="button" data-ob-refresh-widgets>Refresh app overlays</button><p class="ob-discovery-status">${esc(this.discoveryMessage)}</p>${widgets}</details><details data-ob-section="saved-urls"><summary>Saved overlay sources</summary><div class="ob-widgets">${savedUrls||"<p>No saved URL or widget sources.</p>"}</div></details><details data-ob-section="scene-sources" open><summary>Scene sources · ${scene.sources.length}</summary><div class="ob-layer-list">${scene.sources.map(source=>`<div><button type="button" data-ob-select="${esc(source.id)}" class="${source.id===this.selectedSourceId?"active":""}">${esc(source.name)}</button><label><input type="checkbox" data-ob-source-visible="${esc(source.id)}" ${source.visible?"checked":""}>Show</label><label><input type="checkbox" data-ob-source-locked="${esc(source.id)}" ${source.locked?"checked":""}>Lock</label></div>`).join("")||"<p>No sources yet.</p>"}</div></details></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button><span data-ob-save-state role="status">${esc(this.saveMessage)}</span>${issueButtons}</div><div class="ob-stage" data-ob-stage style="aspect-ratio:${scene.canvasWidth}/${scene.canvasHeight}">${sources}</div></main><aside class="ob-inspector"><details data-ob-section="source-properties" open><summary>${this.selectedSource()?"Source properties":"Scene properties"}</summary>${this.inspector(scene)}</details></aside></div>`;
+    return `<div class="ob-shell"><aside class="ob-palette"><details data-ob-section="source-types"><summary>Add source</summary><div class="ob-source-kinds">${paletteKinds}</div></details><details data-ob-section="app-widgets" open><summary>App overlays</summary><button type="button" data-ob-refresh-widgets>Refresh app overlays</button><p class="ob-discovery-status">${esc(this.discoveryMessage)}</p>${widgets}</details><details data-ob-section="bulletin-components"><summary>Bulletin components</summary><div class="ob-widgets">${bulletinWidgets}</div></details><details data-ob-section="saved-urls"><summary>Saved overlay sources</summary><div class="ob-widgets">${savedUrls||"<p>No saved URL or widget sources.</p>"}</div></details><details data-ob-section="scene-sources" open><summary>Scene sources · ${scene.sources.length}</summary><div class="ob-layer-list">${scene.sources.map(source=>`<div><button type="button" data-ob-select="${esc(source.id)}" class="${source.id===this.selectedSourceId?"active":""}">${esc(source.name)}</button><label><input type="checkbox" data-ob-source-visible="${esc(source.id)}" ${source.visible?"checked":""}>Show</label><label><input type="checkbox" data-ob-source-locked="${esc(source.id)}" ${source.locked?"checked":""}>Lock</label></div>`).join("")||"<p>No sources yet.</p>"}</div></details></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button><span data-ob-save-state role="status">${esc(this.saveMessage)}</span>${issueButtons}</div><div class="ob-stage" data-ob-stage style="aspect-ratio:${scene.canvasWidth}/${scene.canvasHeight}">${sources}</div></main><aside class="ob-inspector"><details data-ob-section="source-properties" open><summary>${this.selectedSource()?"Source properties":"Scene properties"}</summary>${this.inspector(scene)}</details></aside></div>`;
   }
 
   private sourceCard(source: OverlaySceneSourceV1) {
@@ -155,6 +166,8 @@ export class OverlayBayParityController {
   private bind(bay: HTMLElement) {
     bay.querySelector<HTMLElement>("[data-ob-avatar-studio]")?.addEventListener("click", () => { window.open("/avatar-studio", "_blank", "noopener,noreferrer"); });
     bay.querySelector<HTMLElement>("[data-ob-refresh-widgets]")?.addEventListener("click",()=>void this.discoverWidgets(bay));
+    bay.querySelector<HTMLElement>("[data-ob-bulletin]")?.addEventListener("click",()=>this.newBulletinScene(bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-add-bulletin-widget]").forEach(node=>node.onclick=()=>this.addBulletinWidget(node.dataset.obAddBulletinWidget??"",bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-broadcast]").forEach((node) => node.onclick = () => this.newBroadcastScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-output]").forEach((node) => node.onclick = () => { this.output = node.dataset.obOutput === "personal" ? "personal" : "public"; if(this.editVersion===this.savedVersion&&!this.saving)this.loadSnapshot(); this.render(bay); });
@@ -200,6 +213,22 @@ export class OverlayBayParityController {
     this.discoveredWidgets=items;if(!this.dragging)this.render(bay);
   }
 
+  private bulletinSource(component: typeof BULLETIN_COMPONENTS[number]) {
+    const source=createOverlaySource("widget",component.title);
+    source.x=component.x;source.y=component.y;source.width=component.width;source.height=component.height;
+    source.config={appId:"apollo-bulletin",widgetId:\`bulletin:\${component.id}\`,rendererUrl:new URL(\`/bulletin/widgets/\${component.id}\`,window.location.origin).href};
+    return source;
+  }
+  private newBulletinScene(bay: HTMLElement) {
+    const scene=createOverlayScene("Personal Bulletin");
+    scene.sources=BULLETIN_COMPONENTS.filter(item=>item.id!=="history").map((item,index)=>({...this.bulletinSource(item),zIndex:index}));
+    this.scenes.push(scene);this.output="personal";this.activeSceneId=scene.id;this.selectedSourceId="";
+    this.changed();this.render(bay);
+  }
+  private addBulletinWidget(id:string,bay:HTMLElement) {
+    const component=BULLETIN_COMPONENTS.find(item=>item.id===id);if(!component)return;
+    this.addSource(this.bulletinSource(component),bay);
+  }
   private newScene(bay: HTMLElement) { const name = window.prompt("Scene name", "Stream Overlay")?.trim(); if (!name) return; const scene = createOverlayScene(name); this.scenes.push(scene); this.activeSceneId = scene.id; this.selectedSourceId = ""; this.changed(); this.render(bay); }
   private newBroadcastScene(bay: HTMLElement) { const scene=createBroadcastOverlayScene();this.scenes.push(scene);this.activeSceneId=scene.id;this.selectedSourceId="";this.changed();this.render(bay); }
   private duplicateScene(bay: HTMLElement) { const scene = this.activeScene(); if (!scene) return; const now = new Date().toISOString(); const copy: OverlaySceneV1 = { ...structuredClone(scene), id: `scene-${crypto.randomUUID()}`, name: `${scene.name} Copy`, createdAt: now, updatedAt: now, sources: scene.sources.map((source) => ({ ...source, id: `source-${crypto.randomUUID()}` })) }; this.scenes.push(copy); this.activeSceneId = copy.id; this.selectedSourceId = ""; this.changed(); this.render(bay); }
