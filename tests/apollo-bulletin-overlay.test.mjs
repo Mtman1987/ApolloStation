@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBulletinServer } from "../tools/apollo-bulletin/server.mjs";
@@ -68,8 +68,59 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     assert.equal(created.status, 201);
     const payload = await created.json();
     assert.equal(payload.task.status, "paused");
+    assert.ok(payload.task.progressUrl);
+    assert.ok(payload.task.completeUrl);
+    const progressPath = new URL(payload.task.progressUrl).pathname.replace(/^\/bulletin/, "");
+    const progressQuery = new URLSearchParams({
+      summary: "Verified the first proof step",
+      todo: JSON.stringify(["Connect browser", "Run one prompt"]),
+      completed: JSON.stringify(["Connect browser"]),
+      next: "Run one prompt",
+      blocker: "",
+    });
+    const progress = await fetch(origin + progressPath + "?" + progressQuery.toString());
+    assert.equal(progress.status, 200);
+    const progressPayload = await progress.json();
+    assert.equal(progressPayload.task.handoff.summary, "Verified the first proof step");
+    assert.deepEqual(progressPayload.task.handoff.todo, ["Connect browser", "Run one prompt"]);
+    const completePath = new URL(payload.task.completeUrl).pathname.replace(/^\/bulletin/, "");
+    const completed = await fetch(origin + completePath);
+    assert.equal(completed.status, 200);
+    assert.equal((await completed.json()).task.status, "completed");
     const list = await (await fetch(origin + "/api/tasks")).json();
     assert.equal(list.tasks.length, 1);
+    assert.equal(list.tasks[0].handoff.status, "completed");
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("existing manual Bulletin tasks migrate to progress, completion, and current-browser handoff", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-migrate-"));
+  const statePath = join(directory, "state.json");
+  await writeFile(statePath, JSON.stringify({
+    tasks: [{
+      id: "existing-task", name: "Existing manual test", prompt: "Do the saved test\\n\\nAPOLLO BULLETIN HANDOFF: old handoff",
+      conversationUrl: "https://chatgpt.com/", schedule: "manual", status: "paused",
+      nextRunAt: null, createdAt: 1, reviewKey: "existing-review-key",
+      reviewUrl: "https://apollo-node-1.hostless.app/bulletin/review/existing-review-key",
+    }],
+    activity: [],
+  }));
+  const app = createBulletinServer({ port: 0, statePath });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const payload = await (await fetch(origin + "/api/tasks")).json();
+    const task = payload.tasks[0];
+    assert.equal(task.id, "existing-task");
+    assert.equal(task.conversationUrl, null);
+    assert.ok(task.progressUrl.endsWith("/bulletin/progress/existing-review-key"));
+    assert.ok(task.completeUrl.endsWith("/bulletin/complete/existing-review-key"));
+    assert.equal(task.handoff.status, "not_started");
+    const saved = JSON.parse(await readFile(statePath, "utf8"));
+    assert.match(saved.tasks[0].prompt, /APOLLO BULLETIN WORKER HANDOFF/);
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
