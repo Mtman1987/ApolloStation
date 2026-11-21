@@ -216,7 +216,7 @@ export class OverlayBayParityController {
   private bulletinSource(component: typeof BULLETIN_COMPONENTS[number]) {
     const source=createOverlaySource("widget",component.title);
     source.x=component.x;source.y=component.y;source.width=component.width;source.height=component.height;
-    source.config={appId:"apollo-bulletin",widgetId:\`bulletin:\${component.id}\`,rendererUrl:new URL(\`/bulletin/widgets/\${component.id}\`,window.location.origin).href};
+    source.config={appId:"apollo-bulletin",widgetId:`bulletin:${component.id}`,rendererUrl:new URL(`/bulletin/widgets/${component.id}`,window.location.origin).href};
     return source;
   }
   private newBulletinScene(bay: HTMLElement) {
