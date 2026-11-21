@@ -35,4 +35,6 @@ This page is behind the Apollo SPMT session check. Select **Open ChatGPT sign-in
 
 ## Current boundary
 
-The browser is a user-operated ChatGPT session, not an official ChatGPT API integration. ChatGPT may change its UI or challenge sign-in. When the worker cannot reliably find the composer or confirm a response, it must stop and request owner review rather than guessing.
+The browser is a user-operated ChatGPT session, not an official ChatGPT API integration. The owner can sign in from a phone through the Apollo browser console; no desktop extension is required. ChatGPT tasks must use an exact `https://chatgpt.com/c/<conversation-id>` URL. The worker refuses shared links, non-ChatGPT URLs, existing drafts, hidden/disabled Send controls, and redirects away from the target conversation. It clicks Send at most once per cycle and marks uncertain outcomes for owner review without automatic retry.
+
+The Bulletin task queue adds a unique completion marker and bounded continuation loop. Each response is checked for the marker on its own line. If absent, the task continues after 60 seconds until the configured 1–100 cycle limit; then it pauses for owner review. An explicit review request also pauses the task. The task queue, cycle count, activity history, and browser profile are stored beneath `/data`; attach a persistent Hostless volume at that mount before using real tasks.
