@@ -7,6 +7,9 @@ async function getState() {
   const { state } = await chrome.storage.local.get("state");
   return { ...DEFAULTS, ...(state || {}) };
 }
+async function notifyCompletion(allDone) {
+  try { await chrome.notifications.create({ type: "basic", iconUrl: chrome.runtime.getURL("icon.svg"), title: "Apollo Bulletin", message: allDone ? "All queued tasks are complete. The hourly resumer stopped." : "A queued task is complete. The remaining queue will continue." }); } catch {}
+}
 async function save(state, event) {
   state.activity = [...(state.activity || []), { at: Date.now(), event }].slice(-200);
   await chrome.storage.local.set({ state });
@@ -48,6 +51,7 @@ async function runOnce(manual = false) {
       state.completed = allQueueCompleted(state.queue);
       if (state.completed) { state.enabled = false; state.paused = true; }
       const saved = await save(state, "task-completion-marker-detected");
+      await notifyCompletion(state.completed);
       if (state.completed) await ensureAlarm();
       return saved;
     }
@@ -132,6 +136,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       state.completed = allQueueCompleted(state.queue);
       if (state.completed) { state.enabled = false; state.paused = true; }
       const saved = await save(state, "queue-item-completed");
+      await notifyCompletion(state.completed);
       if (state.completed) await ensureAlarm();
       return saved;
     }
