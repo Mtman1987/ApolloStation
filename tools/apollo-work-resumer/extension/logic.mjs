@@ -1,4 +1,4 @@
-export const INITIAL_PROMPT_SUFFIX = "\n\nWhen fully complete, output this exact task-specific marker on its own line: ";
+export const INITIAL_PROMPT_SUFFIX = "\n\nMaintain a concise TODO/checkpoint and record each meaningful change. Continue making concrete progress between cycles. Only when every requirement is finished, output this exact task-specific marker on its own line: ";
 export const CONTINUATION_PREFIX = "Continue working on the task above from your saved checkpoint. Review what remains in the TODO/checklist, do the next concrete step, update the checkpoint, and do not claim completion unless all requirements are finished. If finished, output the task-specific completion marker on its own line: ";
 export function nextQueueItem(queue = []) { return queue.find(q => q.status === "active") || queue.find(q => q.status === "pending") || null; }
 export function buildTaskPrompt(item) { return item.status === "active" ? CONTINUATION_PREFIX + item.completionToken : item.prompt + INITIAL_PROMPT_SUFFIX + item.completionToken; }
