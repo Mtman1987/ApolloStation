@@ -16,6 +16,7 @@ let worker = { connected: false, browserReady: false, loggedIn: false, url: "abo
 let screenshot = null;
 let profileSnapshot = null;
 let restoreArchive = null;
+let restoreEmpty = false;
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ""));
@@ -93,6 +94,7 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/internal/")) {
       if (!authorizedWorker(req)) return send(res, 401, { error: "worker_auth_required" });
+      if (req.method === "GET" && url.pathname === "/internal/status") return send(res, 200, { worker, queueLength: queue.length });
       if (req.method === "POST" && url.pathname === "/internal/heartbeat") {
         const value = await body(req);
         worker = { ...worker, ...value, connected: true, lastSeenAt: Date.now() };
@@ -137,8 +139,14 @@ const server = createServer(async (req, res) => {
       }
       if (req.method === "GET" && url.pathname === "/internal/profile/restore-next") {
         const value = restoreArchive;
+        const empty = restoreEmpty;
         restoreArchive = null;
-        return send(res, 200, { base64: value });
+        restoreEmpty = false;
+        return send(res, 200, { base64: value, empty });
+      }
+      if (req.method === "POST" && url.pathname === "/internal/profile/restore-empty") {
+        restoreEmpty = true;
+        return send(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/internal/enqueue") {
         const value = await body(req);
