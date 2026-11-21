@@ -138,21 +138,35 @@ loginForm.addEventListener("submit", (event) => void submitLogin(event));
 apolloLoginForm.addEventListener("submit", (event) => { event.preventDefault(); void submitApolloLogin(); });
 createApolloAccountButton.addEventListener("click", () => void submitApolloRegistration());
 const recoveryStart = element<HTMLDivElement>("apollo-recovery-start");
+const recoveryPasswordPanel = element<HTMLDivElement>("apollo-recovery-password");
 const recoveryDiscord = element<HTMLButtonElement>("apollo-recovery-discord");
 const recoveryTwitch = element<HTMLButtonElement>("apollo-recovery-twitch");
+const recoveryPasswordInput = element<HTMLInputElement>("apollo-recovery-password-value");
+const recoveryPasswordConfirm = element<HTMLInputElement>("apollo-recovery-password-confirm");
+const recoverySubmit = element<HTMLButtonElement>("apollo-recovery-submit");
 const recoveryMessage = element<HTMLParagraphElement>("apollo-recovery-message");
-recoveryDiscord.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=discord"));
-recoveryTwitch.addEventListener("click", () => window.location.assign("/v1/auth/linked-provider-recovery/start?provider=twitch"));
-const recoveryError = new URLSearchParams(window.location.search).get("recoveryError");
+const recoveryQuery = new URLSearchParams(window.location.search);
+const recoveryReady = recoveryQuery.get("recovery") === "verified";
+const recoveryError = recoveryQuery.get("recoveryError");
+const recoveryUsernameInput = apolloLoginForm.elements.namedItem("username") as HTMLInputElement | null;
+const savedRecoveryUsername = sessionStorage.getItem("apollo-recovery-username");
+if (savedRecoveryUsername && recoveryUsernameInput && !recoveryUsernameInput.value) recoveryUsernameInput.value = savedRecoveryUsername;
+if (recoveryReady || recoveryError) sessionStorage.removeItem("apollo-recovery-username");
+recoveryDiscord.addEventListener("click", () => startLinkedProviderRecovery("discord"));
+recoveryTwitch.addEventListener("click", () => startLinkedProviderRecovery("twitch"));
+recoverySubmit.addEventListener("click", () => void submitLinkedProviderRecovery());
+if (recoveryReady) {
+  recoveryStart.hidden = true;
+  recoveryPasswordPanel.hidden = false;
+  recoveryMessage.textContent = "Discord or Twitch verified the identity linked to this Apollo username. Set your new password below.";
+}
 if (recoveryError && recoveryMessage) {
   const recoveryMessages: Record<string, string> = {
-    invalid_state: "The recovery attempt expired or could not be verified. Start again with Twitch or Discord.",
+    invalid_state: "The recovery attempt expired or could not be verified. Start again with your Apollo username and linked provider.",
     provider_verification_failed: "The provider could not verify the account. Check the provider authorization and try again.",
-    provider_not_linked: "Twitch or Discord verified your identity, but that provider ID is not linked to an Apollo account record yet.",
-    workspace_unavailable: "Your provider ID matched, but Apollo could not restore an active owner workspace. Your existing data was not changed.",
-    recovery_failed: "Your provider was verified, but Apollo could not finish opening the account. Try again; the failure was logged for diagnosis.",
+    recovery_failed: "Apollo couldn't match that username to this linked provider, or the recovery attempt expired. Check the username and try again.",
   };
-  recoveryMessage.textContent = recoveryMessages[recoveryError] ?? "Account recovery could not be completed. Choose a provider to try again.";
+  recoveryMessage.textContent = recoveryMessages[recoveryError] ?? "Account recovery could not be completed. Check the username and try again.";
 }
 
 document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab === "apollo" ? "apollo" : "spmt")));
@@ -204,10 +218,12 @@ async function restoreShell() {
   } catch (error) {
     if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
     if (classifySpaceMountainSessionFailure(error) === "auth-rejected") {
-      const recoveryAttempt = new URLSearchParams(window.location.search).has("recoveryError");
-      showAuth(recoveryAttempt
-        ? "You're signed out, which is expected during account recovery. Choose the provider already linked to your Apollo account."
-        : "No active Apollo session was found in this browser. You can recover your existing account with its linked Twitch or Discord identity.");
+      const recoveryAttempt = recoveryReady || new URLSearchParams(window.location.search).has("recoveryError");
+      showAuth(recoveryReady
+        ? "Your linked identity is verified. Set a new password to finish signing in."
+        : recoveryAttempt
+          ? "Recovery could not be completed. Check your Apollo username and try the provider already linked to it."
+          : "No active Apollo session was found in this browser. You can recover your existing account with its linked Twitch or Discord identity.");
       return;
     }
     showSessionUnavailable(message(error));
@@ -949,13 +965,60 @@ async function submitApolloLogin() {
     const detail = message(error);
     if (detail.toLowerCase().includes("valid local password") || (error instanceof SpmtApiError && error.status === 401)) {
       recoveryStart.hidden = false;
-      recoveryMessage.textContent = "This account needs provider recovery. Continue with the Discord or Twitch account already linked to it.";
+      recoveryMessage.textContent = "Enter your Apollo username above, then choose the Discord or Twitch identity already linked to it.";
       setStatus("Choose a linked provider to recover your existing Apollo account.", "error");
       recoveryStart.scrollIntoView({ behavior: "smooth", block: "center" });
       recoveryDiscord.focus({ preventScroll: true });
       return;
     }
     setStatus(detail, "error");
+  }
+}
+
+function startLinkedProviderRecovery(provider: "discord" | "twitch") {
+  const username = recoveryUsernameInput?.value.trim() ?? "";
+  if (!username) {
+    recoveryMessage.textContent = "Enter your Apollo username above first.";
+    recoveryUsernameInput?.focus();
+    return;
+  }
+  sessionStorage.setItem("apollo-recovery-username", username);
+  const query = new URLSearchParams({ provider, username });
+  window.location.assign(`/v1/auth/linked-provider-recovery/start?${query.toString()}`);
+}
+
+async function submitLinkedProviderRecovery() {
+  const username = recoveryUsernameInput?.value.trim() ?? "";
+  const password = recoveryPasswordInput.value;
+  const confirmation = recoveryPasswordConfirm.value;
+  if (!username) { recoveryMessage.textContent = "Enter your Apollo username above."; recoveryUsernameInput?.focus(); return; }
+  if (password.length < 12) { recoveryMessage.textContent = "Use a password with at least 12 characters."; recoveryPasswordInput.focus(); return; }
+  if (password !== confirmation) { recoveryMessage.textContent = "Those passwords do not match."; recoveryPasswordConfirm.focus(); return; }
+  recoverySubmit.disabled = true;
+  setStatus("Setting your Apollo password and opening your session…", "working");
+  try {
+    const response = await fetch("/v1/auth/linked-provider-recovery/password", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ username, password }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : "Apollo could not complete account recovery. Start again with your linked provider.");
+    if (!(await hasSavedSessionCookie())) throw new Error("Apollo set the password but could not verify the new browser session. Retry sign-in with your new password.");
+    await loadShell();
+    sessionRecovery.authenticated();
+    const returnTo = new URLSearchParams(window.location.search).get("return");
+    window.history.replaceState(null, "", returnTo ? `/?return=${encodeURIComponent(returnTo)}` : "/");
+    recoveryPasswordInput.value = "";
+    recoveryPasswordConfirm.value = "";
+    refreshOnceSignedIn();
+  } catch (error) {
+    const detail = message(error);
+    recoveryMessage.textContent = detail;
+    setStatus(detail, "error");
+  } finally {
+    recoverySubmit.disabled = false;
   }
 }
 
