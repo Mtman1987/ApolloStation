@@ -16,7 +16,7 @@ export function normalizeChatGptConversationUrl(value) {
 }
 
 export class ApolloChatGptBrowserWorker {
-  constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium) }) {
+  constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/data/apollo-browser/profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium) }) {
     this.profilePath = resolve(profilePath);
     this.allowedOrigin = new URL(allowedOrigin).origin;
     this.now = now;
