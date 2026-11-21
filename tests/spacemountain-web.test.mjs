@@ -55,7 +55,8 @@ test("a rejected or missing session always reveals the SPMT bridge recovery form
   const gate = client.slice(client.indexOf("function showAuth"), client.indexOf("function showSessionUnavailable"));
   assert.match(restore, /Your existing SPMT session is not active in this browser/);
   assert.match(gate, /authView\.dataset\.mode = "signin"/);
-  assert.match(gate, /selectTab\("spmt"\)/);
+  assert.match(gate, /selectTab\("apollo"\)/);
+  assert.doesNotMatch(gate, /selectTab\("spmt"\)/);
   assert.match(gate, /reportBrowserDiagnostic\("auth-gate-shown"/);
 });
 
