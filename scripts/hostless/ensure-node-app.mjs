@@ -347,7 +347,7 @@ if (waited.stdout) process.stdout.write(waited.stdout);
 if (waited.stderr) process.stderr.write(waited.stderr);
 if (waited.error) fail(`Hostless deployment ${deploymentId} for ${node.app} wait failed: ${waited.error.message}`);
 if (waited.status !== 0) fail(`Hostless deployment ${deploymentId} for ${node.app} failed with exit code ${waited.status}.`);
-const deploymentEvents = (waited.stdout || "").split(/\\r?\\n/).filter(Boolean).flatMap((line) => {
+const deploymentEvents = (waited.stdout || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
   try { return [JSON.parse(line)]; } catch { return []; }
 });
 const finalDeployment = [...deploymentEvents].reverse().find((event) => event?.type === "deployment" && event?.deployment);
