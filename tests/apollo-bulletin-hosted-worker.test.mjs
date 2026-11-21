@@ -213,3 +213,10 @@ test("Hostless cron proxy uses a bearer secret and does not need an interactive 
   assert.equal(denied.authorized, false);
   assert.equal(denied.status, 401);
 });
+
+test("Node 1 disables its private polling loop when Hostless cron owns scheduling", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const startNode = await readFile(new URL("../scripts/hostless/start-node.mjs", import.meta.url), "utf8");
+  assert.match(startNode, /APOLLO_BULLETIN_USE_HOSTLESS_CRON:\s*"1"/);
+  assert.match(startNode, /APOLLO_BULLETIN_REQUIRE_TURSO:\s*"1"/);
+});
