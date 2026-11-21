@@ -1,0 +1,1 @@
+Reply with exactly: APOLLO_BROWSER_CONNECTED
