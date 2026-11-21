@@ -75,3 +75,24 @@ test("ChatGPT work continuation is bounded and persisted before the next schedul
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+import { TursoBulletinStore } from "../tools/apollo-bulletin/turso-store.mjs";
+
+test("Turso Bulletin store persists queue and browser session state under separate keys", async () => {
+  const rows = new Map();
+  const adapter = {
+    async execute(sql, args = []) {
+      if (sql.startsWith("CREATE TABLE")) return { rows: [], affectedRows: 0 };
+      if (sql.startsWith("SELECT")) return { rows: rows.has(args[0]) ? [[rows.get(args[0])]] : [], affectedRows: 0 };
+      if (sql.startsWith("INSERT")) { rows.set(args[0], args[1]); return { rows: [], affectedRows: 1 }; }
+      throw new Error("Unexpected SQL in test: " + sql);
+    },
+  };
+  const store = new TursoBulletinStore({ url: "libsql://test.turso.io", authToken: "test", adapter });
+  const queue = { tasks: [{ id: "task-1", status: "scheduled" }], activity: [] };
+  const browser = { cookies: [{ name: "session", value: "test-session" }], origins: [] };
+  await store.saveQueue(queue);
+  await store.saveBrowserState(browser);
+  assert.deepEqual(await store.loadQueue(), queue);
+  assert.deepEqual(await store.loadBrowserState(), browser);
+});
