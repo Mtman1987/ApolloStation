@@ -176,6 +176,8 @@ test("background requires a unique active exact tab and uses a serialized runner
   assert.match(background, /createSerialRunner\(\)/);
   assert.match(background, /tick-skipped-uncertain-send-no-retry/);
   assert.match(background, /isTrustedBridgeSender\(sender\)/);
+  assert.match(background, /processedCommandIds = \[\.\.\.processed, command\.id\]/);
+  assert.doesNotMatch(background, /processedCommandIds = \[\.\.\.processed, command\.id\]\.slice/);
 });
 
 test("GitHub bridge marks a command seen only after acceptance or duplicate confirmation", async () => {
