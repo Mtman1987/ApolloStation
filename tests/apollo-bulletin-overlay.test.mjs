@@ -63,7 +63,7 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     }
     const created = await fetch(origin + "/api/tasks", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Test task", prompt: "Do one test", schedule: "manual" }),
+      body: JSON.stringify({ name: "Test task", prompt: "Do one test", destination: "test-simulator", schedule: "manual" }),
     });
     assert.equal(created.status, 201);
     const payload = await created.json();

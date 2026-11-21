@@ -1,38 +1,41 @@
-# Apollo Bulletin dedicated ChatGPT browser
+# Apollo Bulletin hosted ChatGPT browser
 
-Apollo Bulletin now has a separate Playwright/Chromium worker. It never attaches to, shares, or takes control of the Lounge browser.
+Apollo Bulletin uses its existing Node 1 Playwright/Chromium worker. It never attaches to, shares, or takes control of the Lounge browser. The owner uses the Apollo console from a phone; no desktop extension is required.
 
-## Hostless setup required before enabling
+## Persistence
 
-Hostless deletes `/tmp`, `/root`, and `/app/.cache` when a process starts. The ChatGPT browser profile must therefore be stored on a Hostless volume.
+No Hostless volume is used. The queue, activity log, and Playwright browser storage state (cookies, local storage, and IndexedDB) are stored in the existing shared Turso database. A single embedded Hostless cron job, configured in `hostless.yaml`, wakes every minute and processes at most one due task. The Hostless app's in-process polling loop is disabled in production; Hostless owns the schedule and run history. This is one dispatcher for the queue, not one cron job per task.
 
-1. In the `apollo-node-1` Hostless app, open **Storage → Volumes**.
-2. Create or attach a volume and mount it at `/data`. Keep the app at one replica.
-3. In the app's environment, set `APOLLO_BROWSER_PROFILE_PATH=/data/apollo-browser/profile`.
-4. Deploy Node 1 again.
+Node 1 requires:
+- `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`
 
-Do not point this setting at `/tmp`, `/root`, or `/app/.cache`. Do not store the profile in GitHub or commit browser cookies.
+Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The cron command calls the owner-protected `/bulletin/api/cron/tick` endpoint using `APOLLO_BULLETIN_CRON_TOKEN` or `APOLLO_BROWSER_CONTROL_PASSWORD`. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
 
-The existing `scripts/setup-local-browser.mjs` provisions the pinned Chromium 153 runtime from the checked-in `scripts/local-browser/package-lock.json`. The worker starts only when the persistent profile path is configured; otherwise the ChatGPT destination fails closed with `persistent-browser-profile-not-configured`. The simulator remains available.
+## Owner sign-in from a phone
 
-## Owner sign-in
+1. Sign in to Apollo in the phone browser.
+2. Open `/bulletin/browser` on the Apollo Node 1 origin.
+3. Authenticate with the existing owner-protected browser console.
+4. Use the live screenshot, tap controls, and text field to sign in to ChatGPT in the isolated Apollo browser.
+5. Open the conversation for the assistant/custom GPT you want the resumer to use (for example, your SPMT helper conversation), then copy that conversation's exact URL into the Bulletin task.
+6. Wait for the browser status to show the signed-in ChatGPT page. Browser interactions persist the updated storage state to Turso.
 
-After the volume is attached and the worker starts, sign in to Apollo and open:
+The ChatGPT browser session is separate from the ChatGPT app session on the phone. The console lets the owner operate that dedicated hosted browser from the phone; it does not take control of the ChatGPT Android app or this current conversation.
 
-`/bulletin/browser`
-
-This page is behind the Apollo SPMT session check. Select **Open ChatGPT sign-in**, then use the private browser preview to sign in. The profile stays on the mounted volume across Hostless restarts and deployments. Do not share the profile directory or browser screenshots.
+The worker does not choose or switch custom GPTs, models, or connected apps. It continues only the exact conversation URL supplied with the task, so select the intended helper conversation first.
 
 ## Dispatch behavior
 
-- Only `https://chatgpt.com` URLs are accepted.
-- The worker uses its own persistent Chromium profile.
-- It checks for a signed-in ChatGPT session before submitting.
-- It records a receipt only after an assistant response appears.
-- A timeout or ambiguous send is marked uncertain and is not automatically retried.
-- Browser controls are available only through the Apollo owner-session-gated Bulletin proxy.
+- Only exact `https://chatgpt.com/c/<conversation-id>` conversation URLs are accepted; shared links, query strings, fragments, and other origins are rejected.
+- The worker uses only the visible signed-in ChatGPT UI. It does not use private endpoints, bypass sign-in, or call an unofficial ChatGPT API.
+- Existing unsent composer drafts are never overwritten.
+- A visible Send control must become enabled after the worker fills an empty composer. It clicks at most once per cycle.
+- It waits for a new assistant response and idle composer state before recording a receipt.
+- A timeout or ambiguous send is marked uncertain and is never automatically retried.
+- Browser controls remain owner-protected and are routed through the existing Apollo Bulletin proxy.
 - The worker does not access or control Lounge's browser.
 
-## Current boundary
+## Bounced work
 
-The browser is a user-operated ChatGPT session, not an official ChatGPT API integration. ChatGPT may change its UI or challenge sign-in. When the worker cannot reliably find the composer or confirm a response, it must stop and request owner review rather than guessing.
+Each ChatGPT task receives a unique completion marker and a configurable 1–100 cycle limit (default 8). If the response does not contain the marker on its own line, the next continuation is queued for 60 seconds later. A genuine completion marker ends the task. An explicit owner-review request or exhausted cycle budget pauses it for review. Uncertain sends are never automatically continued or retried.

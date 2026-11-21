@@ -18,6 +18,43 @@ export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpa
   hearMeOutActivityClientId?:string;
 }
 
+export async function authorizeBulletinRequest(
+  request: Pick<IncomingMessage, "headers">,
+  pathname: string,
+  spmtOrigin: string,
+  fetchImpl: typeof fetch = fetch,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<{ authorized: boolean; status: number; reason: string }> {
+  if (pathname === "/bulletin/api/cron/tick") {
+    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD;
+    if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
+    const authorization = request.headers.authorization || "";
+    const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+    const expectedBytes = Buffer.from(expected);
+    return supplied.length === expectedBytes.length && timingSafeEqual(supplied, expectedBytes)
+      ? { authorized: true, status: 200, reason: "cron-token" }
+      : { authorized: false, status: 401, reason: "Cron authentication required" };
+  }
+  const cookie = request.headers.cookie;
+  if (!cookie) return { authorized: false, status: 401, reason: "Apollo sign-in required" };
+  try {
+    const response = await fetchImpl(new URL("/v1/auth/session/check", spmtOrigin), {
+      headers: { cookie, accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return { authorized: false, status: response.status === 401 || response.status === 403 ? 401 : 503, reason: "Apollo session could not be verified" };
+    const identity = await response.json().catch(() => ({})) as Record<string, unknown>;
+    const allowedActor = environment.APOLLO_BULLETIN_OWNER_ACTOR_ID;
+    if (identity.authenticated !== true || (allowedActor && identity.actorId !== allowedActor)) {
+      return { authorized: false, status: 403, reason: "An authorized Apollo owner session is required" };
+    }
+    return { authorized: true, status: 200, reason: "apollo-session" };
+  } catch {
+    return { authorized: false, status: 503, reason: "Apollo identity service is unavailable" };
+  }
+}
+
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
   const privatePreview = process.env.APOLLO_PRIVATE_PREVIEW === "1";
   const previewPassword = privatePreview ? process.env.APOLLO_PREVIEW_PASSWORD : undefined;
@@ -43,7 +80,8 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     }
 
     if(url.pathname === "/bulletin" || url.pathname.startsWith("/bulletin/")) {
-      // First proof-of-concept route: simulated browser only; no login/session gate.
+      const access = await authorizeBulletinRequest(request, url.pathname, options.spmtOrigin, options.fetchImpl ?? fetch);
+      if (!access.authorized) return json(response, access.status, { error: "bulletin_access_denied", message: access.reason });
       const path = url.pathname === "/bulletin" ? "/" : url.pathname.slice("/bulletin".length);
       return proxyDirect(request,response,"http://127.0.0.1:3210",path+url.search,false);
     }
