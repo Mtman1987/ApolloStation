@@ -99,7 +99,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
         const expectedBytes = Buffer.from(expected);
         if (supplied.length !== expectedBytes.length || !timingSafeEqual(supplied, expectedBytes)) return send(401, { error: "Cron authentication required" });
-        return send(200, await tick());
+        if (busy) return send(202, { accepted: false, busy: true });\n        void tick().catch(error => console.error("[apollo-bulletin] Hostless cron tick failed:", String(error?.message || error)));\n        return send(202, { accepted: true });
       }
       if (req.method === "GET" && url.pathname === "/") return send(200, '<!doctype html><meta name="viewport" content="width=device-width"><title>Apollo Bulletin</title><body style="font:16px system-ui;background:#080d1c;color:#edf3ff;padding:28px"><h1>Apollo Bulletin</h1><p>Bulletin lives inside Workspace → Overlay Bay. Open Overlay Bay and choose Personal Bulletin to add the task components to your Personal overlay.</p><a style="color:#8bd" href="/?view=workspace">Open Apollo Workspace</a></body>', "text/html; charset=utf-8");
       const widgetRoute = req.method === "GET" && url.pathname.match(/^\/widgets\/(tasks|active|reviews|activity|scheduler|history)$/);
