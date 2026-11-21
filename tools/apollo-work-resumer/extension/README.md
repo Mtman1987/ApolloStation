@@ -24,7 +24,7 @@ This prototype uses the user's existing signed-in desktop Chrome/Chromium profil
 - The composer must be empty before the extension fills it. A visible Send control must exist before filling and must become enabled afterward. Existing drafts are never overwritten.
 - Each task receives a unique completion marker. The extension checks only the latest assistant message after the UI is idle; the marker must appear on its own line.
 - The task queue is serialized. An uncertain send blocks later queue items until the owner explicitly marks it complete or confirms a manual retry. Uncertain sends are never automatically retried.
-- A confirmed click changes the task to active, but a click is not independent proof that ChatGPT accepted or completed the message.
+- A confirmed click changes the task to active, but a click is not independent proof that ChatGPT accepted or completed the message. Owner-confirmed retry and cycle-limit resume immediately request a new one-shot dispatch when the extension is enabled; manual actions bypass the cooldown.
 - Hourly alarms run only while enabled and unpaused. Pause, resume, stop, run-now, max cycles, manual completion, explicit retry, and cycle-limit resume are available in the popup.
 - Resuming a cycle-limited task starts a new cycle window. A manually confirmed retry takes priority over ordinary pending work.
 - Selector changes, ambiguous UI state, missing content scripts, and missing/inactive tabs fail closed.
