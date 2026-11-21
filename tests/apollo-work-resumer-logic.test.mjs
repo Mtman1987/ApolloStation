@@ -105,10 +105,13 @@ test("manual retry preserves the uncertain timestamp and becomes queue-priority 
 
 test("only one exact matching active ChatGPT tab is accepted", () => {
   const target = { id: 7, url: "https://chatgpt.com/c/abc", active: true };
-  assert.equal(selectUniqueActiveTab([target], target.url), target);
-  assert.equal(selectUniqueActiveTab([{ ...target, active: false }], target.url), null);
-  assert.equal(selectUniqueActiveTab([{ ...target, url: target.url + "?x=1" }], target.url), null);
-  assert.equal(selectUniqueActiveTab([target, { ...target, id: 8 }], target.url), null);
+  const focusedWindow = { id: 7, focused: true };
+  assert.equal(selectUniqueActiveTab([target], target.url, focusedWindow), target);
+  assert.equal(selectUniqueActiveTab([target], target.url, { id: 7, focused: false }), null);
+  assert.equal(selectUniqueActiveTab([target], target.url, { id: 8, focused: true }), null);
+  assert.equal(selectUniqueActiveTab([{ ...target, active: false }], target.url, focusedWindow), null);
+  assert.equal(selectUniqueActiveTab([{ ...target, url: target.url + "?x=1" }], target.url, focusedWindow), null);
+  assert.equal(selectUniqueActiveTab([target, { ...target, id: 8 }], target.url, focusedWindow), null);
 });
 
 test("queue preflight accepts a present disabled Send control only with an empty composer", () => {
