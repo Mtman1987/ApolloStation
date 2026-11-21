@@ -68,9 +68,12 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
           <button type="button" id="create-apollo-account" class="secondary-button">Create Apollo account</button>
           <button type="button" id="apollo-recover-account" class="secondary-button">Recover with Discord or Twitch</button>
           <div id="apollo-recovery-start" hidden>
-            <label>Verify with <select id="apollo-recovery-provider"><option value="discord">Discord</option><option value="twitch">Twitch</option></select></label>
-            <button type="button" id="apollo-recovery-verify">Continue to provider verification</button>
-            <p class="spmt-auth-help">Sign in with the Discord or Twitch account already linked to Apollo. We'll restore your existing workspace without changing your password.</p>
+            <p class="spmt-auth-help">Choose either provider already linked to your Apollo account. You do not need both.</p>
+            <div class="auth-actions">
+              <button type="button" id="apollo-recovery-discord">Recover with Discord</button>
+              <button type="button" id="apollo-recovery-twitch" class="secondary-button">Recover with Twitch</button>
+            </div>
+            <p class="spmt-auth-help">Apollo will use the verified provider ID to find your existing account and restore its database-owned workspace. No new account is created.</p>
           </div>
           <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
           <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
