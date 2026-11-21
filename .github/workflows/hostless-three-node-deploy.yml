@@ -38,7 +38,21 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "Deploy changed Hostless nodes after runtime and persistence preflight"
+        description: "Deploy the selected Hostless node(s)"
+        required: true
+        type: boolean
+        default: true
+      node:
+        description: "Which Hostless node to deploy manually"
+        required: true
+        type: choice
+        options:
+          - node1
+          - node2
+          - both
+        default: node1
+      skip_validation:
+        description: "Skip typecheck only for a manual recovery deploy"
         required: true
         type: boolean
         default: false
@@ -54,6 +68,7 @@ jobs:
   # Mandatory release gate: no commit-message or dispatch input can skip typecheck.
   validate:
     name: Typecheck release gate
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_validation != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -100,8 +115,13 @@ jobs:
             exit 0
           fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "node1=true" >> "$GITHUB_OUTPUT"
-            echo "node2=true" >> "$GITHUB_OUTPUT"
+            TARGET="${{ inputs.node }}"
+            case "$TARGET" in
+              node1) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=false" >> "$GITHUB_OUTPUT" ;;
+              node2) echo "node1=false" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT" ;;
+              both) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=true" >> "$GITHUB_OUTPUT ;;
+              *) echo "Invalid manual node selection: $TARGET"; exit 1 ;;
+            esac
             exit 0
           fi
           if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
@@ -157,7 +177,8 @@ jobs:
     needs: [detect-deploy-targets, validate]
     if: >-
       ${{ !cancelled() &&
-          needs.validate.result == 'success' &&
+          (needs.validate.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' && inputs.skip_validation == true && needs.validate.result == 'skipped')) &&
           github.ref == 'refs/heads/main' &&
           (needs.detect-deploy-targets.outputs.node1 == 'true' ||
            needs.detect-deploy-targets.outputs.node2 == 'true') &&
@@ -391,14 +412,7 @@ jobs:
     environment: production
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - node: node1
-            app: apollo-node-1
-            hostless_secret: HOSTLESS_NODE1_TOKEN
-          - node: node2
-            app: apollo-node-2
-            hostless_secret: HOSTLESS_NODE2_TOKEN
+      matrix: ${{ fromJSON(needs.detect-deploy-targets.outputs.matrix) }}
     steps:
       - name: Install Hostless CLI
         run: |
