@@ -3,12 +3,12 @@ import { dirname, resolve } from "node:path";
 import { chromium as playwrightChromium } from "playwright";
 import { localBrowserPath } from "../../scripts/setup-local-browser.mjs";
 
-const CHATGPT_ORIGIN = "https://chatgpt.com";
+const DEFAULT_TEST_ORIGIN = process.env.APOLLO_BROWSER_ALLOWED_ORIGIN || process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app";
 
 export class ApolloChatGptBrowserWorker {
-  constructor({ profilePath, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium) }) {
-    if (!profilePath || !resolve(profilePath)) throw new Error("APOLLO_BROWSER_PROFILE_PATH must point to persistent mounted storage");
+  constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium) }) {
     this.profilePath = resolve(profilePath);
+    this.allowedOrigin = new URL(allowedOrigin).origin;
     this.now = now;
     this.launch = launch;
     this.context = undefined;
@@ -34,7 +34,7 @@ export class ApolloChatGptBrowserWorker {
 
   async openLogin() {
     const page = this.#requirePage();
-    await page.goto(CHATGPT_ORIGIN, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.goto(this.allowedOrigin + "/bulletin/fake-chatgpt", { waitUntil: "domcontentloaded", timeout: 45_000 });
     return this.status();
   }
 
@@ -45,7 +45,7 @@ export class ApolloChatGptBrowserWorker {
     const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
       await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
     return {
-      connected: !loginRequired && url.startsWith(CHATGPT_ORIGIN),
+      connected: url.startsWith(this.allowedOrigin),
       loginRequired,
       url,
       title,
@@ -86,18 +86,14 @@ export class ApolloChatGptBrowserWorker {
   async sendTask(task) {
     if (this.busy) throw new Error("The dedicated ChatGPT browser is already handling a task");
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("Task prompt is missing");
-    const target = new URL(task.conversationUrl || CHATGPT_ORIGIN);
-    if (target.origin !== CHATGPT_ORIGIN || !["https:", "http:"].includes(target.protocol)) {
-      throw new Error("ChatGPT tasks may only open chatgpt.com conversation URLs");
+    const target = new URL(task.conversationUrl || this.allowedOrigin + "/bulletin/fake-chatgpt");
+    if (target.origin !== this.allowedOrigin || target.pathname !== "/bulletin/fake-chatgpt") {
+      throw new Error("The browser proof accepts only the Apollo simulated ChatGPT page on its own Hostless origin");
     }
     this.busy = true;
     const page = this.#requirePage();
     try {
       await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 45_000 });
-      const loginRequired = /\/auth\/(login|signin)|\/login/i.test(page.url()) ||
-        await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
-      if (loginRequired) return { submitted: false, reason: "chatgpt-login-required; open the private browser sign-in panel and sign in once" };
-
       const composer = page.locator("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],textarea").last();
       await composer.waitFor({ state: "visible", timeout: 20_000 });
       const before = await page.locator("[data-message-author-role='assistant']").count().catch(() => 0);
@@ -139,8 +135,7 @@ export class ApolloChatGptBrowserWorker {
 
 export async function createApolloChatGptBrowserWorkerFromEnvironment(environment = process.env) {
   const profilePath = environment.APOLLO_BROWSER_PROFILE_PATH;
-  if (!profilePath) return { enabled: false, reason: "persistent-browser-profile-not-configured" };
-  const worker = new ApolloChatGptBrowserWorker({ profilePath });
+  if (!profilePath) const worker = new ApolloChatGptBrowserWorker({ profilePath: profilePath || "/tmp/apollo-browser-profile", allowedOrigin: environment.APOLLO_BROWSER_ALLOWED_ORIGIN || environment.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app" });
   await worker.start();
   return { enabled: true, worker };
 }
