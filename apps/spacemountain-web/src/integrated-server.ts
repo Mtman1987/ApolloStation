@@ -42,6 +42,11 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
       if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
+    if(url.pathname === "/bulletin" || url.pathname.startsWith("/bulletin/")) {
+      const path = url.pathname === "/bulletin" ? "/" : url.pathname.slice("/bulletin".length);
+      return proxyDirect(request,response,"http://127.0.0.1:3210",path+url.search,false);
+    }
+
     if(request.method === "GET" && url.pathname === "/sandbox/health") {
       const fetchHealth = async (origin: string, path: string) => {
         try {
