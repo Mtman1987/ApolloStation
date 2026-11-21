@@ -1,7 +1,6 @@
+import { buildTaskPrompt, isTaskComplete, nextQueueItem, taskCycleLimitReached } from "./logic.mjs";
 const ALARM = "apollo-bulletin-hourly";
 const DEFAULTS = { enabled: true, paused: false, maxCycles: 3, cycles: 0, cooldownMs: 60_000, queue: [], activity: [] };
-const COMPLETION = "\\n\\nWhen fully complete, output this exact task-specific marker on its own line: ";
-const CONTINUE = "Continue working on the task above from your saved checkpoint. Review what remains in the TODO/checklist, do the next concrete step, update the checkpoint, and do not claim completion unless all requirements are finished. If finished, output the task-specific completion marker on its own line: ";
 let running = false;
 
 async function getState() {
@@ -28,7 +27,7 @@ async function runOnce(manual = false) {
   try {
     let state = await getState();
     if (!state.enabled || state.paused) return save(state, "tick-skipped-paused");
-    const item = state.queue.find(q => q.status === "active") || state.queue.find(q => q.status === "pending");
+    const item = nextQueueItem(state.queue);
     if (!item) return save(state, "tick-skipped-empty-queue");
     if (item.status === "attempted") return save(state, "tick-skipped-uncertain-send-no-retry");
 
@@ -42,19 +41,19 @@ async function runOnce(manual = false) {
       return save(state, "tick-skipped-ambiguous-ui");
     }
 
-    if (item.status === "active" && snapshot.assistantText?.includes(item.completionToken)) {
+    if (isTaskComplete(item, snapshot)) {
       state.queue = state.queue.map(q => q.id === item.id
         ? { ...q, status: "completed", completedAt: Date.now(), completionDetected: true }
         : q);
       state.completed = state.queue.length > 0 && state.queue.every(q => q.status === "completed");
       return save(state, "task-completion-marker-detected");
     }
-    if ((item.cycles || 0) >= state.maxCycles) return save(state, "tick-skipped-task-cycle-cap");
+    if (taskCycleLimitReached(item, state.maxCycles)) return save(state, "tick-skipped-task-cycle-cap");
     if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < state.cooldownMs) {
       return save(state, "tick-skipped-cooldown");
     }
 
-    const prompt = item.status === "active" ? CONTINUE + item.completionToken : item.prompt + COMPLETION + item.completionToken;
+    const prompt = buildTaskPrompt(item);
     state.queue = state.queue.map(q => q.id === item.id ? { ...q, status: "attempted", attemptedAt: Date.now() } : q);
     state.lastAttemptAt = Date.now();
     state.lastAttemptId = item.id;
