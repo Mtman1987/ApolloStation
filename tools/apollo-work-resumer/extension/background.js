@@ -25,9 +25,10 @@ async function ensureAlarm() {
   if (state.enabled && !state.paused) chrome.alarms.create(ALARM, { periodInMinutes: 60 });
   else await chrome.alarms.clear(ALARM);
 }
-async function ensureGitHubBridgeTab() {
+async function ensureGitHubBridgeTab({ reloadExisting = false } = {}) {
   const matches = await chrome.tabs.query({ url: GITHUB_BRIDGE_PATTERN });
   if (!matches.length) await chrome.tabs.create({ url: GITHUB_BRIDGE_URL, active: false });
+  else if (reloadExisting && matches[0].id) await chrome.tabs.reload(matches[0].id);
 }
 async function targetTab(url) {
   const matches = await chrome.tabs.query({ url });
@@ -108,7 +109,7 @@ async function runOnce(manual = false) {
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.set({ state: await getState() });
   await ensureAlarm();
-  await ensureGitHubBridgeTab();
+  await ensureGitHubBridgeTab({ reloadExisting: true });
 });
 chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); void ensureGitHubBridgeTab(); });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) void runOnce(false); });
