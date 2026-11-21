@@ -52,12 +52,12 @@ test("signed-in users can verify and link Twitch and Discord through the existin
     for (const provider of ["twitch", "discord"]) {
       const start = await fetch(`${browserBase}/v1/identity/providers/${provider}/start?tenantId=${encodeURIComponent(tenantId)}`, { headers: { cookie: sessionCookie }, redirect: "manual" });
       assert.equal(start.status, 302);
-      const authorization = new URL(start.headers.location);
+      const authorization = new URL(start.headers.get("location"));
       assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
       assert.equal(authorization.searchParams.get("redirect_uri"), "https://spmt.test/v1/onboarding/twitch/callback");
       const state = authorization.searchParams.get("state");
       assert.ok(state);
-      const pendingCookie = cookiePair(start.headers["set-cookie"]);
+      const pendingCookie = cookiePair(start.headers.get("set-cookie"));
       assert.match(pendingCookie, /^spmt_provider_link=/);
       const callback = await fetch(`${browserBase}/v1/onboarding/twitch/callback?state=${encodeURIComponent(state)}&code=${provider}-code`, { headers: { cookie: `${sessionCookie}; ${pendingCookie}` }, redirect: "manual" });
       assert.equal(callback.status, 302);
@@ -154,11 +154,11 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     for (const provider of ["twitch", "discord"]) {
       const start = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=" + provider + "&username=" + encodeURIComponent(username), "apollo-node-1.hostless.app");
       assert.equal(start.status, 302);
-      const authorization = new URL(start.headers.get("location"));
+      const authorization = new URL(start.headers.location);
       assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
       assert.equal(authorization.searchParams.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
       const state = authorization.searchParams.get("state");
-      const pendingCookie = cookiePair(start.headers.get("set-cookie"));
+      const pendingCookie = cookiePair(start.headers["set-cookie"]);
       assert.match(pendingCookie, /^spmt_linked_recovery=/);
       const pendingPayload = JSON.parse(Buffer.from(decodeURIComponent(pendingCookie.split("=")[1]), "base64url").toString("utf8"));
       assert.equal(pendingPayload.username, username);
