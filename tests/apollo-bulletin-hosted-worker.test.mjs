@@ -168,3 +168,48 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
   assert.match(hostless, /schedule: "\*\/1 \* \* \* \*"/);
   assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 0);
 });
+
+test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const denied = await authorizeBulletinRequest({ headers: {} }, "/bulletin/api/tasks", "http://127.0.0.1:3000", async () => {
+    throw new Error("must not call identity service without a cookie");
+  }, {});
+  assert.equal(denied.authorized, false);
+  assert.equal(denied.status, 401);
+  let seenCookie = "";
+  const allowed = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=apollo-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async (url, options) => {
+      assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
+      seenCookie = options.headers.cookie;
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
+    },
+    {},
+  );
+  assert.equal(seenCookie, "spmt_token=apollo-owner-session");
+  assert.equal(allowed.authorized, true);
+});
+
+test("Hostless cron proxy uses a bearer secret and does not need an interactive Apollo session", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const environment = { APOLLO_BULLETIN_CRON_TOKEN: "private-cron-token" };
+  const allowed = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer private-cron-token" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    environment,
+  );
+  assert.equal(allowed.authorized, true);
+  const denied = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer wrong" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    environment,
+  );
+  assert.equal(denied.authorized, false);
+  assert.equal(denied.status, 401);
+});
