@@ -105,6 +105,9 @@ test("linked provider recovery verifies the existing immutable link and consumes
     assert.ok(stored);
     assert.notEqual(stored.tokenHash, reset.ticket);
     assert.equal(stored.oauthStateHash, createHash("sha256").update(oauthState).digest("hex"));
+    assert.equal(Date.parse(stored.expiresAt) - Date.parse(stored.createdAt), 15 * 60 * 1000);
+    assert.equal(stored.discordUserId, "discord-recovery-1");
+    assert.equal(stored.twitchUserId, undefined);
     assert.throws(() => f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "somebodyelse", "new-recovery-password-123"), /could not be verified/);
     f.accounts.completeLinkedProviderPasswordReset(reset.ticket, "recoverme", "new-recovery-password-123");
     assert.equal(f.data.login("recoverme", "new-recovery-password-123", ["workspace:read"]).profile.userId, invite.account.userId);
