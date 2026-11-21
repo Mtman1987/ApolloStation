@@ -56,7 +56,7 @@ function snapshot() {
     stopControlVisible,
     sendControlPresent: sendPresent,
     sendControlVisible: sendEnabled,
-    composerReady: Boolean(composer && !composer.disabled && composer.getAttribute("aria-disabled") !== "true"),
+    composerReady: Boolean(composer && isVisible(composer) && !composer.disabled && composer.getAttribute("aria-disabled") !== "true"),
     composerEmpty: Boolean(composer) && value.length === 0,
     composerText: value,
     assistantText: lastAssistant.length ? lastAssistant[lastAssistant.length - 1].innerText : "",
