@@ -39,7 +39,7 @@ export function isConversationUrl(value) {
   try {
     const url = new URL(value);
     const parts = url.pathname.split("/");
-    return url.origin === "https://chatgpt.com" &&
+    return url.href === value && url.origin === "https://chatgpt.com" &&
       parts.length === 3 && parts[1] === "c" &&
       /^[A-Za-z0-9-]+$/.test(parts[2]) &&
       !url.search && !url.hash && !url.username && !url.password;
