@@ -237,11 +237,11 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if(request.method==="POST"&&socialStreamIngress(url.pathname)){
         // Dedicated bearer-authenticated ingestion; never accepts a browser session as bridge authority.
         if(!/^Bearer ss_[A-Za-z0-9_-]{43}$/.test(request.headers.authorization??""))return json(response,401,{message:"A Social Stream bridge key is required"});
-        return proxy(response,request,url,spmtOrigin,fetchImpl,false,true);
+        return await proxy(response,request,url,spmtOrigin,fetchImpl,false,true);
       }
       if ((url.pathname.startsWith("/v1/") || url.pathname.startsWith("/health/")) && browserProxyAllowed(request.method ?? "GET", url.pathname)) {
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
-        return proxy(response, request, url, spmtOrigin, fetchImpl);
+        return await proxy(response, request, url, spmtOrigin, fetchImpl);
       }
       return json(response, 404, { error: "not_found" });
     } catch (error) {
