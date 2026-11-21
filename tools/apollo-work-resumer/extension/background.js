@@ -6,6 +6,8 @@ import {
   isConversationUrl,
   isTaskComplete,
   nextQueueItem,
+  prepareManualRetry,
+  resumeCycleLimitedItem,
   selectUniqueActiveTab,
   taskCycleLimitReached,
 } from "./logic.mjs";
@@ -297,25 +299,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         throw new Error("Resolve the other active or uncertain task before resuming this one");
       }
 
-      if (item.status === "limit-reached") {
-        state.queue = state.queue.map(queueItem => queueItem.id === item.id ? {
-          ...queueItem,
-          status: "active",
-          previousCycleCount: (queueItem.previousCycleCount || 0) + (queueItem.cycles || 0),
-          cycles: 0,
-          resumedAt: Date.now(),
-        } : queueItem);
-        return save(state, "task-resumed-after-cycle-limit");
-      }
-
-      state.queue = state.queue.map(queueItem => queueItem.id === item.id ? {
-        ...queueItem,
-        status: "pending",
-        lastUncertainAttemptAt: queueItem.attemptedAt ?? queueItem.lastAttemptAt ?? null,
-        manualRetryAt: Date.now(),
-        attemptedAt: null,
-      } : queueItem);
-      return save(state, "task-retry-explicitly-confirmed-by-owner");
+      const resumed = item.status === "limit-reached"
+        ? resumeCycleLimitedItem(item)
+        : prepareManualRetry(item);
+      if (!resumed) throw new Error("Task could not be resumed in its current state");
+      state.queue = state.queue.map(queueItem => queueItem.id === item.id ? resumed : queueItem);
+      return save(state, item.status === "limit-reached"
+        ? "task-resumed-after-cycle-limit"
+        : "task-retry-explicitly-confirmed-by-owner");
     }
 
     if (message?.type === "APOLLO_COMPLETE") {
