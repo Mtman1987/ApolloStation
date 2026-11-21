@@ -21,7 +21,7 @@ RUN npm ci \
     && curl -fsSL https://hostless.cloud/install.sh | bash \
     && curl -sSfL https://get.tur.so/install.sh | bash
 
-ENV PATH="/root/.turso/bin:/root/.local/bin:/usr/local/bin"
+ENV PATH="/root/.turso/bin:/root/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 ENV NODE_ENV=production
 EXPOSE 8080
 CMD ["node", "tools/devops-cockpit/server.mjs"]
