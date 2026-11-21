@@ -184,6 +184,8 @@ test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
   }
   assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
   assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless/);
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Build focused Node 1 and Node 2 Hostless runtime[\\s\\S]*?run: npm run build:hostless/);
 });
 
 test("Hostless deployment orchestrator passes Node syntax validation", () => {
