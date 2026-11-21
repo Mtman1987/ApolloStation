@@ -72,10 +72,10 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
             <button type="button" id="apollo-recovery-verify">Continue to provider verification</button>
             <p class="spmt-auth-help">Use the same provider account already linked to your Apollo username. No direct messages are sent.</p>
           </div>
-          <form id="apollo-recovery-password" hidden>
-            <label>New Apollo password<input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
-            <button type="submit">Set Password and Sign In</button>
-          </form>
+          <div id="apollo-recovery-password" hidden>
+            <label>New Apollo password<input id="apollo-recovery-new-password" type="password" autocomplete="new-password" minlength="12" required></label>
+            <button type="button" id="apollo-recovery-submit">Set Password and Sign In</button>
+          </div>
           <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
           <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
         </form>
