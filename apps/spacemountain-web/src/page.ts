@@ -67,6 +67,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
           <button type="submit">Sign in</button>
           <button type="button" id="create-apollo-account" class="secondary-button">Create Apollo account</button>
           <div id="apollo-recovery-start">
+            <h3>Recover / Set Password</h3>
             <p class="spmt-auth-help">Enter your Apollo username above, then choose the Discord or Twitch account already linked to it.</p>
             <div class="auth-actions">
               <button type="button" id="apollo-recovery-discord">Verify with Discord</button>
