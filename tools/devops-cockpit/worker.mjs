@@ -21,7 +21,7 @@ if (!origin || !token) throw new Error("APOLLO_COCKPIT_PUBLIC_URL and APOLLO_COC
 async function request(path, options = {}) {
   const response = await fetch(origin + path, {
     ...options,
-    headers: { authorization: "Bearer " + token, "content-type": "application/json", ...(options.headers || {}) },
+    headers: { authorization: "Bearer " + token, "X-Hostless-Access-Bypass": token, "content-type": "application/json", ...(options.headers || {}) },
   });
   const text = await response.text();
   let value = {};
