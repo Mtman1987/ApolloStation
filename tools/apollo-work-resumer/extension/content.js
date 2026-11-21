@@ -1,4 +1,106 @@
-function snapshot(){const url=location.href,buttons=[...document.querySelectorAll("button")],label=b=>[b.getAttribute("aria-label"),b.getAttribute("data-testid"),b.textContent].filter(Boolean).join(" ").toLowerCase(),stop=buttons.some(b=>/stop generating|stop response|stop streaming/.test(label(b))),send=buttons.some(b=>/^(send message|send prompt|send|send-message)$/.test(label(b).trim())&&! /stop/.test(label(b))&&!b.disabled&&b.getAttribute("aria-disabled")!=="true"),busyText=document.querySelector('[aria-busy="true"]')!==null,composer=document.querySelector('[contenteditable="true"][role="textbox"],textarea'),lastAssistant=document.querySelectorAll('[data-message-author-role="assistant"]');return{url,busy:stop||busyText,stopControlVisible:stop,sendControlVisible:send,composerReady:!!composer&&!composer.disabled&&composer.getAttribute("aria-disabled")!=="true",assistantText:lastAssistant.length?lastAssistant[lastAssistant.length-1].innerText:""}}
-function composer(){return document.querySelector('[contenteditable="true"][role="textbox"],textarea')}
-function sendButton(){return[...document.querySelectorAll("button")].find(b=>{const l=[b.getAttribute("aria-label"),b.getAttribute("data-testid"),b.textContent].filter(Boolean).join(" ").toLowerCase();return /^(send message|send prompt|send|send-message)$/.test(l.trim())&&! /stop/.test(l)&&!b.disabled&&b.getAttribute("aria-disabled")!=="true"})}
-chrome.runtime.onMessage.addListener((m,s,r)=>{if(m?.type==="APOLLO_SNAPSHOT"){r(snapshot());return}if(m?.type!=="APOLLO_SUBMIT")return;const snap=snapshot();if(m.targetUrl!==location.href||snap.busy!==false||!snap.composerReady||!snap.sendControlVisible){r({clicked:false,reason:"guard-failed"});return}const c=composer(),b=sendButton();if(!c||!b||typeof m.prompt!=="string"||!m.prompt.trim()){r({clicked:false,reason:"missing-controls"});return}if(c.tagName==="TEXTAREA"){const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;set?.call(c,m.prompt)}else{c.focus();c.textContent=m.prompt}c.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:m.prompt}));c.dispatchEvent(new Event("change",{bubbles:true}));const again=snapshot(),button=sendButton();if(again.busy!==false||!again.composerReady||!button){r({clicked:false,reason:"guard-failed-after-fill"});return}button.click();r({clicked:true,note:"Click issued; delivery is not independently confirmed"})});
+const SEND_LABEL = /^(send message|send prompt|send|send-message|send-button)$/;
+
+function buttonLabel(button) {
+  return [button.getAttribute("aria-label"), button.getAttribute("data-testid"), button.textContent]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .toLowerCase();
+}
+
+function isVisible(element) {
+  if (!element || typeof element.getClientRects !== "function" || element.getClientRects().length === 0) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0;
+}
+
+function isEnabled(button) {
+  return !button.disabled && button.getAttribute("aria-disabled") !== "true";
+}
+
+function findSendButton({ requireEnabled = false } = {}) {
+  return [...document.querySelectorAll("button")].find(button =>
+    SEND_LABEL.test(buttonLabel(button)) &&
+    isVisible(button) &&
+    (!requireEnabled || isEnabled(button))
+  ) || null;
+}
+
+function composerElement() {
+  return document.querySelector('[contenteditable="true"][role="textbox"],textarea');
+}
+
+function composerValue(element) {
+  if (!element) return "";
+  return element.tagName === "TEXTAREA" ? element.value : (element.innerText ?? element.textContent ?? "");
+}
+
+function snapshot() {
+  const url = location.href;
+  const buttons = [...document.querySelectorAll("button")];
+  const stopControlVisible = buttons.some(button => /stop generating|stop response|stop streaming/.test(buttonLabel(button)));
+  const busyText = document.querySelector('[aria-busy="true"]') !== null;
+  const composer = composerElement();
+  const value = composerValue(composer);
+  const sendPresent = findSendButton() !== null;
+  const sendEnabled = findSendButton({ requireEnabled: true }) !== null;
+  const lastAssistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+
+  return {
+    url,
+    busy: stopControlVisible || busyText,
+    stopControlVisible,
+    sendControlPresent: sendPresent,
+    sendControlVisible: sendEnabled,
+    composerReady: Boolean(composer && !composer.disabled && composer.getAttribute("aria-disabled") !== "true"),
+    composerEmpty: Boolean(composer) && value.length === 0,
+    composerText: value,
+    assistantText: lastAssistant.length ? lastAssistant[lastAssistant.length - 1].innerText : "",
+  };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === "APOLLO_SNAPSHOT") {
+    respond(snapshot());
+    return;
+  }
+  if (message?.type !== "APOLLO_SUBMIT") return;
+
+  const before = snapshot();
+  if (message.targetUrl !== location.href || before.busy !== false ||
+      !before.composerReady || !before.composerEmpty || !before.sendControlPresent) {
+    respond({ clicked: false, reason: "preflight-guard-failed" });
+    return;
+  }
+
+  const composer = composerElement();
+  if (!composer || typeof message.prompt !== "string" || !message.prompt.trim()) {
+    respond({ clicked: false, reason: "missing-controls-or-prompt" });
+    return;
+  }
+
+  if (composer.tagName === "TEXTAREA") {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    if (!setter) {
+      respond({ clicked: false, reason: "textarea-setter-unavailable" });
+      return;
+    }
+    setter.call(composer, message.prompt);
+  } else {
+    composer.focus();
+    composer.textContent = message.prompt;
+  }
+  composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: message.prompt }));
+  composer.dispatchEvent(new Event("change", { bubbles: true }));
+
+  const after = snapshot();
+  const sendButton = findSendButton({ requireEnabled: true });
+  if (after.url !== message.targetUrl || after.busy !== false || !after.composerReady ||
+      after.composerText !== message.prompt || !sendButton) {
+    respond({ clicked: false, reason: "post-fill-guard-failed" });
+    return;
+  }
+
+  sendButton.click();
+  respond({ clicked: true, note: "Click issued; delivery is not independently confirmed" });
+});
