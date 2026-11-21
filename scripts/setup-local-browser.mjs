@@ -14,6 +14,9 @@ export async function localBrowserPath() {
   if (existsSync(chromium.executablePath())) return chromium.executablePath();
   if (process.platform !== 'linux' || process.arch !== 'x64') throw Error('Install your native browser with npx playwright install chromium, or set HMO_TEST_BROWSER_PATH');
   const root=fileURLToPath(new URL('./local-browser/',import.meta.url));
+  // Hostless images may omit the empty directory from the build context.
+  // npm --prefix cannot create a missing prefix parent, so ensure it exists first.
+  mkdirSync(root,{recursive:true});
   const runtime=join(root,'runtime');
   const binary=join(runtime,'chromium');
   if (existsSync(join(runtime,'ready')) && existsSync(binary)) return binary;

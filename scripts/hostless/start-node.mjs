@@ -15,6 +15,10 @@ const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
 const hostlessPort = process.env.PORT;
 
+// Ensure the dedicated browser worker can install its pinned Chromium runtime on Hostless,
+// which does not preserve empty directories in the checked-out build context.
+if (role === "node1") mkdirSync(resolve(root, "scripts/local-browser"), { recursive: true });
+
 function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyConfig, allowEmpty = true }) {
   const configPath = path || fallbackPath;
   let config = emptyConfig;
