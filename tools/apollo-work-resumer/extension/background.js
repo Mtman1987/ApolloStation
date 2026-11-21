@@ -23,8 +23,9 @@ async function ensureAlarm() {
   if (state.enabled && !state.paused) chrome.alarms.create(ALARM, { periodInMinutes: 60 });
   else await chrome.alarms.clear(ALARM);
 }
-async function activeTab() {
-  return (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0] || null;
+async function targetTab(url) {
+  const matches = await chrome.tabs.query({ url });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 async function runOnce(manual = false) {
@@ -37,8 +38,8 @@ async function runOnce(manual = false) {
     if (!item) return save(state, "tick-skipped-empty-queue");
     if (item.status === "attempted") return save(state, "tick-skipped-uncertain-send-no-retry");
 
-    const tab = await activeTab();
-    if (!tab?.id || tab.url !== item.targetUrl) return save(state, "tick-skipped-target-tab-not-active");
+    const tab = await targetTab(item.targetUrl);
+    if (!tab?.id || tab.url !== item.targetUrl) return save(state, "tick-skipped-target-tab-missing-or-ambiguous");
     let snapshot;
     try { snapshot = await chrome.tabs.sendMessage(tab.id, { type: "APOLLO_SNAPSHOT" }); }
     catch { return save(state, "tick-skipped-content-script-unavailable"); }
