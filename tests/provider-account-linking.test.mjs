@@ -199,8 +199,11 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       assert.equal(replay.status, 400, "a completed recovery ticket cannot be reused");
     }
     assert.equal(calls.length, 6);
-    assert.equal(service.authority.getProviderLink("twitch", "twitch-owner-77")?.userId, account.userId);
-    assert.equal(service.authority.getProviderLink("discord", "discord-owner-88")?.userId, account.userId);
+    assert.deepEqual(
+      service.authority.listProviderLinks(account.userId).map(link => link.provider + ":" + link.providerUserId).sort(),
+      ["discord:discord-owner-88", "twitch:twitch-owner-77"],
+      "recovery must not relink or replace either existing provider identity",
+    );
   } finally {
     if (web) await web.close();
     await service.close();
