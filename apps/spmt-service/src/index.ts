@@ -477,7 +477,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const failRecovery = (reason: string) => {
             const target = new URL("/", publicBaseUrl);
             target.searchParams.set("recoveryError", reason);
-            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_linked_recovery") });
+            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearSetupCookie("spmt_linked_recovery") });
             return response.end();
           };
           if (!recovery || !code || !state || recovery.state !== state || (recovery.provider !== "discord" && recovery.provider !== "twitch")) {
@@ -491,21 +491,27 @@ export function createSpmtService(options: SpmtServiceOptions) {
             const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/onboarding/twitch/callback`, client, fetchImpl);
             stage = "identity_lookup";
             const linked = accounts.resolveProviderIdentity(provider, identity.id);
-            if (!linked) return failRecovery("provider_not_linked");
+            if (!linked) {
+              console.warn("[spmt-account-recovery] verified provider identity has no canonical account link", { provider, stage });
+              return failRecovery("provider_not_linked");
+            }
             stage = "workspace_restore";
             const workspace = resolveDonorWorkspace({
               id: linked.userId,
               username: linked.profile.username,
               ...(provider === "discord" ? { discordId: identity.id } : { twitchId: identity.id }),
             }, false);
-            if (!workspace.ok) return failRecovery("workspace_unavailable");
+            if (!workspace.ok) {
+              console.warn("[spmt-account-recovery] provider matched but owner workspace was not restorable", { provider, stage, status: workspace.status, error: workspace.body.error });
+              return failRecovery("workspace_unavailable");
+            }
             stage = "session_issue";
             const issued = auth.issueHumanSession({ userId: workspace.profile.userId, scopes: USER_SCOPES, tenantIds: workspace.tenantIds });
             const browser = auth.issueBrowserSession(issued.accessToken);
             response.writeHead(302, {
               location: new URL("/", publicBaseUrl).toString(),
               "cache-control": "no-store",
-              "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery")],
+              "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery")],
             });
             return response.end();
           } catch (error) {
@@ -533,7 +539,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             const target = new URL("/", publicBaseUrl);
             target.searchParams.set("view", "account");
             target.searchParams.set("providerLinked", pendingLink.provider);
-            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_provider_link") });
+            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearSetupCookie("spmt_provider_link") });
             return response.end();
           } catch (error) {
             return redirectProviderLinkError(response, publicBaseUrl, error instanceof Error ? error.message : "Account linking failed");
@@ -565,7 +571,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         const ticket = cookie(request, "spmt_setup_ticket") ?? (typeof body.ticket === "string" ? body.ticket : undefined);
         if (!ticket) return json(response, 400, { error: "setup_ticket_required" });
         const result = accounts.completeFirstTimePassword(ticket, str(body.password, "password"));
-        return json(response, 200, result, { "set-cookie": clearCookie("spmt_setup_ticket") });
+        return json(response, 200, result, { "set-cookie": clearSetupCookie("spmt_setup_ticket") });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/dm-reset") {
@@ -591,7 +597,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         const ticket = cookie(request, "spmt_reset_ticket") ?? (typeof body.ticket === "string" ? body.ticket : undefined);
         if (!ticket) return json(response, 400, { error: "reset_ticket_required" });
         const result = accounts.completeDmPasswordReset(ticket, str(body.password, "password"));
-        return json(response, 200, result, { "set-cookie": clearCookie("spmt_reset_ticket") });
+        return json(response, 200, result, { "set-cookie": clearSetupCookie("spmt_reset_ticket") });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/register") {
@@ -775,10 +781,10 @@ export function createSpmtService(options: SpmtServiceOptions) {
         try {
           const completed = accounts.completeLinkedProviderPasswordReset(ticket, str(body.password, "password"));
           const inspection = accounts.inspectSignIn(username);
-          if (inspection.state !== "password-set" || inspection.userId !== completed.userId) return json(response, 400, { error: "recovery_account_mismatch" }, { "set-cookie": clearCookie("spmt_linked_recovery_ticket") });
+          if (inspection.state !== "password-set" || inspection.userId !== completed.userId) return json(response, 400, { error: "recovery_account_mismatch" }, { "set-cookie": clearSetupCookie("spmt_linked_recovery_ticket") });
           const result = data.login(username, str(body.password, "password"), USER_SCOPES);
           const browser = auth.issueBrowserSession(result.tokens.accessToken);
-          return json(response, 200, { ok: true }, { "set-cookie": [browserSessionCookie(browser.accessToken), clearCookie("spmt_linked_recovery_ticket")] });
+          return json(response, 200, { ok: true }, { "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery_ticket")] });
         } catch (error) {
           return json(response, 400, { error: "recovery_failed", message: error instanceof Error ? error.message : "Recovery failed" });
         }
@@ -1149,6 +1155,7 @@ function cookie(request: IncomingMessage, name: string) { const source = request
 function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax${browserCookieDomain()}`; }
 function setupCookie(name: string, token: string) { return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1800`; }
 function clearCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${browserCookieDomain()}`; }
+function clearSetupCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`; }
 // Node 1 and Node 2 are Hostless subdomains. A production owner session must
 // be sent to both nodes so Node 2 can forward it to the canonical Node 1
 // authority for validation. Keep local/dev cookies host-only.
@@ -1183,7 +1190,7 @@ async function exchangeProviderIdentity(provider: "twitch" | "discord", code: st
 function isIdentity(value: unknown): value is { id: string; username?: string } { return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as { id?: unknown }).id === "string"); }
 function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded), ...headers }); response.end(encoded); }
 function redirectSetupError(response: ServerResponse, base: string, message: string) { const target = new URL("/first-time-setup", base); target.searchParams.set("setupError", message); response.writeHead(302, { location: target.toString(), "cache-control": "no-store" }); response.end(); }
-function redirectProviderLinkError(response: ServerResponse, base: string, message: string) { const target = new URL("/", base); target.searchParams.set("view", "account"); target.searchParams.set("providerLinkError", message.slice(0, 300)); response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_provider_link") }); response.end(); }
+function redirectProviderLinkError(response: ServerResponse, base: string, message: string) { const target = new URL("/", base); target.searchParams.set("view", "account"); target.searchParams.set("providerLinkError", message.slice(0, 300)); response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearSetupCookie("spmt_provider_link") }); response.end(); }
 function decodeKey(value: string) { const key = Buffer.from(value, "base64url"); if (key.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes"); return key; }
 function loadBillingManifest() { return assertBillingManifestV1(JSON.parse(readFileSync(new URL("../../../config/billing-plans.v1.json", import.meta.url), "utf8")) as BillingManifestV1); }
 function billingPlan(entitlements: Array<{ key: string; value: string | number | boolean }>): BillingPlanIdV1 {
