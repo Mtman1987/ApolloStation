@@ -226,16 +226,27 @@ export function createSpmtService(options: SpmtServiceOptions) {
       || donorDiscordId === OWNER_DISCORD_ID
       || donorTwitchId === OWNER_TWITCH_ID;
     const usernameProfile = data.getProfileByUsername(donorUsername);
-    const linkedUserId = ([["discord", donorDiscordId], ["twitch", donorTwitchId]] as const)
-      .map(([provider, providerUserId]) => {
-        if (!providerUserId) return undefined;
-        const link = store.getProviderLink(provider, providerUserId);
-        return link && !link.revokedAt ? link.userId : undefined;
-      })
-      .find((value): value is string => Boolean(value));
+    // Provider IDs are the account key for recovery. A stale shell username must
+    // never outrank the database link, because the shell's tenant context is what
+    // this handoff is intended to repair.
+    const linkedUserIds = [...new Set(([
+      ["discord", donorDiscordId],
+      ["twitch", donorTwitchId],
+    ] as const).flatMap(([provider, providerUserId]) => {
+      if (!providerUserId) return [];
+      const link = store.getProviderLink(provider, providerUserId);
+      return link && !link.revokedAt ? [link.userId] : [];
+    }))];
+    if (linkedUserIds.length > 1) {
+      return { ok: false, status: 409, body: { error: "identity_account_mismatch", message: "The verified Discord and Twitch identities point to different Apollo accounts. No account or tenant was changed." } };
+    }
+    const linkedUserId = linkedUserIds[0];
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
-    let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
-      ownerBootstrap ? (usernameProfile ?? linkedProfile) : (linkedProfile ?? usernameProfile);
+    if (linkedUserId && !linkedProfile) {
+      return { ok: false, status: 409, body: { error: "linked_account_unavailable", message: "The verified provider identity is linked, but its Apollo account record could not be loaded." } };
+    }
+    const profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
+      linkedProfile ?? usernameProfile;
     if (!profile && (!allowBootstrap || (!ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1"))) {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
