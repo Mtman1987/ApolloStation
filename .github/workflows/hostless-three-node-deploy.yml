@@ -120,8 +120,8 @@ jobs:
             exit 0
           fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TARGET="\${{ inputs.node }}"
-            if [ "\${{ inputs.detect_changes }}" = "false" ]; then
+            TARGET="${{ inputs.node }}"
+            if [ "${{ inputs.detect_changes }}" = "false" ]; then
               echo "Change detection disabled: force-deploying the selected node(s)."
               case "$TARGET" in
                 node1) echo "node1=true" >> "$GITHUB_OUTPUT"; echo "node2=false" >> "$GITHUB_OUTPUT" ;;
