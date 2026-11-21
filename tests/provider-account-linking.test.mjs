@@ -133,6 +133,7 @@ test("signed-out provider recovery reuses the registered Apollo callback and res
     assert.equal(callback.headers.get("location"), "https://apollo-node-1.hostless.app/");
     const cookies = callback.headers.get("set-cookie");
     assert.match(cookies, /spmt_token=/);
+    assert.match(cookies, /spmt_linked_recovery=; Path=\\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
     assert.equal(calls.length, 2);
     const tokenRequest = new URLSearchParams(calls[0].body);
     assert.equal(tokenRequest.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
