@@ -436,6 +436,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   const headers = new Headers({ accept: request.headers.accept ?? "application/json", "x-spmt-app": "spacemountain" });
   if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
   if (!bridge && request.headers.cookie) headers.set("cookie", request.headers.cookie);
+  if (url.pathname === "/v1/auth/linked-provider-recovery/start" && typeof request.headers.host === "string") headers.set("x-spmt-browser-host", request.headers.host);
   if(bridge)headers.set("authorization",request.headers.authorization!);
   if(overlay)for(const name of ["x-spmt-listener-id","x-spmt-listener-state","x-spmt-listener-event"]){const value=request.headers[name];if(typeof value==="string")headers.set(name,value);}
   if (typeof request.headers["x-spmt-tenant"] === "string") headers.set("x-spmt-tenant", request.headers["x-spmt-tenant"]);
@@ -521,7 +522,8 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
-  if (pathname === "/v1/auth/linked-provider-recovery/start" || pathname === "/v1/auth/linked-provider-recovery/callback") return method === "GET";
+  if (pathname === "/v1/auth/linked-provider-recovery/start") return method === "GET";
+  if (pathname === "/v1/auth/linked-provider-recovery/password") return method === "POST";
   if(pathname==="/v1/identity/twitch-bots")return ["GET","POST"].includes(method);
   if(/^\/v1\/identity\/twitch-bots\/(start|callback)$/.test(pathname))return method==="GET";
   if (["/v1/assistant/conversation", "/v1/assistant/conversation/feed", "/v1/assistant/public-memory", "/v1/assistant/streams"].includes(pathname)) return method === "GET" || (method === "POST" && pathname === "/v1/assistant/conversation");

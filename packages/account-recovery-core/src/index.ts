@@ -104,6 +104,15 @@ export class SqliteAccountSetupStore {
     this.db.prepare("INSERT INTO account_setup_tickets(token_hash,purpose,user_id,tenant_id,expires_at,used_at,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at,used_at=excluded.used_at,body=excluded.body")
       .run(value.tokenHash, value.purpose, value.userId, value.tenantId, value.expiresAt, value.usedAt ?? null, JSON.stringify(value));
   }
+  consumeTicket(tokenHash: string, purpose: SetupPurposeV1, now: string) {
+    const row = this.db.prepare("SELECT body FROM account_setup_tickets WHERE token_hash=? AND purpose=? AND used_at IS NULL AND expires_at>?").get(tokenHash, purpose, now) as { body: string } | undefined;
+    if (!row) return undefined;
+    const ticket = JSON.parse(row.body) as AccountSetupTicketV1;
+    const consumed = { ...ticket, usedAt: now };
+    const result = this.db.prepare("UPDATE account_setup_tickets SET used_at=?,body=? WHERE token_hash=? AND purpose=? AND used_at IS NULL AND expires_at>?")
+      .run(now, JSON.stringify(consumed), tokenHash, purpose, now);
+    return Number(result.changes) === 1 ? consumed : undefined;
+  }
   findProviderUserId(userId: string, provider: ProviderKindV1) {
     const rows = this.db.prepare("SELECT body FROM provider_links WHERE user_id=? AND provider=? ORDER BY provider_user_id").all(userId, provider) as Array<{ body: string }>;
     return rows.map((row) => JSON.parse(row.body) as ProviderLinkV1).find((link) => !link.revokedAt)?.providerUserId;
@@ -357,12 +366,14 @@ export class AccountRecoveryService {
     return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };
   }
 
-  createLinkedProviderPasswordReset(identifier: string, provider: GrandfatherProviderV1, verifiedProviderUserId: string) {
+  createLinkedProviderPasswordReset(identifier: string, provider: GrandfatherProviderV1, verifiedProviderUserId: string, oauthState: string) {
     const username = normalizeUsername(identifier);
+    if (typeof oauthState !== "string" || !/^[A-Za-z0-9_-]{32,100}$/.test(oauthState)) throw new AccountSetupError("A valid OAuth recovery state is required");
     const profile = this.platformStore.getUserProfileByUsername(username);
     if (!profile) throw new AccountSetupError("Account recovery could not be verified");
-    const linkedId = this.setupStore.findProviderUserId(profile.userId, provider);
-    if (!linkedId || linkedId !== requireProviderUserId(verifiedProviderUserId)) throw new AccountSetupError("Account recovery could not be verified");
+    const linkedId = requireProviderUserId(verifiedProviderUserId);
+    const providerLink = this.authorityStore.getProviderLink(provider, linkedId);
+    if (!providerLink || providerLink.revokedAt || providerLink.userId !== profile.userId) throw new AccountSetupError("Account recovery could not be verified");
     const token = this.tokenFactory();
     const now = this.now();
     const ticket: AccountSetupTicketV1 = {
@@ -372,6 +383,7 @@ export class AccountRecoveryService {
       tenantId: profile.tenantIds[0] ?? `tenant_${profile.userId}`,
       sourceAppId: "spmt",
       ...(provider === "discord" ? { discordUserId: linkedId, discordVerifiedAt: now } : { twitchUserId: linkedId, twitchVerifiedAt: now }),
+      oauthStateHash: sha256(oauthState),
       createdAt: now,
       expiresAt: addMinutes(now, 15),
     };
@@ -379,14 +391,26 @@ export class AccountRecoveryService {
     return { ticket: token, userId: profile.userId, tenantId: ticket.tenantId };
   }
 
-  completeLinkedProviderPasswordReset(ticketToken: string, password: string) {
+  completeLinkedProviderPasswordReset(ticketToken: string, identifier: string, password: string) {
     const ticket = this.requireTicket(ticketToken, "linked-provider-password-reset");
-    if (!ticket.discordVerifiedAt && !ticket.twitchVerifiedAt) throw new AccountSetupError("A linked provider verification is required");
-    const linkedProvider = ticket.discordVerifiedAt ? "discord" : "twitch";
-    const linkedId = linkedProvider === "discord" ? ticket.discordUserId : ticket.twitchUserId;
-    if (!linkedId || this.setupStore.findProviderUserId(ticket.userId, linkedProvider) !== linkedId) throw new AccountSetupError("Account links changed; restart recovery");
+    const hasDiscord = Boolean(ticket.discordVerifiedAt && ticket.discordUserId);
+    const hasTwitch = Boolean(ticket.twitchVerifiedAt && ticket.twitchUserId);
+    if (hasDiscord === hasTwitch || !/^[a-f0-9]{64}$/.test(ticket.oauthStateHash ?? "")) {
+      throw new AccountSetupError("A valid linked-provider verification is required");
+    }
+    const username = normalizeUsername(identifier);
+    const profile = this.platformStore.getUserProfile(ticket.userId);
+    if (!profile || normalizeUsername(profile.username) !== username) throw new AccountSetupError("Account recovery could not be verified");
+    const linkedProvider = hasDiscord ? "discord" : "twitch";
+    const linkedId = hasDiscord ? ticket.discordUserId : ticket.twitchUserId;
+    const providerLink = linkedId ? this.authorityStore.getProviderLink(linkedProvider, linkedId) : undefined;
+    if (!providerLink || providerLink.revokedAt || providerLink.userId !== ticket.userId) {
+      throw new AccountSetupError("Account recovery could not be verified");
+    }
+    requirePassword(password);
+    const consumed = this.setupStore.consumeTicket(ticket.tokenHash, "linked-provider-password-reset", this.now());
+    if (!consumed) throw new AccountSetupError("This setup link is invalid, expired, or already used");
     this.setPassword(ticket.userId, password);
-    this.setupStore.putTicket({ ...ticket, usedAt: this.now() });
     return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };
   }
 

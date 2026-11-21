@@ -470,17 +470,31 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (request.method === "GET" && url.pathname === "/v1/onboarding/twitch/callback") {
         const recoveryRaw = cookie(request, "spmt_linked_recovery");
         if (recoveryRaw) {
-          let recovery: { provider: "discord" | "twitch"; state: string } | undefined;
-          try { recovery = JSON.parse(Buffer.from(recoveryRaw, "base64url").toString("utf8")); } catch { recovery = undefined; }
+          let recovery: { provider: "discord" | "twitch"; state: string; username: string } | undefined;
+          try {
+            const parsed = JSON.parse(Buffer.from(recoveryRaw, "base64url").toString("utf8")) as Record<string, unknown>;
+            if ((parsed.provider === "discord" || parsed.provider === "twitch")
+              && typeof parsed.state === "string" && /^[A-Za-z0-9_-]{32,100}$/.test(parsed.state)
+              && typeof parsed.username === "string" && /^[a-z0-9._-]{3,64}$/.test(parsed.username)) {
+              recovery = { provider: parsed.provider, state: parsed.state, username: parsed.username };
+            }
+          } catch { recovery = undefined; }
           const code = url.searchParams.get("code") ?? "";
           const state = url.searchParams.get("state") ?? "";
           const failRecovery = (reason: string) => {
             const target = new URL("/", publicBaseUrl);
             target.searchParams.set("recoveryError", reason);
-            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearSetupCookie("spmt_linked_recovery") });
+            if (recovery?.username) target.searchParams.set("recoveryUsername", recovery.username);
+            response.writeHead(302, {
+              location: target.toString(),
+              "cache-control": "no-store",
+              "set-cookie": [clearSetupCookie("spmt_linked_recovery"), clearSetupCookie("spmt_linked_recovery_ticket")],
+            });
             return response.end();
           };
-          if (!recovery || !code || !state || recovery.state !== state || (recovery.provider !== "discord" && recovery.provider !== "twitch")) {
+          if (url.searchParams.get("error")) return failRecovery("provider_verification_failed");
+          if (!recovery || !code || code.length > 512 || !state || state.length !== recovery.state.length
+            || !timingSafeEqual(Buffer.from(state), Buffer.from(recovery.state))) {
             return failRecovery("invalid_state");
           }
           let stage = "oauth_exchange";
@@ -489,33 +503,19 @@ export function createSpmtService(options: SpmtServiceOptions) {
             const client = accountProviderOAuthClient(options, provider);
             if (!client) throw new Error("provider_unavailable");
             const identity = await exchangeProviderIdentity(provider, code, `${publicBaseUrl}/v1/onboarding/twitch/callback`, client, fetchImpl);
-            stage = "identity_lookup";
-            const linked = accounts.resolveProviderIdentity(provider, identity.id);
-            if (!linked) {
-              console.warn("[spmt-account-recovery] verified provider identity has no canonical account link", { provider, stage });
-              return failRecovery("provider_not_linked");
-            }
-            stage = "workspace_restore";
-            const workspace = resolveDonorWorkspace({
-              id: linked.userId,
-              username: linked.profile.username,
-              ...(provider === "discord" ? { discordId: identity.id } : { twitchId: identity.id }),
-            }, false);
-            if (!workspace.ok) {
-              console.warn("[spmt-account-recovery] provider matched but owner workspace was not restorable", { provider, stage, status: workspace.status, error: workspace.body.error });
-              return failRecovery("workspace_unavailable");
-            }
-            stage = "session_issue";
-            const issued = auth.issueHumanSession({ userId: workspace.profile.userId, scopes: USER_SCOPES, tenantIds: workspace.tenantIds });
-            const browser = auth.issueBrowserSession(issued.accessToken);
+            stage = "linked_identity_match";
+            const reset = accounts.createLinkedProviderPasswordReset(recovery.username, provider, identity.id, state);
+            const target = new URL("/", publicBaseUrl);
+            target.searchParams.set("recovery", "verified");
+            target.searchParams.set("recoveryUsername", recovery.username);
             response.writeHead(302, {
-              location: new URL("/", publicBaseUrl).toString(),
+              location: target.toString(),
               "cache-control": "no-store",
-              "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery")],
+              "set-cookie": [setupCookie("spmt_linked_recovery_ticket", reset.ticket, 900), clearSetupCookie("spmt_linked_recovery")],
             });
             return response.end();
           } catch (error) {
-            console.error("[spmt-account-recovery] failed", {
+            console.warn("[spmt-account-recovery] failed", {
               provider: recovery.provider,
               stage,
               error: error instanceof Error ? error.name : "unknown",
@@ -757,11 +757,23 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (request.method === "GET" && url.pathname === "/v1/auth/linked-provider-recovery/start") {
         const provider = url.searchParams.get("provider");
         if (provider !== "discord" && provider !== "twitch") return json(response, 400, { error: "recovery_provider_invalid" });
+        const username = (url.searchParams.get("username") ?? "").trim().toLowerCase().replace(/@spmt\.live$/, "");
+        if (!/^[a-z0-9._-]{3,64}$/.test(username)) return json(response, 400, { error: "recovery_username_required", message: "Enter your Apollo username first." });
+        const browserHost = header(request, "x-spmt-browser-host");
+        const canonicalHost = new URL(publicBaseUrl).host;
+        if (browserHost && browserHost.toLowerCase() !== canonicalHost.toLowerCase()) {
+          const canonicalStart = new URL("/v1/auth/linked-provider-recovery/start", publicBaseUrl);
+          canonicalStart.searchParams.set("provider", provider);
+          canonicalStart.searchParams.set("username", username);
+          response.writeHead(302, { location: canonicalStart.toString(), "cache-control": "no-store" });
+          return response.end();
+        }
         const client = accountProviderOAuthClient(options, provider);
         if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
         const state = randomBytes(24).toString("base64url");
-        const pending = Buffer.from(JSON.stringify({ provider, state }), "utf8").toString("base64url");
-        // Recovery reuses the already-registered Apollo provider callback.
+        const pending = Buffer.from(JSON.stringify({ provider, state, username }), "utf8").toString("base64url");
+        // Keep the provider's already-registered callback URI; OAuth state is bound to
+        // this browser's HttpOnly cookie and the resulting short-lived reset ticket.
         const redirectUri = `${publicBaseUrl}/v1/onboarding/twitch/callback`;
         const authorizationUrl = provider === "twitch" ? new URL("https://id.twitch.tv/oauth2/authorize") : new URL("https://discord.com/oauth2/authorize");
         authorizationUrl.searchParams.set("client_id", client.clientId);
@@ -769,24 +781,33 @@ export function createSpmtService(options: SpmtServiceOptions) {
         authorizationUrl.searchParams.set("response_type", "code");
         authorizationUrl.searchParams.set("scope", provider === "twitch" ? "user:read:email" : "identify");
         authorizationUrl.searchParams.set("state", state);
-        response.writeHead(302, { location: authorizationUrl.toString(), "cache-control": "no-store", "set-cookie": setupCookie("spmt_linked_recovery", pending) });
+        response.writeHead(302, {
+          location: authorizationUrl.toString(),
+          "cache-control": "no-store",
+          "set-cookie": [setupCookie("spmt_linked_recovery", pending, 900), clearSetupCookie("spmt_linked_recovery_ticket")],
+        });
         return response.end();
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/linked-provider-recovery/password") {
-        const body = await readBody(request);
         const ticket = cookie(request, "spmt_linked_recovery_ticket");
-        if (!ticket) return json(response, 400, { error: "recovery_ticket_required" });
-        const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        if (!ticket) return json(response, 400, { error: "recovery_failed", message: "The recovery attempt is missing or expired. Start again." }, { "set-cookie": clearSetupCookie("spmt_linked_recovery_ticket") });
         try {
-          const completed = accounts.completeLinkedProviderPasswordReset(ticket, str(body.password, "password"));
-          const inspection = accounts.inspectSignIn(username);
-          if (inspection.state !== "password-set" || inspection.userId !== completed.userId) return json(response, 400, { error: "recovery_account_mismatch" }, { "set-cookie": clearSetupCookie("spmt_linked_recovery_ticket") });
-          const result = data.login(username, str(body.password, "password"), USER_SCOPES);
+          const body = await readBody(request);
+          const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
+          const password = str(body.password, "password");
+          const completed = accounts.completeLinkedProviderPasswordReset(ticket, username, password);
+          const result = data.login(username, password, USER_SCOPES);
+          if (result.profile.userId !== completed.userId) throw new Error("recovery_account_mismatch");
           const browser = auth.issueBrowserSession(result.tokens.accessToken);
-          return json(response, 200, { ok: true }, { "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery_ticket")] });
+          return json(response, 200, { ok: true }, {
+            "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery_ticket"), clearSetupCookie("spmt_linked_recovery")],
+          });
         } catch (error) {
-          return json(response, 400, { error: "recovery_failed", message: error instanceof Error ? error.message : "Recovery failed" });
+          const passwordMessage = error instanceof Error && error.message === "Password must be at least 12 characters"
+            ? error.message
+            : "The username and linked provider could not be verified, or this recovery attempt expired. Start again.";
+          return json(response, 400, { error: "recovery_failed", message: passwordMessage });
         }
       }
 
@@ -1153,7 +1174,7 @@ function header(request: IncomingMessage, name: string) { const value = request.
 function accessToken(request: IncomingMessage) { const authorization = request.headers.authorization; if (authorization?.startsWith("Bearer ")) return authorization.slice(7); return cookie(request, "spmt_token"); }
 function cookie(request: IncomingMessage, name: string) { const source = request.headers.cookie ?? ""; for (const item of source.split(";")) { const [index, ...rest] = item.trim().split("="); if (index === name) return decodeURIComponent(rest.join("=")); } return undefined; }
 function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax${browserCookieDomain()}`; }
-function setupCookie(name: string, token: string) { return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1800`; }
+function setupCookie(name: string, token: string, maxAge = 1800) { return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`; }
 function clearCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${browserCookieDomain()}`; }
 function clearSetupCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`; }
 // Node 1 and Node 2 are Hostless subdomains. A production owner session must

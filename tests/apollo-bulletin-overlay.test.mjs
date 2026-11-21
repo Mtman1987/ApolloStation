@@ -88,10 +88,19 @@ test("scheduler proof page and simulator destination re-arm interval delivery", 
     assert.equal(created.status,201);
     const task=(await created.json()).task;
     assert.equal(task.destination,"test-simulator");
-    await new Promise(resolve=>setTimeout(resolve,1400));
-    const state=await (await fetch(origin+"/api/tasks")).json(), updated=state.tasks.find(t=>t.id===task.id);
+    let updated;
+    const deadline = Date.now() + 6000;
+    while (Date.now() < deadline) {
+      const state = await (await fetch(origin + "/api/tasks")).json();
+      updated = state.tasks.find(t => t.id === task.id);
+      if (updated?.receiptHistory?.length) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(updated?.receiptHistory?.length, "the scheduler should record a simulator receipt within six seconds");
     assert.equal(updated.status,"scheduled");
-    assert.match(updated.lastEvent,/SIMULATED AI RECEIPT/);
+    assert.equal(updated.lastEvent,"Task simulator receipt recorded");
+    assert.equal(updated.receiptHistory[0].runNumber,1);
+    assert.match(updated.receiptHistory[0].reply,/SIMULATED AI RECEIPT/);
     assert.ok(updated.nextRunAt>Date.now());
   } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
 });

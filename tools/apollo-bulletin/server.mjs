@@ -42,7 +42,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function load() {
     try { state = JSON.parse(await readFile(statePath, "utf8")); }
     catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
-    state.tasks ||= []; state.activity ||= [];
+    state.tasks ||= []; state.activity ||= []; state.browserMessages ||= [];
   }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
   async function tick() {
