@@ -57,9 +57,8 @@ function parseCliJson(output) {
 }
 function appUrl(app, cliRecords = []) {
   const candidates = [
-    app?.url, app?.publicUrl, app?.defaultUrl, app?.defaultDomain, app?.domain, app?.hostname,
-    ...cliRecords.map(record => record.link),
-    ...cliRecords.map(record => record.app?.url || record.app?.defaultDomain || record.app?.domain),
+    app?.defaultDomain, app?.domain, app?.hostname, app?.publicUrl, app?.defaultUrl, app?.url,
+    ...cliRecords.map(record => record.app?.defaultDomain || record.app?.domain || record.app?.publicUrl || record.app?.url),
   ].filter(value => typeof value === "string" && value.trim());
   for (const candidate of candidates) {
     const value = candidate.startsWith("http") ? candidate : "https://" + candidate;
@@ -127,6 +126,7 @@ if (!existing) {
   run("hostless", publicArgs);
 }
 
+run("hostless", ["deploy", "--commit", commit, "--wait", "--timeout", "480", "--app", appName, "--project", String(projectId), "--json"]);
 await waitForHealth(url);
 console.log("[cockpit] Verified live URL: " + url);
 
