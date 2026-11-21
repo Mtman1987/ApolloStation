@@ -21,3 +21,13 @@ test("monthly day 31 skips months without that day", () => {
 test("rejects invalid IANA timezone", () => {
   assert.throws(() => normalizeSchedule({ type:"weekly", weekdays:[1], time:"09:00", timeZone:"Mars/Olympus" }), /valid IANA timezone/);
 });
+
+test("normalizes a valid non-default wall-clock time and timezone", () => {
+  const schedule = normalizeSchedule({ type:"weekly", weekdays:[1], time:"17:45", timeZone:"America/Los_Angeles" });
+  assert.equal(schedule.time, "17:45");
+  assert.equal(schedule.timeZone, "America/Los_Angeles");
+});
+test("falls back only for malformed wall-clock time", () => {
+  const schedule = normalizeSchedule({ type:"weekly", weekdays:[1], time:"25:99" });
+  assert.equal(schedule.time, "09:00");
+});
