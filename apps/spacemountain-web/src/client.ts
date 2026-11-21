@@ -339,6 +339,7 @@ async function loadShell() {
       onPrepareCoderPrompt: (appId, prompt) => void prepareCoderPrompt(appId, prompt),
       onIssueOverlayOutput: (appId, widgetId, personal) => void issueOverlayOutput(appId, widgetId, personal),
       onRevokeOverlayOutput: (grantId) => void revokeOverlayOutput(grantId),
+      onSignOut: () => void logout(),
     }).mount();
     const query = new URLSearchParams(window.location.search);
     const providerLinked = query.get("providerLinked");
@@ -839,16 +840,21 @@ async function revokeOverlayOutput(grantId: string) {
 }
 
 async function logout() {
-  sessionRecovery.beginLogout();
-  await fetch("/sandbox/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
-  shellUi?.destroy();
-  shellUi = undefined;
-  currentPrincipal = undefined;
-  registryFingerprint = "";
-  registeredAppIds.clear();
-  developerDialog.close();
-  window.history.replaceState(null, "", "/");
-  showAuth("Signed out.");
+  try {
+    const response = await fetch("/auth/logout", { method: "POST", credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error(`Sign-out failed (${response.status}). Your Apollo session is still active; please retry.`);
+    sessionRecovery.beginLogout();
+    shellUi?.destroy();
+    shellUi = undefined;
+    currentPrincipal = undefined;
+    registryFingerprint = "";
+    registeredAppIds.clear();
+    developerDialog.close();
+    window.history.replaceState(null, "", "/");
+    showAuth("Signed out.");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Sign-out could not complete. Please retry.", "error");
+  }
 }
 
 async function fetchForumPosts(tenantId:string){const result=await spmt.listCommlinkForumPosts(tenantId,{limit:50});const details=await Promise.all(result.posts.slice(0,4).map(async post=>({...post,replies:(await spmt.getCommlinkForumPost(tenantId,post.id)).replies})));return [...details,...result.posts.slice(4)];}
