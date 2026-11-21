@@ -142,6 +142,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message?.type === "APOLLO_REQUEUE") {
       const state = await getState();
       state.queue = state.queue.map(q => q.id === message.id && q.status === "limit-reached" ? { ...q, status: "active", resumedAt: Date.now() } : q);
+      state.queue = state.queue.map(q => q.id === message.id && q.status === "attempted" ? { ...q, status: "pending", manualRetryAt: Date.now(), attemptedAt: null } : q);
       return save(state, "task-resumed-after-cycle-limit");
     }
     if (message?.type === "APOLLO_COMPLETE") {
