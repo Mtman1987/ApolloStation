@@ -1033,6 +1033,7 @@ function selectTab(name: "spmt" | "apollo") {
   document.querySelectorAll<HTMLButtonElement>(".gate-tabs [data-tab]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === name)));
   loginForm.hidden = name !== "spmt";
   apolloLoginForm.hidden = name !== "apollo";
+  recoveryPasswordPanel.hidden = name !== "apollo" || !recoveryReady;
 }
 function authInput(form: HTMLFormElement) {
   const data = new FormData(form);
