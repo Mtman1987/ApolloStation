@@ -111,7 +111,7 @@ export class SqliteAccountSetupStore {
     const consumed = { ...ticket, usedAt: now };
     const result = this.db.prepare("UPDATE account_setup_tickets SET used_at=?,body=? WHERE token_hash=? AND purpose=? AND used_at IS NULL AND expires_at>?")
       .run(now, JSON.stringify(consumed), tokenHash, purpose, now);
-    return result.changes === 1 ? consumed : undefined;
+    return Number(result.changes) === 1 ? consumed : undefined;
   }
   findProviderUserId(userId: string, provider: ProviderKindV1) {
     const rows = this.db.prepare("SELECT body FROM provider_links WHERE user_id=? AND provider=? ORDER BY provider_user_id").all(userId, provider) as Array<{ body: string }>;
