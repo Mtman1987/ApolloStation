@@ -185,3 +185,9 @@ test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
   assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
   assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless/);
 });
+
+test("Hostless deployment orchestrator passes Node syntax validation", () => {
+  const script = new URL("../scripts/hostless/ensure-node-app.mjs", import.meta.url);
+  const result = spawnSync(process.execPath, ["--check", script.pathname], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
