@@ -21,7 +21,7 @@ export function isTaskComplete(item, snapshot) {
     && typeof item.completionToken === "string"
     && snapshot?.busy === false
     && typeof snapshot.assistantText === "string"
-    && snapshot.assistantText.split(/\\r?\\n/).some(line => line.trim() === item.completionToken);
+    && snapshot.assistantText.split(/\r?\n/).some(line => line.trim() === item.completionToken);
 }
 
 export function taskCycleLimitReached(item, maxCycles) {

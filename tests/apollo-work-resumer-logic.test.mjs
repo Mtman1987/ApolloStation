@@ -56,10 +56,11 @@ test("initial and continuation prompts carry the task-specific completion token"
   assert.match(buildTaskPrompt({ ...item, status: "active" }), /Continue working/);
 });
 
-test("completion marker requires an idle response for the active task", () => {
+test("completion marker requires its own line in an idle response for the active task", () => {
+  assert.equal(isTaskComplete({ ...item, status: "active" }, { busy: false, assistantText: "Work finished\nAPOLLO_TASK_COMPLETE:q1" }), true);
   assert.equal(isTaskComplete({ ...item, status: "active" }, { busy: false, assistantText: "APOLLO_TASK_COMPLETE:q1" }), true);
-  assert.equal(isTaskComplete({ ...item, status: "active" }, { busy: true, assistantText: "APOLLO_TASK_COMPLETE:q1" }), false);
   assert.equal(isTaskComplete({ ...item, status: "active" }, { busy: false, assistantText: "Work finished; APOLLO_TASK_COMPLETE:q1" }), false);
+  assert.equal(isTaskComplete({ ...item, status: "active" }, { busy: true, assistantText: "APOLLO_TASK_COMPLETE:q1" }), false);
   assert.equal(isTaskComplete(item, { busy: false, assistantText: "APOLLO_TASK_COMPLETE:q1" }), false);
 });
 
