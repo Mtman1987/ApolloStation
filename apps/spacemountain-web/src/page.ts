@@ -74,15 +74,15 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
             </div>
             <p class="spmt-auth-help">Apollo checks the provider's immutable account ID against your existing link. This does not create an account or change provider links.</p>
           </div>
-          <div id="apollo-recovery-password" hidden>
-            <p class="spmt-auth-help">Your linked identity is verified. Set a new password to finish signing in.</p>
-            <label>New password<input id="apollo-recovery-password-value" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
-            <label>Confirm new password<input id="apollo-recovery-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
-            <button type="button" id="apollo-recovery-submit">Set password and sign in</button>
-          </div>
-          <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
           <p class="spmt-auth-help">Use your Apollo username and password. If you have never had an Apollo account, create one here; the server opens the normal secure browser session automatically.</p>
         </form>
+        <form id="apollo-recovery-password" autocomplete="on" hidden>
+          <p class="spmt-auth-help">Your linked identity is verified. Set a new password to finish signing in.</p>
+          <label>New password<input id="apollo-recovery-password-value" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
+          <label>Confirm new password<input id="apollo-recovery-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="512" required></label>
+          <button type="submit" id="apollo-recovery-submit">Set password and sign in</button>
+        </form>
+        <p id="apollo-recovery-message" class="spmt-auth-help" role="status"></p>
       </div>
     </section>
   </main>
