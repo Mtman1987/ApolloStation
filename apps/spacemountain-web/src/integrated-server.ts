@@ -43,6 +43,12 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     }
 
     if(url.pathname === "/bulletin" || url.pathname.startsWith("/bulletin/")) {
+      const session = await (options.fetchImpl ?? fetch)(options.spmtOrigin + "/v1/session", {
+        headers: { cookie: request.headers.cookie ?? "", accept: "application/json" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!session.ok) return json(response, 401, { error: "owner_session_required", message: "Sign in to Apollo before opening Bulletin or its private browser." });
       const path = url.pathname === "/bulletin" ? "/" : url.pathname.slice("/bulletin".length);
       return proxyDirect(request,response,"http://127.0.0.1:3210",path+url.search,false);
     }

@@ -4,11 +4,12 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { normalizeSchedule, nextScheduledAt, scheduleLabel } from "./schedule.mjs";
 import { simulatedAiReply } from "./test-simulator.mjs";
+import { createApolloChatGptBrowserWorkerFromEnvironment } from "./browser-worker.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
-  const form=kind==="tasks" ? '<form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/"><label>Destination</label><select name="destination"><option value="test-simulator">Test Simulator (safe, no external AI)</option><option value="chatgpt">ChatGPT (not connected)</option></select><select name="scheduleType"><option value="manual">Manual</option><option value="once">Once at a date/time</option><option value="interval">Repeat every interval</option><option value="weekly">Selected weekdays</option><option value="monthly">Monthly date</option></select><input name="runAt" type="datetime-local" aria-label="Run once at"><div class="schedule"><input name="every" type="number" min="1" value="5" placeholder="Interval"><select name="unit"><option value="seconds">Seconds</option><option value="minutes" selected>Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></div><label>Weekly days</label><select name="weekdays" multiple><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select><div class="schedule"><input name="time" type="time" value="09:00"><input name="day" type="number" min="1" max="31" value="1" placeholder="Day of month"></div><button>Create task</button></form>' : "";
+  const form=kind==="tasks" ? '<form id="create"><input name="name" placeholder="Task name" required><textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea><input name="conversationUrl" placeholder="https://chatgpt.com/"><label>Destination</label><select name="destination"><option value="test-simulator">Test Simulator (safe, no external AI)</option><option value="chatgpt">ChatGPT (dedicated browser)</option></select><select name="scheduleType"><option value="manual">Manual</option><option value="once">Once at a date/time</option><option value="interval">Repeat every interval</option><option value="weekly">Selected weekdays</option><option value="monthly">Monthly date</option></select><input name="runAt" type="datetime-local" aria-label="Run once at"><div class="schedule"><input name="every" type="number" min="1" value="5" placeholder="Interval"><select name="unit"><option value="seconds">Seconds</option><option value="minutes" selected>Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></div><label>Weekly days</label><select name="weekdays" multiple><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select><div class="schedule"><input name="time" type="time" value="09:00"><input name="day" type="number" min="1" max="31" value="1" placeholder="Day of month"></div><button>Create task</button></form>' : "";
   const script=[
     '<script>',
     'const kind='+JSON.stringify(kind)+',api="/bulletin/api/tasks";',
@@ -23,9 +24,16 @@ function bulletinWidgetHtml(kind) {
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#0b1220;color:#edf3ff;font:13px system-ui}body{padding:12px;overflow:auto}header{display:flex;justify-content:space-between;align-items:center;gap:8px}h1{font-size:15px;margin:0 0 8px}small{color:#9eacc8}article,form{border:1px solid #293956;background:#111b30;border-radius:10px;padding:10px;margin:8px 0}article p{margin:5px 0;color:#aebbd2;overflow-wrap:anywhere}button,input,textarea,select{font:inherit;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:7px;padding:7px;max-width:100%}button{cursor:pointer;background:#234879;margin:3px 4px 3px 0}input,textarea,select{width:100%;margin:4px 0}textarea{min-height:76px;resize:vertical}.schedule{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{color:#8ee6b6}.actions{display:flex;flex-wrap:wrap}.empty{padding:18px;border:1px dashed #405577;border-radius:10px;color:#9eacc8}a{color:#8bd}@media(max-width:420px){body{padding:8px}.schedule{grid-template-columns:1fr}}</style></head><body><header><h1>'+title+'</h1><small id="updated">Loading…</small></header>'+form+'<main id="content"><div class="empty">Loading Bulletin data…</div></main>'+script+'</body></html>';
 }
 
-export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch = async task => task.destination === "test-simulator" ? ({ submitted: true, receipt: simulatedAiReply(task, (task.simulatedRunCount || 0) + 1), reason: "Simulator receipt recorded" }) : ({ submitted: false, reason: "browser-adapter-not-connected" }), now = () => Date.now() } = {}) {
+export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, now = () => Date.now() } = {}) {
   let state;
   let busy = false;
+  let browserWorker;
+  let browserUnavailableReason = "persistent-browser-profile-not-configured";
+  async function deliver(task) {
+    if (task.destination === "test-simulator") return { submitted: true, receipt: simulatedAiReply(task, (task.simulatedRunCount || 0) + 1), reason: "Simulator receipt recorded" };
+    if (!browserWorker) return { submitted: false, reason: browserUnavailableReason };
+    return browserWorker.sendTask(task);
+  }
   async function save() {
     await mkdir(dirname(statePath), { recursive: true });
     const temp = join(dirname(statePath), ".bulletin-state.tmp");
@@ -46,7 +54,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         // Claim and persist before touching the browser. An uncertain send is never retried.
         task.status = "dispatching"; task.lastDispatchAt = now(); task.nextRunAt = null; log("dispatch-intent-persisted", task.id); await save();
         try {
-          const result = await dispatch(task);
+          const result = await (dispatch ?? deliver)(task);
           if (result?.submitted && result.receipt) { task.simulatedRunCount = result.receipt.runNumber; task.receiptHistory ||= []; task.receiptHistory.push(result.receipt); task.receiptHistory = task.receiptHistory.slice(-100); }
           if (result?.submitted && ["interval","weekly","monthly"].includes(task.schedule?.type)) { task.status = "scheduled"; task.nextRunAt = nextScheduledAt(task.schedule, now()); task.lastEvent = result?.reason || "Sent; next occurrence scheduled"; log("recurrence-rearmed", task.id); } else { task.status = result?.submitted ? "dispatched" : "dispatch-uncertain"; task.lastEvent = result?.reason || (result?.submitted ? "Prompt sent once" : "Send not confirmed; manual review required"); log(task.status, task.id); }
         } catch (e) { task.status = "dispatch-uncertain"; task.lastEvent = String(e.message || e); log("dispatch-error-no-retry", task.id); }
@@ -88,11 +96,36 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         if (task.status !== "awaiting_review") { task.status="awaiting_review";task.nextRunAt=null;task.lastEvent="AI requested owner review";log("awaiting-review",task.id);await save(); }
         return send(200, `<!doctype html><meta name="viewport" content="width=device-width"><title>Review requested</title><body style="font:16px system-ui;background:#0b1220;color:#eef;padding:28px"><h1>Owner review requested</h1><p>${task.name.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}</p><p>This task is paused. Open Apollo Bulletin to inspect its handoff and logs, then explicitly resume or mark complete.</p><a style="color:#8bd" href="/">Return to Bulletin</a></body>`, "text/html; charset=utf-8");
       }
-      if (req.method === "GET" && url.pathname === "/health/ready") return send(200,{ready:true,tasks:state.tasks.length});
+      if (req.method === "GET" && url.pathname === "/browser") return send(200, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apollo private browser</title><style>body{margin:0;padding:12px;background:#0b1220;color:#edf3ff;font:15px system-ui}button,input{font:inherit;padding:10px;margin:4px;background:#17243a;color:inherit;border:1px solid #50658a;border-radius:8px}#screen{display:block;width:100%;max-width:100%;border:1px solid #50658a;border-radius:8px;touch-action:manipulation}#status{padding:8px;color:#a9c6ee}form{display:flex;gap:4px}form input{flex:1;min-width:0}</style><h1>Dedicated ChatGPT browser</h1><p>This is Apollo\'s separate browser session. Sign in here once; Lounge keeps its own browser.</p><button id="open">Open ChatGPT sign-in</button><button id="refresh">Refresh screen</button><div id="status">Checking browser…</div><img id="screen" alt="Private browser screen"><form id="typing"><input id="text" autocomplete="off" placeholder="Type into the browser"><button>Type</button></form><button data-key="Enter">Enter</button><button data-key="Tab">Tab</button><button data-key="Escape">Escape</button><script>const status=document.querySelector("#status"),screen=document.querySelector("#screen");async function call(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"content-type":"application/json"},body:body?JSON.stringify(body):undefined,cache:"no-store"});if(!r.ok){let d={};try{d=await r.json()}catch{}throw Error(d.error||d.message||r.statusText)}return r;}async function refresh(){try{const r=await call("/bulletin/api/browser/status");const d=await r.json();status.textContent=d.connected?"Connected · "+d.url:d.loginRequired?"Sign-in required · "+d.url:(d.reason||"Browser ready for sign-in");screen.src="/bulletin/api/browser/screenshot?t="+Date.now();}catch(e){status.textContent=e.message;}}document.querySelector("#open").onclick=async()=>{try{await call("/bulletin/api/browser/login",{});await refresh()}catch(e){status.textContent=e.message}};document.querySelector("#refresh").onclick=refresh;screen.onclick=async e=>{const r=screen.getBoundingClientRect();try{await call("/bulletin/api/browser/click",{x:(e.clientX-r.left)/r.width*1440,y:(e.clientY-r.top)/r.height*1000});await refresh()}catch(x){status.textContent=x.message}};document.querySelector("#typing").onsubmit=async e=>{e.preventDefault();try{await call("/bulletin/api/browser/type",{text:document.querySelector("#text").value});document.querySelector("#text").value="";await refresh()}catch(x){status.textContent=x.message}};document.querySelectorAll("[data-key]").forEach(b=>b.onclick=async()=>{try{await call("/bulletin/api/browser/press",{key:b.dataset.key});await refresh()}catch(x){status.textContent=x.message}});refresh();setInterval(refresh,2500);</script>', "text/html; charset=utf-8");
+      if (req.method === "GET" && url.pathname === "/api/browser/status") {
+        return send(200, browserWorker ? await browserWorker.status() : { connected: false, reason: browserUnavailableReason });
+      }
+      if (req.method === "POST" && url.pathname === "/api/browser/login") {
+        if (!browserWorker) return send(503, { error: browserUnavailableReason });
+        return send(200, await browserWorker.openLogin());
+      }
+      if (req.method === "GET" && url.pathname === "/api/browser/screenshot") {
+        if (!browserWorker) return send(503, { error: browserUnavailableReason });
+        const png = await browserWorker.screenshot();
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }); res.end(png); return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/browser/click") {
+        if (!browserWorker) return send(503, { error: browserUnavailableReason });
+        const input = await body(); return send(200, await browserWorker.click(Number(input.x), Number(input.y)));
+      }
+      if (req.method === "POST" && url.pathname === "/api/browser/type") {
+        if (!browserWorker) return send(503, { error: browserUnavailableReason });
+        const input = await body(); return send(200, await browserWorker.type(input.text));
+      }
+      if (req.method === "POST" && url.pathname === "/api/browser/press") {
+        if (!browserWorker) return send(503, { error: browserUnavailableReason });
+        const input = await body(); return send(200, await browserWorker.press(input.key));
+      }
+      if (req.method === "GET" && url.pathname === "/health/ready") return send(200,{ready:true,tasks:state.tasks.length,browser:browserWorker ? "ready" : "not-configured"});
       send(404,{error:"not_found"});
     } catch (error) { send(500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
+  return { server, async listen() { await load(); try { const browser = await createApolloChatGptBrowserWorkerFromEnvironment(); browserWorker = browser.enabled ? browser.worker : undefined; browserUnavailableReason = browser.reason ?? "browser-start-failed"; } catch (error) { browserUnavailableReason = "browser-start-failed: " + String(error?.message || error).slice(0,300); console.error("[apollo-bulletin] Dedicated browser unavailable:", browserUnavailableReason); } await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); const timer=setInterval(()=>void tick(),1000);timer.unref(); return server.address(); }, async close(){ if(browserWorker) await browserWorker.close(); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
