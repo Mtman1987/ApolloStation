@@ -70,7 +70,9 @@ test("SPMT proxy promise rejections are caught by the HTTP handler", () => {
 test("linked-provider recovery is username-bound, password-setting, and automatically signs into Apollo", () => {
   assert.match(page, /id="apollo-recovery-discord"/);
   assert.match(page, /id="apollo-recovery-twitch"/);
+  assert.match(page, /Recover \/ Set Password/);
   assert.match(page, /id="apollo-recovery-password" hidden/);
+  assert.ok(page.indexOf('<form id="apollo-recovery-password"') > page.indexOf('</form>', page.indexOf('<form id="apollo-login-form"')), "recovery password entry must be a separate form, not nested");
   assert.match(page, /id="apollo-recovery-password-value" type="password"[^>]*minlength="12"/);
   assert.match(page, /id="apollo-recovery-password-confirm"/);
   assert.match(page, /id="apollo-recovery-submit"/);
