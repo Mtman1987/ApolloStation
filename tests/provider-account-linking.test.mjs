@@ -83,6 +83,8 @@ test("signed-out provider recovery reuses the registered Apollo callback and res
     calls.push({ url, body: init.body?.toString?.() ?? "" });
     if (url === "https://id.twitch.tv/oauth2/token") return Response.json({ access_token: "twitch-access" });
     if (url === "https://api.twitch.tv/helix/users") return Response.json({ data: [{ id: "twitch-owner-77", login: "owner_live" }] });
+    if (url === "https://discord.com/api/oauth2/token") return Response.json({ access_token: "discord-access" });
+    if (url === "https://discord.com/api/v10/users/@me") return Response.json({ id: "discord-owner-88", username: "owner" });
     throw new Error(`Unexpected provider request: ${url}`);
   };
   const service = createSpmtService({
@@ -103,6 +105,7 @@ test("signed-out provider recovery reuses the registered Apollo callback and res
       providerUserId: "twitch-owner-77",
       providerUsername: "owner_live",
     });
+    service.authority.linkProvider(account.userId, "discord", "discord-owner-88");
     const tenantId = "tenant-recovery-owner";
     service.control.registerTenant({ tenantId, ownerUserId: account.userId, displayName: "Owner workspace" });
     service.authority.getOrCreateWorkspace(tenantId);
@@ -117,33 +120,36 @@ test("signed-out provider recovery reuses the registered Apollo callback and res
     assert.ok(webAddress && typeof webAddress !== "string");
     const browserBase = `http://127.0.0.1:${webAddress.port}`;
 
-    const start = await fetch(`${browserBase}/v1/auth/linked-provider-recovery/start?provider=twitch`, { redirect: "manual" });
-    assert.equal(start.status, 302);
-    const authorization = new URL(start.headers.get("location"));
-    assert.equal(authorization.searchParams.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
-    const state = authorization.searchParams.get("state");
-    const pendingCookie = cookiePair(start.headers.get("set-cookie"));
-    assert.match(pendingCookie, /^spmt_linked_recovery=/);
+    for (const provider of ["twitch", "discord"]) {
+      const start = await fetch(`${browserBase}/v1/auth/linked-provider-recovery/start?provider=${provider}`, { redirect: "manual" });
+      assert.equal(start.status, 302);
+      const authorization = new URL(start.headers.get("location"));
+      assert.equal(authorization.hostname, provider === "twitch" ? "id.twitch.tv" : "discord.com");
+      assert.equal(authorization.searchParams.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
+      const state = authorization.searchParams.get("state");
+      const pendingCookie = cookiePair(start.headers.get("set-cookie"));
+      assert.match(pendingCookie, /^spmt_linked_recovery=/);
 
-    const callback = await fetch(`${browserBase}/v1/onboarding/twitch/callback?state=${encodeURIComponent(state)}&code=valid-code`, {
-      headers: { cookie: pendingCookie },
-      redirect: "manual",
-    });
-    assert.equal(callback.status, 302);
-    assert.equal(callback.headers.get("location"), "https://apollo-node-1.hostless.app/");
-    const cookies = callback.headers.get("set-cookie");
-    assert.match(cookies, /spmt_token=/);
-    assert.match(cookies, /spmt_linked_recovery=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
-    assert.equal(calls.length, 2);
-    const tokenRequest = new URLSearchParams(calls[0].body);
-    assert.equal(tokenRequest.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
-    const browserCookie = cookiePair(cookies);
-    const check = await fetch(`${base}/v1/auth/session/check`, { headers: { cookie: browserCookie } });
-    assert.equal(check.status, 200);
-    const principal = await check.json();
-    assert.equal(principal.authenticated, true);
-    assert.equal(principal.actorId, account.userId);
-    assert.deepEqual(principal.tenantIds, [tenantId]);
+      const callback = await fetch(`${browserBase}/v1/onboarding/twitch/callback?state=${encodeURIComponent(state)}&code=${provider}-valid-code`, {
+        headers: { cookie: pendingCookie },
+        redirect: "manual",
+      });
+      assert.equal(callback.status, 302);
+      assert.equal(callback.headers.get("location"), "https://apollo-node-1.hostless.app/");
+      const cookies = callback.headers.get("set-cookie");
+      assert.match(cookies, /spmt_token=/);
+      assert.match(cookies, /spmt_linked_recovery=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
+      const tokenRequest = new URLSearchParams(calls.filter(call => call.url.endsWith("/oauth2/token")).at(-1).body);
+      assert.equal(tokenRequest.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
+      const browserCookie = cookiePair(cookies);
+      const check = await fetch(`${base}/v1/auth/session/check`, { headers: { cookie: browserCookie } });
+      assert.equal(check.status, 200);
+      const principal = await check.json();
+      assert.equal(principal.authenticated, true);
+      assert.equal(principal.actorId, account.userId);
+      assert.deepEqual(principal.tenantIds, [tenantId]);
+    }
+    assert.equal(calls.length, 4);
   } finally {
     if (web) await web.close();
     await service.close();
