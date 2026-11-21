@@ -69,10 +69,11 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
 
   async function dispatch(task) {
     try {
-      const current = await ensure(task.conversationUrl);
-      const state = await snapshot(task.conversationUrl);
+      const requestedConversationUrl = task.conversationUrl && task.conversationUrl !== CHATGPT_ORIGIN && task.conversationUrl !== CHATGPT_ORIGIN + "/" ? task.conversationUrl : null;
+      const current = await ensure(requestedConversationUrl);
+      const state = await snapshot();
       if (!state.loggedIn) return { submitted: false, reason: "chatgpt-login-required-open-bulletin-browser" };
-      if (state.url !== safeConversationUrl(task.conversationUrl)) return { submitted: false, reason: "conversation-url-mismatch" };
+      if (requestedConversationUrl && state.url !== safeConversationUrl(requestedConversationUrl)) return { submitted: false, reason: "conversation-url-mismatch" };
       if (state.busy || !state.composerReady || !state.sendControlVisible) return { submitted: false, reason: "chatgpt-composer-not-ready" };
       const composer = current.locator("#prompt-textarea, [contenteditable='true'][role='textbox'], textarea").first();
       await composer.fill(task.prompt);
@@ -84,7 +85,7 @@ export function createChatGPTBrowserAdapter({ launch = chromium.launchPersistent
         return (element.innerText || element.textContent || "").trim() === "";
       }).catch(() => false);
       if (!cleared) return { submitted: false, reason: "chatgpt-send-not-confirmed" };
-      return { submitted: true, reason: "Prompt submitted to ChatGPT; response is intentionally not monitored" };
+      return { submitted: true, conversationUrl: state.url, reason: "Prompt submitted to ChatGPT; response is intentionally not monitored" };
     } catch (error) {
       lastError = error.message || String(error);
       return { submitted: false, reason: "chatgpt-browser-error:" + lastError.slice(0, 180) };
