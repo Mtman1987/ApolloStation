@@ -12,7 +12,7 @@ if (!prompt || prompt.length > 4000) throw new Error("The saved test prompt must
 
 const response = await fetch(origin + "/internal/enqueue", {
   method: "POST",
-  headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+  headers: { authorization: "Bearer " + token, "X-Hostless-Access-Bypass": token, "content-type": "application/json" },
   body: JSON.stringify({ prompt }),
 });
 const raw = await response.text();
