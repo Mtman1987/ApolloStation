@@ -116,8 +116,8 @@ test("existing manual Bulletin tasks migrate to progress, completion, and curren
     const task = payload.tasks[0];
     assert.equal(task.id, "existing-task");
     assert.equal(task.conversationUrl, null);
-    assert.match(task.progressUrl, /\\/bulletin\\/progress\\/existing-review-key$/);
-    assert.match(task.completeUrl, /\\/bulletin\\/complete\\/existing-review-key$/);
+    assert.ok(task.progressUrl.endsWith("/bulletin/progress/existing-review-key"));
+    assert.ok(task.completeUrl.endsWith("/bulletin/complete/existing-review-key"));
     assert.equal(task.handoff.status, "not_started");
     const saved = JSON.parse(await readFile(statePath, "utf8"));
     assert.match(saved.tasks[0].prompt, /APOLLO BULLETIN WORKER HANDOFF/);
