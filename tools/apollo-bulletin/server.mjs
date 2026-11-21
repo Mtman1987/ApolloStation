@@ -82,9 +82,12 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const input = await body(); if (!input.name?.trim() || !input.prompt?.trim()) return send(400, { error: "Task name and prompt are required" });
         const schedule = ["hourly","daily","manual"].includes(input.schedule) ? input.schedule : "manual";
         const runAt = input.runAt ? new Date(input.runAt).getTime() : now() + 60_000;
-        const id = randomUUID(); const reviewKey = randomUUID(); const reviewUrl = (process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app") + "/bulletin/review/" + reviewKey;
-        const prompt = input.prompt.trim() + "\n\nAPOLLO BULLETIN HANDOFF: Keep the task documentation, TODO/checkpoint, and handoff current. Report completed work, remaining work, validation evidence, and blockers. Do not claim completion without updating the handoff. If owner review is needed, open this task review URL once and stop; do not continue or resend: " + reviewUrl;
-        const task = { id, name: input.name.trim(), prompt, conversationUrl: input.conversationUrl?.trim() || null, schedule, status: schedule === "manual" ? "paused" : "scheduled", nextRunAt: schedule === "manual" ? null : (Number.isFinite(runAt) ? runAt : now()+60_000), createdAt: now(), reviewUrl, lastEvent: "Created" };
+        const id = randomUUID(); const reviewKey = randomUUID(); const publicBase = process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app";
+        const reviewUrl = publicBase + "/bulletin/review/" + reviewKey;
+        const progressUrl = publicBase + "/bulletin/progress/" + reviewKey;
+        const completeUrl = publicBase + "/bulletin/complete/" + reviewKey;
+        const prompt = input.prompt.trim() + "\n\nAPOLLO BULLETIN WORKER HANDOFF:\nYou own execution and progress tracking; the scheduler only wakes you and delivers this prompt. At the start, open this progress URL to read the latest handoff: " + progressUrl + "\nMaintain your own concise TODO list, completed steps, current progress, validation/evidence, next action, and blockers. After each meaningful work cycle, update the handoff by opening the progress URL with URL-encoded query parameters: ?summary=<current progress>&todo=<JSON array of remaining items>&completed=<JSON array of finished items>&next=<next action>&blocker=<current blocker or blank>. The app does not infer progress from your replies. When the goal is genuinely complete and verified, open this completion URL: " + completeUrl + "\nIf the same blocker repeats and you have no useful next action, open this review URL exactly once and stop; it pauses future wake-ups until the owner reviews it: " + reviewUrl + "\nNever claim completion without using the completion URL. Do not ask the owner to type continue; rely on the scheduled wake-up for unfinished work.";
+        const task = { id, name: input.name.trim(), prompt, conversationUrl: input.conversationUrl?.trim() || null, schedule, status: schedule === "manual" ? "paused" : "scheduled", nextRunAt: schedule === "manual" ? null : (Number.isFinite(runAt) ? runAt : now()+60_000), createdAt: now(), reviewUrl, progressUrl, completeUrl, handoff: { status: "not_started", summary: "", todo: [], completed: [], next: "", blocker: "", updatedAt: null }, lastEvent: "Created" };
         task.reviewKey = reviewKey; state.tasks.push(task); log("task-created", task.id); await save(); return send(201, { task: { ...task, prompt: undefined } });
       }
       const action = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(run|pause|resume|complete)$/);
@@ -96,6 +99,36 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         if (verb === "resume") { if (task.status==="awaiting_review") return send(409,{error:"Review the task first"});task.status="scheduled";task.nextRunAt=now()+1000; }
         if (verb === "complete") { task.status="completed";task.nextRunAt=null; }
         task.lastEvent=verb;log("task-"+verb,task.id);await save();return send(200,{task:{...task,prompt:undefined}});
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/progress/")) {
+        const key = url.pathname.slice("/progress/".length); const task = state.tasks.find(t => t.reviewKey === key); if (!task) return send(404, { error: "Task not found" });
+        const params = url.searchParams;
+        const parseList = name => {
+          const raw = params.get(name); if (raw === null) return undefined;
+          if (raw.length > 6000) throw new Error(name + " handoff list is too large");
+          const value = JSON.parse(raw);
+          if (!Array.isArray(value) || value.length > 40 || value.some(item => typeof item !== "string" || item.length > 300)) throw new Error(name + " must be a JSON array of short strings");
+          return value;
+        };
+        const hasUpdate = ["summary","todo","completed","next","blocker"].some(name => params.has(name));
+        if (hasUpdate) {
+          const handoff = { ...(task.handoff || {}), updatedAt: now() };
+          if (params.has("summary")) handoff.summary = String(params.get("summary") || "").slice(0, 2000);
+          if (params.has("todo")) handoff.todo = parseList("todo");
+          if (params.has("completed")) handoff.completed = parseList("completed");
+          if (params.has("next")) handoff.next = String(params.get("next") || "").slice(0, 500);
+          if (params.has("blocker")) handoff.blocker = String(params.get("blocker") || "").slice(0, 1000);
+          handoff.status = handoff.blocker ? "blocked" : "in_progress";
+          task.handoff = handoff; task.lastEvent = "Progress updated"; log("handoff-updated", task.id); await save();
+        }
+        return send(200, { ok: true, task: { id: task.id, name: task.name, status: task.status, handoff: task.handoff } });
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/complete/")) {
+        const key = url.pathname.slice("/complete/".length); const task = state.tasks.find(t => t.reviewKey === key); if (!task) return send(404, { error: "Task not found" });
+        task.status = "completed"; task.nextRunAt = null; task.completedAt = now();
+        task.handoff = { ...(task.handoff || {}), status: "completed", blocker: "", updatedAt: now() };
+        task.lastEvent = "Completed by worker"; log("task-completed-by-worker", task.id); await save();
+        return send(200, { ok: true, task: { id: task.id, name: task.name, status: task.status, handoff: task.handoff } });
       }
       if (req.method === "GET" && url.pathname.startsWith("/review/")) {
         const key = url.pathname.slice("/review/".length); const task = state.tasks.find(t => t.reviewKey === key); if (!task) return send(404,"Review link not found","text/plain");
