@@ -224,6 +224,14 @@ if (!projectId) fail(`Hostless project ${nameOf(project) || "(unnamed)"} has no 
 
 console.log(`Resolved ${node.label} to Hostless project ${nameOf(project)} (${projectId}).`);
 
+// Keep OAuth redirects and browser recovery anchored to the stable Hostless
+// origin. The custom domain is an additional alias, not the callback origin.
+if (nodeKey === "node1") {
+  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "--app", node.app, "--project", String(projectId)],
+    "Pin Apollo OAuth callback origin to the stable Hostless app URL");
+  console.log("Pinned SPMT_PUBLIC_URL to the stable Node 1 Hostless origin.");
+}
+
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
 const apps = rows(appsResponse, ["apps", "data", "items"]);
 if (!apps) fail("Hostless project apps endpoint returned an unexpected response shape; refusing to guess.");
