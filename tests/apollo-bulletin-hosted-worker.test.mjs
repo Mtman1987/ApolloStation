@@ -331,9 +331,10 @@ test("Pause during an in-flight ChatGPT cycle resumes with a continuation, not t
       await new Promise(resolve => setTimeout(resolve, 50));
       const data = await (await fetch(origin + "/api/tasks")).json();
       status = data.tasks.find(item => item.id === task.id)?.status;
-      if (status === "dispatching") break;
+      if (status === "dispatching" && releaseFirst) break;
     }
     assert.equal(status, "dispatching");
+    assert.equal(typeof releaseFirst, "function");
     const paused = await fetch(origin + "/api/tasks/" + task.id + "/pause", { method: "POST" });
     assert.equal(paused.status, 200);
     await paused.text();
