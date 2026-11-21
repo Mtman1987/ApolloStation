@@ -158,18 +158,29 @@ test("content submission refuses hidden send controls and exact-URL mismatches",
   assert.equal(send.clicked, 0);
 });
 
+
+test("content submission refuses to click if Send remains disabled after the prompt is filled", async () => {
+  const url = "https://chatgpt.com/c/abc";
+  const send = fakeElement({ ariaLabel: "Send prompt", disabled: true });
+  const composer = fakeElement({ tagName: "DIV" });
+  const { listener } = await loadContent({ url, buttons: [send], composers: [composer] });
+  let result;
+  listener({ type: "APOLLO_SUBMIT", targetUrl: url, prompt: "safe test prompt" }, {}, value => { result = value; });
+  assert.equal(result.clicked, false);
+  assert.equal(composer.textContent, "safe test prompt");
+  assert.equal(send.clicked, 0);
+});
+
 test("content submission enables a disabled empty-composer Send control, then clicks exactly once", async () => {
   const url = "https://chatgpt.com/c/abc";
-  let send;
-  send = fakeElement({
-    ariaLabel: "Send prompt",
-    disabled: true,
+  const send = fakeElement({ ariaLabel: "Send prompt", disabled: true });
+  const composer = fakeElement({
+    tagName: "DIV",
     onDispatch() {
       send.disabled = false;
       send.setAttribute("aria-disabled", "false");
     }
   });
-  const composer = fakeElement({ tagName: "DIV" });
   const { listener } = await loadContent({ url, buttons: [send], composers: [composer] });
   let result;
   listener({ type: "APOLLO_SUBMIT", targetUrl: url, prompt: "safe test prompt" }, {}, value => { result = value; });
