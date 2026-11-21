@@ -220,3 +220,33 @@ test("Node 1 disables its private polling loop when Hostless cron owns schedulin
   assert.match(startNode, /APOLLO_BULLETIN_USE_HOSTLESS_CRON:\s*"1"/);
   assert.match(startNode, /APOLLO_BULLETIN_REQUIRE_TURSO:\s*"1"/);
 });
+
+test("Bulletin Stop is terminal and Hostless mode rejects sub-minute task schedules", async () => {
+  const priorCron = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-stop-"));
+  const app = createBulletinServer({ statePath: join(directory, "state.json"), port: 0 });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Stop me", prompt: "No-op", destination: "test-simulator", scheduleType: "manual" }),
+    });
+    const { task } = await created.json();
+    const stopped = await fetch(origin + "/api/tasks/" + task.id + "/stop", { method: "POST" });
+    assert.equal(stopped.status, 200);
+    assert.equal((await stopped.json()).task.status, "stopped");
+    const rerun = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    assert.equal(rerun.status, 409);
+    const seconds = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Too frequent", prompt: "No-op", destination: "test-simulator", scheduleType: "interval", every: 10, unit: "seconds" }),
+    });
+    assert.equal(seconds.status, 400);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+    if (priorCron === undefined) delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON; else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = priorCron;
+  }
+});
