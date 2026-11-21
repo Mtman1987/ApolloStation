@@ -5,6 +5,7 @@ This extension is a guarded local Chrome/Chromium prototype. Load it from `tools
 ## Current controls
 - Add a task with its exact ChatGPT conversation URL.
 - Run now (only when that conversation is the active tab).
+- Mark attempted queue items complete from the popup.
 - Hourly alarm, pause, resume, and stop.
 - State, queue, cycle count, and activity log stored in Chrome local storage.
 - Fail-closed checks: exact URL, idle indicators, visible enabled send control, composer, cooldown, cycle cap.
