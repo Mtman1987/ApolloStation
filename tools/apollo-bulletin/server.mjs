@@ -93,7 +93,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     const body = async () => { let raw=""; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; };
     try {
       if (req.method === "POST" && url.pathname === "/api/cron/tick") {
-        const expected = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD;
+        const expected = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD;
         if (!expected) return send(503, { error: "Bulletin cron authentication is not configured" });
         const authorization = req.headers.authorization || "";
         const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
