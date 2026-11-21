@@ -9,7 +9,7 @@ export function normalizeChatGptConversationUrl(value) {
   if (typeof value !== "string" || !value.trim()) throw new Error("An exact ChatGPT conversation URL is required");
   let target;
   try { target = new URL(value); } catch { throw new Error("Enter a valid ChatGPT conversation URL"); }
-  if (target.origin !== "https://chatgpt.com" || !/^\\/c\\/[A-Za-z0-9-]+$/.test(target.pathname) || target.search || target.hash) {
+  if (target.origin !== "https://chatgpt.com" || !/^\/c\/[A-Za-z0-9-]+$/.test(target.pathname) || target.search || target.hash) {
     throw new Error("Use the exact https://chatgpt.com/c/<conversation-id> URL without query parameters or fragments");
   }
   return target.href;
