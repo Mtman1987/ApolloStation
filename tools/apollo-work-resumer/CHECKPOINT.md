@@ -1,15 +1,16 @@
 # Apollo Bulletin work resumer checkpoint
 
-- Foundation PR #552 is merged.
-- PR #553 (desktop Chrome/Chromium work-resumer extension) was squash-merged on 2026-11-21. Reviewed code head: `b78f54503b278f89379d3d1a71945af3ccf1ec3f`. Merge commit: `2b349818c8f72ab68ea2dc1c01f25ebd7d6a28d2`.
-- Exact PR-head validation passed:
-  - [Pull-request validation run #44933791823](https://github.com/Mtman1987/ApolloStation/actions/runs/44933791823): 1,702 passed, 1 skipped, 0 failed.
-  - [Hostless release-gate run #44933791819](https://github.com/Mtman1987/ApolloStation/actions/runs/44933791819): typecheck and change detection passed; deploy and log-snapshot jobs skipped.
-- Post-merge [main release-gate run #44933991060](https://github.com/Mtman1987/ApolloStation/actions/runs/44933991060) also passed typecheck and change detection. Its deployment matrix was empty and both deploy/log-snapshot jobs were skipped. No production deployment was performed.
-- The extension distinguishes a visible Send control from an enabled Send control. It can start from ChatGPT's normal empty composer even when Send is initially disabled, fills only an empty composer, then requires Send to become visibly enabled before the single click.
-- Existing unsent composer drafts are never overwritten. Exact conversation URL, unique matching tab, active tab in the last-focused window, visible page, idle evidence, and visible controls are checked before dispatch.
-- Send intent is persisted before clicking. Uncertain attempts block every later queue item and are never retried automatically. Retry requires explicit user confirmation. Cycle-limit resume starts a fresh cycle budget while retaining prior-cycle count.
-- Completion requires the unique task-specific marker on its own line in the latest idle assistant response. A Send click is not delivery confirmation.
-- Installation and manual smoke-test instructions are in [extension/README.md](./extension/README.md). Install the unpacked folder in desktop Chrome/Chromium, sign into ChatGPT in that profile, and run the harmless one-cycle test. This cannot control ChatGPT Android or the current mobile conversation.
-- CI cannot prove compatibility with the live ChatGPT DOM or prove delivery; the owner still needs to perform the documented desktop-browser smoke test.
-- Next: owner installs the merged extension and performs that manual smoke test. No production deployment.
+- The original desktop extension remains in the repository as an optional desktop-only tool. It is not the owner workflow and is not required on Android.
+- The phone-accessible Apollo-native Bulletin already exists inside SpaceMountain Overlay Bay, with Task Queue, Active Task, Review Requests, Activity Log, Scheduler, and Task History widgets. Node 1 serves its API and dedicated Chromium console through the existing integrated-server proxy.
+- Hosted implementation branch: `fix/apollo-bulletin-hosted-resumer`.
+- Implemented on this branch:
+  - Real task targets are restricted to exact `https://chatgpt.com/c/<conversation-id>` URLs; shared links, query strings, fragments, other origins, and missing targets are rejected.
+  - The dedicated hosted Chromium worker uses the visible signed-in ChatGPT UI. It preserves an existing composer draft, requires a visible enabled Send button after filling an empty composer, clicks at most once, and waits for an assistant response. Ambiguous outcomes are marked uncertain and never retried automatically.
+  - Bulletin tasks now carry a unique completion marker and configurable 1–100 cycle limit (default 8). Incomplete responses queue a continuation after 60 seconds. A completion marker ends the task; a cycle limit or explicit owner-review request pauses it for review.
+  - The task form exposes the exact conversation URL and maximum cycle count. The simulator remains available as a separate non-AI test target.
+  - Node 1 queue state and browser profile default to `/data/apollo-bulletin/state.json` and `/data/apollo-browser/profile`.
+  - Documentation now describes phone-based sign-in through `/bulletin/browser`; no desktop extension is required.
+- Added `tests/apollo-bulletin-hosted-worker.test.mjs` for exact target validation, required target input, and persisted bounded continuation.
+- Important hosting prerequisite: Node 1 must have a persistent Hostless volume mounted at `/data`. Without that volume, browser login and queue state can be lost on container replacement. This must be verified before a production deployment is called durable.
+- No production deployment has been performed by this branch yet.
+- Next: run PR validation on the complete branch, fix any failures, merge only after green, verify Node 1 volume availability, then deploy Node 1 and complete the owner sign-in / one-cycle manual smoke test from the phone.
