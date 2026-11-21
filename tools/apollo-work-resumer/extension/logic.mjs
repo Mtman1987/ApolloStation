@@ -38,10 +38,10 @@ export function isConversationUrl(value) {
   if (typeof value !== "string") return false;
   try {
     const url = new URL(value);
+    const parts = url.pathname.split("/");
     return url.origin === "https://chatgpt.com" &&
-      url.pathname.split("/").length === 3 &&
-      url.pathname.split("/")[1] === "c" &&
-      /^[A-Za-z0-9-]+$/.test(url.pathname.split("/")[2]) &&
+      parts.length === 3 && parts[1] === "c" &&
+      /^[A-Za-z0-9-]+$/.test(parts[2]) &&
       !url.search && !url.hash && !url.username && !url.password;
   } catch {
     return false;
@@ -67,8 +67,33 @@ export function createSerialRunner() {
   };
 }
 
+export function prepareManualRetry(item, now = Date.now()) {
+  if (item?.status !== "attempted") return null;
+  return {
+    ...item,
+    status: "pending",
+    lastUncertainAttemptAt: item.attemptedAt ?? item.lastAttemptAt ?? null,
+    manualRetryAt: now,
+    attemptedAt: null,
+  };
+}
+
+export function resumeCycleLimitedItem(item, now = Date.now()) {
+  if (item?.status !== "limit-reached") return null;
+  return {
+    ...item,
+    status: "active",
+    previousCycleCount: (Number.isInteger(item.previousCycleCount) ? item.previousCycleCount : 0) +
+      (Number.isInteger(item.cycles) ? item.cycles : 0),
+    cycles: 0,
+    resumedAt: now,
+  };
+}
+
 export function decideQueueItem({ item, prompt, snapshot, now = Date.now() }) {
   if (snapshot?.composerEmpty !== true) return { action: "noop", reason: "composer-not-empty" };
+  // Before filling, ChatGPT normally disables Send because the composer is empty.
+  // Require a visible Send control to exist here; content.js verifies it is enabled after fill.
   const preflightSnapshot = {
     ...snapshot,
     sendControlVisible: snapshot.sendControlPresent === true,
