@@ -484,6 +484,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const failRecovery = (reason: string) => {
             const target = new URL("/", publicBaseUrl);
             target.searchParams.set("recoveryError", reason);
+            if (recovery?.username) target.searchParams.set("recoveryUsername", recovery.username);
             response.writeHead(302, {
               location: target.toString(),
               "cache-control": "no-store",
@@ -506,6 +507,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             const reset = accounts.createLinkedProviderPasswordReset(recovery.username, provider, identity.id, state);
             const target = new URL("/", publicBaseUrl);
             target.searchParams.set("recovery", "verified");
+            target.searchParams.set("recoveryUsername", recovery.username);
             response.writeHead(302, {
               location: target.toString(),
               "cache-control": "no-store",
@@ -757,6 +759,15 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (provider !== "discord" && provider !== "twitch") return json(response, 400, { error: "recovery_provider_invalid" });
         const username = (url.searchParams.get("username") ?? "").trim().toLowerCase().replace(/@spmt\.live$/, "");
         if (!/^[a-z0-9._-]{3,64}$/.test(username)) return json(response, 400, { error: "recovery_username_required", message: "Enter your Apollo username first." });
+        const browserHost = header(request, "x-spmt-browser-host");
+        const canonicalHost = new URL(publicBaseUrl).host;
+        if (browserHost && browserHost.toLowerCase() !== canonicalHost.toLowerCase()) {
+          const canonicalStart = new URL("/v1/auth/linked-provider-recovery/start", publicBaseUrl);
+          canonicalStart.searchParams.set("provider", provider);
+          canonicalStart.searchParams.set("username", username);
+          response.writeHead(302, { location: canonicalStart.toString(), "cache-control": "no-store" });
+          return response.end();
+        }
         const client = accountProviderOAuthClient(options, provider);
         if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
         const state = randomBytes(24).toString("base64url");
