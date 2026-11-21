@@ -96,3 +96,27 @@ test("Turso Bulletin store persists queue and browser session state under separa
   assert.deepEqual(await store.loadQueue(), queue);
   assert.deepEqual(await store.loadBrowserState(), browser);
 });
+
+test("Bulletin server reads and writes task state through the injected Turso store", async () => {
+  let persisted = null;
+  const store = {
+    async loadQueue() { return persisted; },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Persist me", prompt: "Keep this checkpoint", destination: "test-simulator", scheduleType: "manual" }),
+    });
+    assert.equal(created.status, 201);
+    assert.equal(persisted.tasks[0].name, "Persist me");
+    assert.equal(persisted.tasks[0].status, "paused");
+  } finally {
+    await app.close();
+  }
+});
