@@ -29,7 +29,8 @@ test("Bulletin requires the exact conversation URL for real ChatGPT tasks", asyn
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
     const invalid = await create({ name: "Bad target", prompt: "Do work", destination: "chatgpt", scheduleType: "manual" });
-    assert.equal(invalid.status, 400);\n    await invalid.text();
+    assert.equal(invalid.status, 400);
+    await invalid.text();
     const valid = await create({ name: "Hosted task", prompt: "Do work", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/abc-123", maxCycles: 4, scheduleType: "manual" });
     assert.equal(valid.status, 201);
     const { task } = await valid.json();
@@ -144,7 +145,8 @@ test("Hostless cron endpoint is authenticated and processes one due task per tic
     const address = await app.listen();
     const endpoint = "http://127.0.0.1:" + address.port + "/api/cron/tick";
     const denied = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer wrong" } });
-    assert.equal(denied.status, 401);\n    await denied.text();
+    assert.equal(denied.status, 401);
+    await denied.text();
     const first = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
     assert.equal(first.status, 200);
     assert.deepEqual(await first.json(), { processed: 1, busy: false });
@@ -238,12 +240,14 @@ test("Bulletin Stop is terminal and Hostless mode rejects sub-minute task schedu
     assert.equal(stopped.status, 200);
     assert.equal((await stopped.json()).task.status, "stopped");
     const rerun = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
-    assert.equal(rerun.status, 409);\n    await rerun.text();
+    assert.equal(rerun.status, 409);
+    await rerun.text();
     const seconds = await fetch(origin + "/api/tasks", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Too frequent", prompt: "No-op", destination: "test-simulator", scheduleType: "interval", every: 10, unit: "seconds" }),
     });
-    assert.equal(seconds.status, 400);\n    await seconds.text();
+    assert.equal(seconds.status, 400);
+    await seconds.text();
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
