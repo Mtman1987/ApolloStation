@@ -357,6 +357,13 @@ jobs:
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ matrix.node == 'node2' && 'https://apollo-node-1.hostless.app' || '' }}
           APOLLO_RUNTIME_NODE2_STELLAR_WORKER_CREDENTIAL: ${{ matrix.node == 'node2' && secrets.STELLAR_WORKER_CREDENTIAL || '' }}
           APOLLO_RUNTIME_NODE2_VENICE_API_KEY: ${{ matrix.node == 'node2' && secrets.VENICE_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_GEMINI_API_KEY: ${{ matrix.node == 'node2' && secrets.GEMINI_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_OPENAI_API_KEY: ${{ matrix.node == 'node2' && secrets.OPENAI_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_TOGETHER_API_KEY: ${{ matrix.node == 'node2' && secrets.TOGETHER_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_GROQ_API_KEY: ${{ matrix.node == 'node2' && secrets.GROQ_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_OPENROUTER_API_KEY: ${{ matrix.node == 'node2' && secrets.OPENROUTER_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_CLOUDFLARE_API_TOKEN: ${{ matrix.node == 'node2' && secrets.CLOUDFLARE_API_TOKEN || '' }}
+          APOLLO_RUNTIME_NODE2_CLOUDFLARE_ACCOUNT_ID: ${{ matrix.node == 'node2' && secrets.CLOUDFLARE_ACCOUNT_ID || '' }}
           APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: ${{ matrix.node == 'node2' && 'hosted' || '' }}
           APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_NODE_ROLE: ${{ matrix.node }}
