@@ -1,4 +1,4 @@
-export function readinessStatus({ browserRequired = false, browserStarted = false, persistenceRequired = false, persistenceAvailable = false, ownerActorRequired = false, ownerActorConfigured = false } = {}) {
-  const ready = (!browserRequired || browserStarted) && (!persistenceRequired || persistenceAvailable) && (!ownerActorRequired || ownerActorConfigured);
+export function readinessStatus({ browserRequired = false, browserStarted = false, persistenceRequired = false, persistenceAvailable = false } = {}) {
+  const ready = (!browserRequired || browserStarted) && (!persistenceRequired || persistenceAvailable);
   return { ready, statusCode: ready ? 200 : 503 };
 }
