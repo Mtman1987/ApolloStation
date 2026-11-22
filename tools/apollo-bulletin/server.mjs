@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { normalizeSchedule, nextScheduledAt, scheduleLabel } from "./schedule.mjs";
@@ -31,6 +31,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let busy = false;
   let browserWorker;
   let timer;
+  let saveTail = Promise.resolve();
   const persistence = store ?? createTursoBulletinStoreFromEnvironment();
   if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires TURSO_DATABASE_URL or SHARED_TURSO_DATABASE_URL and TURSO_AUTH_TOKEN or NODE1_TURSO_AUTH_TOKEN");
   async function deliver(task) {
@@ -38,12 +39,16 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     if (!browserWorker) return { submitted: false, reason: "dedicated-chromium-browser-not-ready" };
     return browserWorker.sendTask(task);
   }
-  async function save() {
-    if (persistence) { await persistence.saveQueue(state); return; }
-    await mkdir(dirname(statePath), { recursive: true });
-    const temp = join(dirname(statePath), ".bulletin-state.tmp");
-    await writeFile(temp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    await rename(temp, statePath);
+  function save() {
+    const operation = saveTail.then(async () => {
+      if (persistence) { await persistence.saveQueue(state); return; }
+      await mkdir(dirname(statePath), { recursive: true });
+      const temp = join(dirname(statePath), ".bulletin-state-" + randomUUID() + ".tmp");
+      try { await writeFile(temp, JSON.stringify(state, null, 2), { mode: 0o600 }); await rename(temp, statePath); }
+      finally { await unlink(temp).catch(() => {}); }
+    });
+    saveTail = operation.catch(() => {});
+    return operation;
   }
   async function load() {
     if (persistence) state = await persistence.loadQueue() ?? { tasks: [], activity: [] };
@@ -76,7 +81,8 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       for (const task of state.tasks) {
         if (task.status !== "scheduled" || !task.nextRunAt || task.nextRunAt > now()) continue;
         // Claim and persist before touching the browser. An uncertain send is never retried.
-        task.status = "dispatching"; task.lastDispatchAt = now(); task.nextRunAt = null; log("dispatch-intent-persisted", task.id); await save();
+        task.status = "dispatching"; task.lastDispatchAt = now(); task.nextRunAt = null; log("dispatch-intent-persisted", task.id);
+        try { await save(); } catch (error) { task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Dispatch was not attempted because the intent claim could not be persisted: " + String(error?.message || error).slice(0, 300); log("dispatch-claim-persistence-failed", task.id); try { await save(); } catch (retryError) { console.error("[apollo-bulletin] Could not persist paused task after claim failure:", String(retryError?.message || retryError)); } processed += 1; break; }
         try {
           log("browser-task-start", task.id, task.destination + " · " + (task.conversationUrl || "default target"));
           const result = await (dispatch ?? deliver)(task);
