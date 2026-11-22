@@ -14,3 +14,10 @@ test("readiness requires configured persistence when policy requires it", () => 
 test("readiness passes when required dependencies are present", () => {
   assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true }), { ready: true, statusCode: 200 });
 });
+
+test("production readiness fails closed without configured Bulletin owner identity", () => {
+  assert.deepEqual(readinessStatus({ browserRequired:true, browserStarted:true, persistenceRequired:true, persistenceAvailable:true, ownerActorRequired:true, ownerActorConfigured:false }), { ready:false, statusCode:503 });
+});
+test("production readiness passes when owner identity is configured", () => {
+  assert.deepEqual(readinessStatus({ browserRequired:true, browserStarted:true, persistenceRequired:true, persistenceAvailable:true, ownerActorRequired:true, ownerActorConfigured:true }), { ready:true, statusCode:200 });
+});
