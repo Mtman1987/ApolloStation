@@ -1,6 +1,7 @@
 import { StellarProviderError, type StellarChatCompletionV1, type StellarChatMessageV1, type StellarChatProviderV1, looksIncompleteCompletion } from "./worker.js";
 
 /** Default failover order. Providers without a key are skipped, so adding a key later enables it with no code change. */
+/** Venice is the primary hosted model; the remaining configured slots are outage/quota fallback. */
 export const DEFAULT_CHAT_CHAIN = ["venice", "gemini", "openai", "together", "groq", "openrouter", "cloudflare"] as const;
 export type ChatChainName = typeof DEFAULT_CHAT_CHAIN[number];
 
