@@ -146,7 +146,7 @@ const recoveryPasswordConfirm = element<HTMLInputElement>("apollo-recovery-passw
 const recoverySubmit = element<HTMLButtonElement>("apollo-recovery-submit");
 const recoveryMessage = element<HTMLParagraphElement>("apollo-recovery-message");
 const recoveryQuery = new URLSearchParams(window.location.search);
-const recoveryReady = recoveryQuery.get("recovery") === "verified";
+let recoveryReady = recoveryQuery.get("recovery") === "verified";
 const recoveryError = recoveryQuery.get("recoveryError");
 const recoveryUsernameInput = apolloLoginForm.elements.namedItem("username") as HTMLInputElement | null;
 const recoveryUsername = recoveryQuery.get("recoveryUsername");
@@ -1023,6 +1023,7 @@ async function submitLinkedProviderRecovery() {
     // retry without being trapped behind the stale ?recovery=verified URL.
     recoveryPasswordPanel.hidden = true;
     recoveryStart.hidden = false;
+    recoveryReady = false;
     recoveryPasswordInput.value = "";
     recoveryPasswordConfirm.value = "";
     sessionStorage.setItem("apollo-recovery-username", username);
