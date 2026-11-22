@@ -55,6 +55,10 @@ test("Bulletin exposes embeddable task components and the task API without a sep
     const landing = await fetch(origin + "/");
     assert.equal(landing.status, 200);
     assert.match(await landing.text(), /Overlay Bay/);
+    const taskWidget = await fetch(origin + "/widgets/tasks").then(response => response.text());
+    assert.match(taskWidget, /<label>Task name/);
+    assert.match(taskWidget, /Schedule timezone \(IANA\)/);
+    assert.match(taskWidget, /Weekly\/monthly local time/);
     for (const component of ["tasks", "active", "reviews", "activity", "scheduler", "history"]) {
       const response = await fetch(origin + "/widgets/" + component);
       assert.equal(response.status, 200);
