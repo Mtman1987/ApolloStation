@@ -352,7 +352,13 @@ jobs:
       - name: Deploy this node using its existing Hostless environment
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.hostless_secret] }}
+          APOLLO_RUNTIME_NODE1_SPMT_STELLAR_CHAT_ENABLED: ${{ matrix.node == 'node1' && '1' || '' }}
+          APOLLO_RUNTIME_NODE1_STELLAR_WORKER_CREDENTIAL: ${{ matrix.node == 'node1' && secrets.STELLAR_WORKER_CREDENTIAL || '' }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ matrix.node == 'node2' && 'https://apollo-node-1.hostless.app' || '' }}
+          APOLLO_RUNTIME_NODE2_STELLAR_WORKER_CREDENTIAL: ${{ matrix.node == 'node2' && secrets.STELLAR_WORKER_CREDENTIAL || '' }}
+          APOLLO_RUNTIME_NODE2_VENICE_API_KEY: ${{ matrix.node == 'node2' && secrets.VENICE_API_KEY || '' }}
+          APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: ${{ matrix.node == 'node2' && 'hosted' || '' }}
+          APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
 
