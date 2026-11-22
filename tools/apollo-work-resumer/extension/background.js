@@ -1,5 +1,6 @@
 import {
   allQueueCompleted,
+  enqueueQueueItem,
   buildTaskPrompt,
   decideQueueItem,
   isConversationUrl,
@@ -267,11 +268,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         cycles: 0,
         createdAt: Date.now()
       };
-      const saved = await save({
-        ...state,
-        completed: false,
-        queue: [...state.queue, item]
-      }, "queue-item-added");
+      const saved = await save(enqueueQueueItem(state, item), "queue-item-added");
       await ensureAlarm();
       return saved;
     }
