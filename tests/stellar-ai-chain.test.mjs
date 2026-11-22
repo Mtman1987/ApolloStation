@@ -16,7 +16,7 @@ test("no keys means no chain, and missing slots are skipped without error", () =
 test("only the configured slots are enabled, in default failover order", () => {
   const { enabled } = buildChatChainFromEnv({ GEMINI_API_KEY: "g", TOGETHER_API_KEY: "t" });
   assert.deepEqual(enabled, ["gemini", "together"]);
-  assert.deepEqual(DEFAULT_CHAT_CHAIN, ["gemini", "openai", "together", "groq", "openrouter", "cloudflare"]);
+  assert.deepEqual(DEFAULT_CHAT_CHAIN, ["venice", "gemini", "openai", "together", "groq", "openrouter", "cloudflare"]);
 });
 
 test("Cloudflare needs both the token and the account id", () => {
@@ -72,4 +72,26 @@ test("a cut-off reply is treated as retryable so the next provider answers", asy
   const b = new HostedChatCompletionsProvider({ name: "b", baseUrl: "https://b.example/v1", apiKey: "k", model: "m", fetchImpl: full });
   const result = await new FallbackChatProvider([{ name: "a", provider: a }, { name: "b", provider: b }]).complete(message);
   assert.equal(result.provider, "b");
+});
+
+
+test("Venice is the first configured fallback slot with the selected model", () => {
+  const { enabled } = buildChatChainFromEnv({ VENICE_API_KEY: "v-key" });
+  assert.deepEqual(enabled, ["venice"]);
+});
+
+test("Venice OpenAI-compatible endpoint sends the selected model and falls through on provider errors", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    if (url.startsWith("https://api.venice.ai/")) return fail(429);
+    return ok("fallback answer");
+  };
+  const { chain, enabled } = buildChatChainFromEnv({ VENICE_API_KEY: "v-key", GROQ_API_KEY: "g", STELLAR_AI_CHAIN: "venice,groq" }, { fetchImpl });
+  assert.deepEqual(enabled, ["venice", "groq"]);
+  const result = await chain.complete(message);
+  assert.equal(result.provider, "groq");
+  assert.equal(result.text, "fallback answer");
+  assert.equal(calls[0].url, "https://api.venice.ai/api/v1/chat/completions");
+  assert.equal(calls[0].body.model, "deepseek-v4-1-flash-1017-uncensored");
 });
