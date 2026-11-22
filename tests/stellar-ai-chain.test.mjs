@@ -27,6 +27,7 @@ test("Cloudflare needs both the token and the account id", () => {
 test("STELLAR_AI_CHAIN overrides the order and rejects unknown names", () => {
   const env = { GEMINI_API_KEY: "g", GROQ_API_KEY: "q" };
   assert.deepEqual(buildChatChainFromEnv({ ...env, STELLAR_AI_CHAIN: "groq,gemini" }).enabled, ["groq", "gemini"]);
+  assert.deepEqual(buildChatChainFromEnv({ ...env, VENICE_API_KEY: "v", STELLAR_AI_CHAIN: "groq,gemini" }).enabled, ["groq", "gemini", "venice"]);
   assert.throws(() => buildChatChainFromEnv({ ...env, STELLAR_AI_CHAIN: "gemini,bogus" }), /unknown provider "bogus"/);
 });
 
