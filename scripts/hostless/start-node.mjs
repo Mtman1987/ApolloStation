@@ -204,7 +204,7 @@ if (role === "node2" && stellarCredential && hasHostedChatProvider) {
     STELLAR_WORKER_ID: process.env.STELLAR_WORKER_ID ?? "stellar-hostless-node2",
     SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "https://apollo-node-1.hostless.app",
   }]);
-  console.info("[stellar-core] Venice is the first provider; all configured hosted provider slots remain available for fallback.");
+  console.info("[stellar-core] Venice (deepseek-v4-1-flash-1017-uncensored) is primary; configured hosted provider slots remain available for fallback.");
   console.info("[stellar-core] Hosted AI worker enabled on Node 2; provider failover is active.");
 } else if (role === "node2") {
   console.warn("[stellar-core] Hosted AI worker deferred: requires STELLAR_WORKER_CREDENTIAL and at least one hosted provider API key.");
