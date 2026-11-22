@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { createBulletinServer } from "./server.mjs";
 
 test("restart converts persisted dispatching tasks to uncertain and never auto-resends", async () => {
