@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   allQueueCompleted,
+  enqueueQueueItem,
   buildTaskPrompt,
   decideQueueItem,
   isConversationUrl,
@@ -115,4 +116,23 @@ test("queue submission decision reuses the fail-closed guard", () => {
     prompt,
     snapshot: { url: item.targetUrl, busy: null, stopControlVisible: false, sendControlVisible: false, composerReady: true },
   }).reason, "ambiguous-ui");
+});
+
+
+test("enqueue after a fully completed queue reactivates the resumer", () => {
+  const completed = { enabled: false, paused: true, completed: true, queue: [{ status: "completed" }] };
+  const next = enqueueQueueItem(completed, { ...item, id: "q2" });
+  assert.equal(next.enabled, true);
+  assert.equal(next.paused, false);
+  assert.equal(next.completed, false);
+  assert.equal(next.queue.length, 2);
+  assert.equal(next.queue[1].id, "q2");
+});
+
+test("enqueue does not override an explicit stop when the queue was not completed", () => {
+  const stopped = { enabled: false, paused: true, completed: false, queue: [{ status: "active" }] };
+  const next = enqueueQueueItem(stopped, { ...item, id: "q2" });
+  assert.equal(next.enabled, false);
+  assert.equal(next.paused, true);
+  assert.equal(next.completed, false);
 });
