@@ -23,6 +23,7 @@ on:
       - "apps/discord-stream-hub/**"
       - "apps/chat-gateway/**"
       - "apps/streamweaver/**"
+      - "apps/stellar-core/**"
       - "apps/nebula-arcade/**"
       - "packages/**"
       - "services/**"
@@ -154,10 +155,10 @@ jobs:
               while IFS= read -r file; do
                 case "$file" in
                   apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|scripts/setup-local-browser.mjs) NODE1=true; NODE1_TURSO_REQUIRED=true ;;
-                  tools/apollo-bulletin/*|.github/workflows/hostless-three-node-deploy.yml) NODE1=true ;;
+                  tools/apollo-bulletin/*|apps/stellar-core/*|.github/workflows/hostless-three-node-deploy.yml) NODE1=true ;;
                 esac
                 case "$file" in
-                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs) NODE2=true ;;
+                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|apps/stellar-core/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs) NODE2=true ;;
                 esac
               done <<< "$CHANGED"
               case "$TARGET" in
@@ -365,6 +366,7 @@ jobs:
           APOLLO_RUNTIME_NODE2_CLOUDFLARE_API_TOKEN: ${{ matrix.node == 'node2' && secrets.CLOUDFLARE_API_TOKEN || '' }}
           APOLLO_RUNTIME_NODE2_CLOUDFLARE_ACCOUNT_ID: ${{ matrix.node == 'node2' && secrets.CLOUDFLARE_ACCOUNT_ID || '' }}
           APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: ${{ matrix.node == 'node2' && 'hosted' || '' }}
+          APOLLO_RUNTIME_NODE2_STELLAR_AI_CHAIN: ${{ matrix.node == 'node2' && 'venice,gemini,openai,together,groq,openrouter,cloudflare' || '' }}
           APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
