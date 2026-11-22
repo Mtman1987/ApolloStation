@@ -211,7 +211,7 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
   assert.equal(allowed.authorized, true, "actor pin is optional until configured");
-  const wrongOwner = await authorizeBulletinRequest 
+  const wrongOwner = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=other-session" } },
     "/bulletin/api/tasks",
     "http://127.0.0.1:3000",
