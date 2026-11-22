@@ -49,7 +49,7 @@ The default hosted failover order is Gemini, OpenAI, Together, Groq, OpenRouter 
 
 Relevant configuration variables include:
 
-- OPENAI_API_KEY and OPENAI_CHAT_MODEL;
+- VENICE_API_KEY and VENICE_CHAT_MODEL (default model: `deepseek-v4-1-flash-1017-uncensored`);\n- OPENAI_API_KEY and OPENAI_CHAT_MODEL;
 - GEMINI_API_KEY and GEMINI_CHAT_MODEL;
 - TOGETHER_API_KEY and TOGETHER_CHAT_MODEL;
 - GROQ_API_KEY and GROQ_CHAT_MODEL;
