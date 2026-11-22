@@ -204,10 +204,28 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
       seenCookie = options.headers.cookie;
       return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
     },
-    {},
+    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
   assert.equal(allowed.authorized, true);
+  const unconfigured = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=apollo-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 }),
+    {},
+  );
+  assert.equal(unconfigured.authorized, false);
+  assert.equal(unconfigured.status, 503);
+  const wrongOwner = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user" }), { status: 200 }),
+    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
+  );
+  assert.equal(wrongOwner.authorized, false);
+  assert.equal(wrongOwner.status, 403);
 });
 
 test("Hostless cron proxy uses a bearer secret and does not need an interactive Apollo session", async () => {
