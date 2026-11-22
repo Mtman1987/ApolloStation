@@ -102,6 +102,20 @@ test("linked-provider recovery is username-bound, password-setting, and automati
   assert.match(server, /linked-provider-recovery\/password"\) return method === "POST"/);
 });
 
+test("linked-provider recovery restores provider selection after a failed password reset", () => {
+  const start = client.indexOf("async function submitLinkedProviderRecovery");
+  const end = client.indexOf("async function submitApolloRegistration", start);
+  const flow = client.slice(start, end);
+  const failure = flow.slice(flow.indexOf("} catch (error) {"), flow.indexOf("} finally {"));
+  assert.match(failure, /recoveryPasswordPanel\.hidden = true/);
+  assert.match(failure, /recoveryStart\.hidden = false/);
+  assert.match(failure, /recoveryPasswordInput\.value = ""/);
+  assert.match(failure, /recoveryPasswordConfirm\.value = ""/);
+  assert.match(failure, /sessionStorage\.setItem\("apollo-recovery-username", username\)/);
+  assert.match(failure, /searchParams\.delete\("recovery"\)/);
+  assert.match(failure, /window\.history\.replaceState/);
+});
+
 test("missing local Apollo passwords immediately expose direct provider recovery", () => {
   const login = client.slice(client.indexOf("async function submitApolloLogin"), client.indexOf("async function submitApolloRegistration"));
   assert.match(login, /valid local password/);
