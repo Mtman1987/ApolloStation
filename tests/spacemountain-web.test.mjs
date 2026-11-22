@@ -108,6 +108,7 @@ test("linked-provider recovery restores provider selection after a failed passwo
   const flow = client.slice(start, end);
   const failure = flow.slice(flow.indexOf("} catch (error) {"), flow.indexOf("} finally {"));
   assert.match(failure, /recoveryPasswordPanel\.hidden = true/);
+  assert.match(failure, /recoveryReady = false/);
   assert.match(failure, /recoveryStart\.hidden = false/);
   assert.match(failure, /recoveryPasswordInput\.value = ""/);
   assert.match(failure, /recoveryPasswordConfirm\.value = ""/);
