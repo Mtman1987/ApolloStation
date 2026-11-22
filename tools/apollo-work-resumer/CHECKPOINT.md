@@ -16,9 +16,17 @@
 - A genuine edge-case fix is in [PR #598](https://github.com/Mtman1987/ApolloStation/pull/598): adding a task after all queued tasks were completed previously cleared the completed flag but left the resumer stopped. The fix reactivates only a queue stopped by full completion and preserves explicit Stop. Tests cover both cases.
 - PR #598 exact head `23fec79f662fbf620406eff8b5f7ad42c59b47d2` currently has validation [run #45047900725](https://github.com/Mtman1987/ApolloStation/actions/runs/45047900725) still running its offline-network regression suite. Hostless gate [run #45047900629](https://github.com/Mtman1987/ApolloStation/actions/runs/45047900629) completed successfully (typecheck, focused Hostless build, browser-worker syntax); deploy/log jobs skipped. Do not merge until the exact-head test suite also finishes green; no production deployment.
 
+## Scheduling and authentication
+
+- Hostless owns scheduling via the authenticated one-minute cron wake-up. Node 1 serializes work and processes at most one due task per tick; the timer cannot create or change tasks.
+- The Apollo session gate requires an SPMT session for ordinary Bulletin requests. Cron uses its separate token fallback; the browser console retains Basic authentication.
+- No production deployment is confirmed; release-gate runs are validation-only and skip deployment.
+
 ## Safety and next actions
 
 - Hosted task safety: exact `https://chatgpt.com/c/<conversation-id>` targets only; visible signed-in ChatGPT UI only; existing composer drafts are preserved; Send must become visibly enabled after filling an empty composer; one click maximum; uncertain sends block later tasks and are never retried automatically.
 - Hosted tasks use unique completion markers and configurable 1–100 cycle limits. Queue state, activity history, and Playwright storage state use shared Turso. Hostless cron is a one-minute wake-up; Node 1 serializes work and processes at most one due task per tick.
 - Hosted Bulletin ordinary requests require an SPMT session; cron is separately authenticated; browser console retains Basic auth. The timer is a wake-up, not authority to create or alter tasks.
 - Next concrete action: wait for PR #598 exact-head validation/release gate. If green, review and merge the focused fix; then the owner can manually smoke-test the desktop extension. Live hosted service verification and any production deployment remain separate and are not authorized by this checkpoint.
+
+- Follow-up queue-reactivation fix is being validated on a fresh PR branch. Exact-head tests are pending; no production deployment.
