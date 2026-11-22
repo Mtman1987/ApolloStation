@@ -461,3 +461,31 @@ test("task API sanitizes internal prompt and review tokens and rejects oversized
     await oversized.text();
   } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
 });
+
+test("pre-send browser blocks pause recoverably and require owner resume, not an uncertain send", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-blocked-send-"));
+  const statePath = join(directory, "state.json");
+  let dispatchCalls = 0;
+  const app = createBulletinServer({ statePath, port:0, dispatch:async()=>{dispatchCalls++;return{submitted:false,reason:"browser-dispatch-blocked: ChatGPT login required"};} });
+  try {
+    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
+    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Login blocked",prompt:"Do work",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/login-blocked",scheduleType:"manual"})});
+    const {task}=await created.json();
+    const run=await fetch(origin+"/api/tasks/"+task.id+"/run",{method:"POST"});
+    assert.equal(run.status,200);await run.text();
+    let saved;
+    for(let i=0;i<30;i++){await new Promise(resolve=>setTimeout(resolve,50));saved=JSON.parse(await readFile(statePath,"utf8"));if(saved.tasks[0]?.status==="paused")break;}
+    assert.equal(saved.tasks[0].status,"paused");
+    assert.match(saved.tasks[0].lastEvent,/blocked/);
+    assert.ok(saved.activity.some(item=>item.event==="dispatch-blocked-before-send"));
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    assert.equal(dispatchCalls,1,"paused blocked task must not retry automatically");
+    const resume=await fetch(origin+"/api/tasks/"+task.id+"/resume",{method:"POST"});
+    assert.equal(resume.status,200);await resume.text();
+    for(let i=0;i<30;i++){await new Promise(resolve=>setTimeout(resolve,50));saved=JSON.parse(await readFile(statePath,"utf8"));if(dispatchCalls>=2&&saved.tasks[0]?.status==="paused")break;}
+    assert.equal(dispatchCalls,2,"owner resume should make a deliberate second attempt");
+    assert.equal(saved.tasks[0].status,"paused");
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    assert.equal(dispatchCalls,2,"blocked send remains paused after second attempt");
+  } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
+});
