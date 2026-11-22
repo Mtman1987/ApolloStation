@@ -73,6 +73,8 @@ type Env = Record<string, string | undefined>;
  */
 export function buildChatChainFromEnv(env: Env, options: { openAi?: StellarChatProviderV1; fetchImpl?: typeof fetch; localProvider?: StellarChatProviderV1 } = {}): { chain: FallbackChatProvider | undefined; enabled: string[] } {
   const order = (env.STELLAR_AI_CHAIN ?? DEFAULT_CHAT_CHAIN.join(",")).split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  // Always retain Venice when configured, even if a stale custom chain omitted it.
+  if (env.VENICE_API_KEY?.trim() && !order.includes("venice")) order.push("venice");
   const providers: NamedChatProvider[] = [];
   const fetchImpl = options.fetchImpl;
   for (const name of order) {
