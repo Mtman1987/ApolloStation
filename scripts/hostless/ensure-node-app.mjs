@@ -335,12 +335,12 @@ console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 // final deployment status come from the same operation. A plain status poll can
 // remain at validate_hostless_file_successful and never expose the build result.
 const waited = spawnSync("hostless", [
-  "deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "600", ...scope,
+  "deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "1200", ...scope,
 ], {
   encoding: "utf8",
   env: process.env,
   maxBuffer: 20 * 1024 * 1024,
-  timeout: 630 * 1000,
+  timeout: 1230 * 1000,
   killSignal: "SIGTERM",
 });
 if (waited.stdout) process.stdout.write(waited.stdout);
