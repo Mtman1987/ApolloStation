@@ -38,6 +38,9 @@ test("Bulletin requires the exact conversation URL for real ChatGPT tasks", asyn
     assert.equal(task.conversationUrl, "https://chatgpt.com/c/abc-123");
     assert.equal(task.maxCycles, 4);
     assert.equal(task.status, "paused");
+    assert.equal(task.basePrompt, undefined, "task API should not expose the original prompt separately");
+    assert.equal(task.completionMarker, undefined, "task API should not expose the completion token");
+    assert.equal(task.reviewKey, undefined, "task API should not expose the review secret");
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
@@ -154,6 +157,9 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     for (let attempt = 0; attempt < 30 && persisted.tasks[0].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(persisted.tasks[0].status, "dispatched");
     assert.equal(persisted.tasks[1].status, "scheduled");
+    const firstActivity = await (await fetch("http://127.0.0.1:" + address.port + "/api/tasks")).json();
+    assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-started"));
+    assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-completed"));
     let secondBody;
     for (let attempt = 0; attempt < 30; attempt++) {
       const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
@@ -388,4 +394,49 @@ test("Hostless cron dispatcher uses the same token fallback order as gateway aut
   assert.equal(resolveCronToken({ APOLLO_BROWSER_CONTROL_PASSWORD: "browser", APOLLO_PREVIEW_PASSWORD: "preview" }), "browser");
   assert.equal(resolveCronToken({ APOLLO_PREVIEW_PASSWORD: "preview" }), "preview");
   assert.equal(resolveCronToken({}), "");
+});
+
+test("completed ChatGPT recurring occurrences re-arm the schedule with a fresh completion marker", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-recurrence-"));
+  const statePath = join(directory, "state.json");
+  const app = createBulletinServer({
+    statePath, port: 0,
+    dispatch: async task => ({ submitted: true, receipt: { reply: "Occurrence complete.\\n" + task.completionMarker }, reason: "completion" }),
+  });
+  try {
+    const address = await app.listen(), origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({name:"Recurring ChatGPT task",prompt:"Run this monthly",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/recurrence-test",scheduleType:"interval",every:1,unit:"hours",maxCycles:2}) });
+    assert.equal(created.status,201);
+    const { task } = await created.json();
+    const originalMarker = task.completionMarker;
+    const run = await fetch(origin + "/api/tasks/" + task.id + "/run", { method:"POST" });
+    assert.equal(run.status,200);
+    await run.text();
+    let saved;
+    for(let attempt=0;attempt<30;attempt++){await new Promise(resolve=>setTimeout(resolve,50));saved=JSON.parse(await readFile(statePath,"utf8"));if(saved.tasks[0]?.status==="scheduled"&&saved.tasks[0]?.totalCycles===1)break;}
+    assert.equal(saved.tasks[0].status,"scheduled");
+    assert.equal(saved.tasks[0].totalCycles,1);
+    assert.equal(saved.tasks[0].cycles,0);
+    assert.ok(saved.tasks[0].nextRunAt>Date.now());
+    assert.notEqual(saved.tasks[0].completionMarker,originalMarker);
+    assert.match(saved.tasks[0].prompt,new RegExp(saved.tasks[0].completionMarker));
+    assert.ok(saved.activity.some(item=>item.event==="recurrence-rearmed"));
+  } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test("task API sanitizes internal prompt and review tokens and rejects oversized JSON bodies", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-api-guard-"));
+  const app = createBulletinServer({ statePath: join(directory,"state.json"), port:0 });
+  try {
+    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
+    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Sanitize",prompt:"Private prompt",destination:"test-simulator",scheduleType:"manual"})});
+    assert.equal(created.status,201);
+    const task=(await created.json()).task;
+    for(const key of ["prompt","basePrompt","completionMarker","reviewKey"])assert.equal(task[key],undefined);
+    const list=await (await fetch(origin+"/api/tasks")).json();
+    for(const key of ["prompt","basePrompt","completionMarker","reviewKey"])assert.equal(list.tasks[0][key],undefined);
+    const oversized=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Huge",prompt:"x".repeat(40000),destination:"test-simulator",scheduleType:"manual"})});
+    assert.equal(oversized.status,413);
+    await oversized.text();
+  } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
 });
