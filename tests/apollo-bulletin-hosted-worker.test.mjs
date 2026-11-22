@@ -401,7 +401,7 @@ test("completed ChatGPT recurring occurrences re-arm the schedule with a fresh c
   const statePath = join(directory, "state.json");
   const app = createBulletinServer({
     statePath, port: 0,
-    dispatch: async task => ({ submitted: true, receipt: { reply: "Occurrence complete.\\n" + task.completionMarker }, reason: "completion" }),
+    dispatch: async task => ({ submitted: true, receipt: { reply: "Occurrence complete.\n" + task.completionMarker }, reason: "completion" }),
   });
   try {
     const address = await app.listen(), origin = "http://127.0.0.1:" + address.port;
