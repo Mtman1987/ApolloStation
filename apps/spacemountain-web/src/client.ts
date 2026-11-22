@@ -1018,6 +1018,19 @@ async function submitLinkedProviderRecovery() {
   } catch (error) {
     const detail = message(error);
     recoveryMessage.textContent = detail;
+    // A verified recovery ticket is single-use and may expire or be revoked
+    // before password submission. Restore provider selection so the user can
+    // retry without being trapped behind the stale ?recovery=verified URL.
+    recoveryPasswordPanel.hidden = true;
+    recoveryStart.hidden = false;
+    recoveryPasswordInput.value = "";
+    recoveryPasswordConfirm.value = "";
+    sessionStorage.setItem("apollo-recovery-username", username);
+    const recoveryUrl = new URL(window.location.href);
+    recoveryUrl.searchParams.delete("recovery");
+    recoveryUrl.searchParams.delete("recoveryUsername");
+    recoveryUrl.searchParams.delete("recoveryError");
+    window.history.replaceState(null, "", `${recoveryUrl.pathname}${recoveryUrl.search}${recoveryUrl.hash}`);
     setStatus(detail, "error");
   } finally {
     recoverySubmit.disabled = false;
