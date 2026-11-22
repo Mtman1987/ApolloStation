@@ -14,6 +14,7 @@ Default order: `venice, gemini, openai, together, groq, openrouter, cloudflare`.
 | Slot | Secret(s) | Optional model override | Default model (verify before prod) |
 |---|---|---|---|
 | venice | `VENICE_API_KEY` | `VENICE_CHAT_MODEL` | `deepseek-v4-1-flash-1017-uncensored` |
+| venice | `VENICE_API_KEY` | `VENICE_CHAT_MODEL` | `deepseek-v4-1-flash-1017-uncensored` |
 | gemini | `GEMINI_API_KEY` | `GEMINI_CHAT_MODEL` | `gemini-2.5-flash` |
 | openai | `OPENAI_API_KEY` | `OPENAI_CHAT_MODEL` | `gpt-5.6-luna` |
 | together | `TOGETHER_API_KEY` | `TOGETHER_CHAT_MODEL` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
