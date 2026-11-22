@@ -408,7 +408,7 @@ test("completed ChatGPT recurring occurrences re-arm the schedule with a fresh c
     const created = await fetch(origin + "/api/tasks", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({name:"Recurring ChatGPT task",prompt:"Run this monthly",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/recurrence-test",scheduleType:"interval",every:1,unit:"hours",maxCycles:2}) });
     assert.equal(created.status,201);
     const { task } = await created.json();
-    const originalMarker = task.completionMarker;
+    const originalMarker = JSON.parse(await readFile(statePath, "utf8")).tasks[0].completionMarker;
     const run = await fetch(origin + "/api/tasks/" + task.id + "/run", { method:"POST" });
     assert.equal(run.status,200);
     await run.text();
