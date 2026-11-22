@@ -63,6 +63,9 @@ jobs:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ secrets.SPMT_ORIGIN }}
+          APOLLO_RUNTIME_NODE2_STELLAR_WORKER_CREDENTIAL: ${{ secrets.STELLAR_WORKER_CREDENTIAL }}
+          APOLLO_RUNTIME_NODE2_VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
+          APOLLO_RUNTIME_NODE2_STELLAR_EXECUTION_TARGET: "hosted"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_DATABASE_PATH: "/tmp/apollo-chat-gateway.sqlite"
           APOLLO_RUNTIME_NODE2_CHAT_GATEWAY_WORKER_CREDENTIAL: ${{ secrets.CHAT_GATEWAY_WORKER_CREDENTIAL }}
           # Nebula needs a real Hostless worker and an enabled provider bot, not the legacy Sprite default.
