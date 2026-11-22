@@ -31,3 +31,17 @@ test("falls back only for malformed wall-clock time", () => {
   const schedule = normalizeSchedule({ type:"weekly", weekdays:[1], time:"25:99" });
   assert.equal(schedule.time, "09:00");
 });
+
+test("one-time datetime-local input is interpreted in its configured timezone", () => {
+  const schedule = normalizeSchedule({ type:"once", runAt:"2026-03-08T02:30", timeZone:"America/Chicago" }, Date.UTC(2026,2,7,12));
+  assert.equal(new Date(schedule.runAt).toISOString(), "2026-03-08T08:00:00.000Z");
+  assert.equal(schedule.timeZone, "America/Chicago");
+  assert.match(scheduleLabel(schedule), /America\/Chicago/);
+});
+test("one-time ISO timestamps with offsets remain absolute instants", () => {
+  const schedule = normalizeSchedule({ type:"once", runAt:"2026-03-08T02:30:00-06:00", timeZone:"America/Chicago" }, Date.UTC(2026,2,7,12));
+  assert.equal(new Date(schedule.runAt).toISOString(), "2026-03-08T08:30:00.000Z");
+});
+test("one-time schedules reject invalid calendar dates", () => {
+  assert.throws(() => normalizeSchedule({ type:"once", runAt:"2026-02-30T09:00", timeZone:"America/Chicago" }, Date.UTC(2026,1,1)), /date is invalid/);
+});
