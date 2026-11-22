@@ -32,6 +32,16 @@ export function allQueueCompleted(queue = []) {
   return queue.length > 0 && queue.every(q => q.status === "completed");
 }
 
+export function enqueueQueueItem(state, item) {
+  const reactivatingCompletedQueue = state?.completed === true;
+  return {
+    ...state,
+    ...(reactivatingCompletedQueue ? { enabled: true, paused: false } : {}),
+    completed: false,
+    queue: [...(state?.queue || []), item]
+  };
+}
+
 export function isConversationUrl(value) {
   return typeof value === "string"
     && /^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9-]+$/.test(value);
