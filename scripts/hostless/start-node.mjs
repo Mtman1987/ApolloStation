@@ -190,6 +190,24 @@ if (nebulaConfigForServer && process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED 
   }
 }
 
+// Hostless Node 2 runs the hosted Stellar worker. No retired local Qwen or Fly endpoint is required.
+const stellarCredential = process.env.STELLAR_WORKER_CREDENTIAL?.trim();
+const hasHostedChatProvider = Boolean(
+  process.env.VENICE_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim() ||
+  process.env.OPENAI_API_KEY?.trim() || process.env.TOGETHER_API_KEY?.trim() ||
+  process.env.GROQ_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim() ||
+  (process.env.CLOUDFLARE_API_TOKEN?.trim() && process.env.CLOUDFLARE_ACCOUNT_ID?.trim())
+);
+if (role === "node2" && stellarCredential && hasHostedChatProvider) {
+  node2.push(["apps/stellar-core/dist/worker-start.js", {
+    STELLAR_EXECUTION_TARGET: "hosted",
+    STELLAR_WORKER_ID: process.env.STELLAR_WORKER_ID ?? "stellar-hostless-node2",
+    SPMT_ORIGIN: process.env.SPMT_ORIGIN ?? "https://apollo-node-1.hostless.app",
+  }]);
+  console.info("[stellar-core] Hosted AI worker enabled on Node 2; provider failover is active.");
+} else if (role === "node2") {
+  console.warn("[stellar-core] Hosted AI worker deferred: requires STELLAR_WORKER_CREDENTIAL and at least one hosted provider API key.");
+}
 const services = ({ node1, node2 })[role];
 if (!services) throw new Error("APOLLO_NODE_ROLE must be node1 or node2");
 if (!process.env.PORT) process.env.PORT = "8080";
