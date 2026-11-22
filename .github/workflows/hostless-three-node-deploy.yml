@@ -88,6 +88,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - name: Verify hosted AI fallback and Venice routing
+        run: node --test tests/stellar-ai-chain.test.mjs
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
       - name: Check dedicated browser worker syntax
