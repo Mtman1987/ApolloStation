@@ -1,7 +1,7 @@
 import { StellarProviderError, type StellarChatCompletionV1, type StellarChatMessageV1, type StellarChatProviderV1, looksIncompleteCompletion } from "./worker.js";
 
 /** Default failover order. Providers without a key are skipped, so adding a key later enables it with no code change. */
-export const DEFAULT_CHAT_CHAIN = ["gemini", "openai", "together", "groq", "openrouter", "cloudflare"] as const;
+export const DEFAULT_CHAT_CHAIN = ["venice", "gemini", "openai", "together", "groq", "openrouter", "cloudflare"] as const;
 export type ChatChainName = typeof DEFAULT_CHAT_CHAIN[number];
 
 export interface NamedChatProvider { name: string; provider: StellarChatProviderV1; }
@@ -87,6 +87,7 @@ export function buildChatChainFromEnv(env: Env, options: { openAi?: StellarChatP
 function slotProvider(name: string, env: Env, openAi: StellarChatProviderV1 | undefined, fetchImpl: typeof fetch | undefined): StellarChatProviderV1 | undefined {
   const key = (v: string) => env[v]?.trim() ?? "";
   switch (name) {
+    case "venice": return key("VENICE_API_KEY") ? new HostedChatCompletionsProvider({ name, baseUrl: "https://api.venice.ai/api/v1", apiKey: key("VENICE_API_KEY"), model: env.VENICE_CHAT_MODEL || "deepseek-v4-1-flash-1017-uncensored", ...(fetchImpl ? { fetchImpl } : {}) }) : undefined;
     case "openai": return openAi;
     case "gemini": return key("GEMINI_API_KEY") ? new HostedChatCompletionsProvider({ name, baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", apiKey: key("GEMINI_API_KEY"), model: env.GEMINI_CHAT_MODEL || "gemini-2.5-flash", ...(fetchImpl ? { fetchImpl } : {}) }) : undefined;
     case "together": return key("TOGETHER_API_KEY") ? new HostedChatCompletionsProvider({ name, baseUrl: "https://api.together.xyz/v1", apiKey: key("TOGETHER_API_KEY"), model: env.TOGETHER_CHAT_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo", ...(fetchImpl ? { fetchImpl } : {}) }) : undefined;
