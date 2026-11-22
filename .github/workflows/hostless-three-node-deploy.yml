@@ -240,9 +240,9 @@ jobs:
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.deploy == true)) }}
     runs-on: ubuntu-latest
-    # The deployment script waits up to ten minutes after Hostless accepts the trigger.
-    # Leave two extra minutes for checkout, preflight, and Node 1 domain read-back.
-    timeout-minutes: 12
+    # The deployment script waits up to twenty minutes after Hostless accepts the trigger.
+    # Leave two extra minutes for checkout, preflight, and deployment read-back.
+    timeout-minutes: 22
     environment: production
     strategy:
       # Hostless queued Node 2 while Node 1 was building this same repository.
