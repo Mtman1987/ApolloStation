@@ -189,6 +189,9 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
 
 test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes", async () => {
   const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const publicHealth = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/health/ready", "http://127.0.0.1:3000", async () => { throw new Error("readiness must not call the identity service"); }, {});
+  assert.equal(publicHealth.authorized, true);
+  assert.equal(publicHealth.reason, "public-readiness");
   const denied = await authorizeBulletinRequest({ headers: {} }, "/bulletin/api/tasks", "http://127.0.0.1:3000", async () => {
     throw new Error("must not call identity service without a cookie");
   }, {});
