@@ -9,7 +9,7 @@ Code: `apps/stellar-core/src/chat-chain.ts`, wired in `worker-start.ts`. Tests: 
 - Each reply records which provider answered (`provider` field on the completion).
 
 ## Order and env names
-Default order: `gemini, openai, together, groq, openrouter, cloudflare`. Override with `STELLAR_AI_CHAIN`.
+Default order: `venice, gemini, openai, together, groq, openrouter, cloudflare`. Override with `STELLAR_AI_CHAIN`.
 
 | Slot | Secret(s) | Optional model override | Default model (verify before prod) |
 |---|---|---|---|
