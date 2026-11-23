@@ -122,6 +122,8 @@ jobs:
             ["hostless-node3-bootstrap"]="3725b73628c9d00fa4930b346e43528d26d2d4be"
             ["node3-bootstrap-free"]="10c36e525d9dfde5bc564e24c18802abf4d90544"
             ["fix/hostless-three-node-readiness"]="0b9264b24df01f93b7775ca75b85db05e2451209"
+            ["docs/apollo-final-handoff-2026-11-19"]="189b7dd9d0cac2991156f8db666b9a2e66b99d6b"
+            ["test/hmo-youtube-single-av-proof"]="0c9dce46c07b9ff9fe6e7ebbda445599ab2b83cc"
           )
 
           is_open_pr_branch() {
