@@ -243,7 +243,7 @@ test("Node 2 fast deploy preserves Hostless Nebula config when no Actions config
     workflow.indexOf("Prepare Nebula runtime config"),
     workflow.indexOf("Install Hostless CLI"),
   );
-  assert.match(step, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\n/);
+  assert.ok(step.includes('appendFileSync(process.env.GITHUB_ENV, "APOLLO_NODE2_NEBULA_ENABLED=1\n");'));
   assert.match(step, /if \(raw\) \{/);
   assert.match(step, /No Actions-provided Nebula config; preserving existing Hostless runtime config/);
   assert.match(step, /NEBULA_ARCADE_RUNTIME_CONFIG_PATH=\/tmp\/apollo-nebula-runtime\.json/);
