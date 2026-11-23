@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
+import { resolveNode1StellarChatConfig } from "./node1-runtime-config.mjs";
 
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
@@ -241,12 +242,17 @@ console.log(`Resolved ${node.label} to Hostless project ${nameOf(project)} (${pr
 // Keep OAuth redirects and browser recovery anchored to the stable Hostless
 // origin. The custom domain is an additional alias, not the callback origin.
 if (nodeKey === "node1") {
-  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "--app", node.app, "--project", String(projectId)],
-    "Pin Apollo OAuth callback origin to the stable Hostless app URL");
-  console.log("Pinned SPMT_PUBLIC_URL to the stable Node 1 Hostless origin.");
-  runCli(["env", "set", "APOLLO_BULLETIN_ENABLE_BROWSER=1", "APOLLO_BULLETIN_REQUIRE_TURSO=1", "APOLLO_BULLETIN_USE_HOSTLESS_CRON=1", "--app", node.app, "--project", String(projectId)],
-    "Configure Node 1 Bulletin for Chromium, required Turso persistence, and Hostless cron");
-  console.log("Configured Bulletin production dependencies on Node 1; no credentials were changed.");
+  const stellar = resolveNode1StellarChatConfig(
+    process.env.APOLLO_RUNTIME_NODE1_STELLAR_WORKER_CREDENTIAL,
+    process.env.APOLLO_RUNTIME_SHARED_STELLAR_WORKER_CREDENTIAL,
+  );
+  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "APOLLO_BULLETIN_ENABLE_BROWSER=1", "APOLLO_BULLETIN_REQUIRE_TURSO=1", "APOLLO_BULLETIN_USE_HOSTLESS_CRON=1", `SPMT_STELLAR_CHAT_ENABLED=${stellar.enabled}`, "--app", node.app, "--project", String(projectId)],
+    "Configure Node 1 production URL, Bulletin dependencies, and credential-safe Stellar Chat flag");
+  if (stellar.credential) {
+    runCli(["env", "set", `STELLAR_WORKER_CREDENTIAL=${stellar.credential}`, "--write-only", "--app", node.app, "--project", String(projectId)],
+      "Synchronize the existing Stellar Chat worker credential");
+  }
+  console.log("Configured Node 1 Bulletin production dependencies and safe Stellar Chat state; credential values are not logged.");
 }
 
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
