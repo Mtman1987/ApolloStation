@@ -231,6 +231,14 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-surface[data-spmt-text-scale="lg"] { font-size:112.5%; }
 .spmt-product-surface[data-spmt-sidebar-collapsed="true"] [data-spmt-sidebar-label] { display:none; }
 .spmt-product-surface[data-spmt-sidebar="hidden"] [data-spmt-sidebar] { display:none !important; }
+.spmt-product-surface[data-spmt-sidebar="floating"] [data-spmt-sidebar] { border-radius:var(--spmt-radius,1rem); margin:8px; box-shadow:var(--spmt-shadow); }
+.spmt-product-surface[data-spmt-sidebar-position="right"] [data-spmt-sidebar] { order:2; }
+.spmt-product-surface[data-spmt-topbar="transparent"] [data-spmt-topbar-surface] { background:transparent !important; backdrop-filter:none !important; border-color:transparent !important; }
+.spmt-product-surface[data-spmt-topbar="solid"] [data-spmt-topbar-surface] { background:var(--spmt-surface-strong) !important; backdrop-filter:none !important; }
+.spmt-product-surface[data-spmt-tab-position="bottom"] [data-spmt-tabs] { order:3; }
+.spmt-product-surface[data-spmt-show-avatars="false"] [data-spmt-avatar] { display:none !important; }
+.spmt-product-surface[data-spmt-density="compact"] { --spmt-density-scale:.88; }
+.spmt-product-surface[data-spmt-density="spacious"] { --spmt-density-scale:1.12; }
 .spmt-product-surface[data-spmt-border-glow="false"] .spmt-product-glass { box-shadow:none; }
 .spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); border-color:color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-strength,.35) * 100%),var(--spmt-border)); box-shadow:0 0 calc(var(--spmt-glow,.78) * 28px) color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-glow,1) * 18%),transparent); backdrop-filter: blur(var(--spmt-blur,24px)) saturate(calc(100% + var(--spmt-glow,0) * 45%)); border-radius:var(--spmt-radius,1rem); transition-duration:calc(160ms * var(--spmt-motion-scale,1)); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
@@ -539,8 +547,11 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   set("--spmt-chat-transparency", percentage(input.chatTransparency, 20) / 100);
   set("--spmt-radius", ({ sm: "0.5rem", md: "0.75rem", lg: "1rem", full: "9999px" } as const)[safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg") as "sm" | "md" | "lg" | "full"]);
   set("--spmt-animation-speed", boundedNumber(animation.speed ?? input.animationSpeed, 100, 25, 250) / 100);
+  const density = safeChoice(input.density ?? input.uiDensity, ["compact", "comfortable", "spacious"], "comfortable");
+  set("--spmt-density-scale", density === "compact" ? .88 : density === "spacious" ? 1.12 : 1);
   set("--spmt-sidebar-position", safeChoice(input.sidebarPosition, ["left", "right"], "left"));
   set("--spmt-tab-position", safeChoice(input.tabPosition, ["top", "bottom", "left", "right"], "top"));
+  set("--spmt-color-vision-mode", safeChoice(input.accessibility?.colorVisionMode ?? input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
   data("spmtTheme", themeId);
   data("spmtDensity", safeChoice(input.density ?? input.uiDensity, ["compact", "comfortable", "spacious"], "comfortable"));
   data("spmtSidebar", safeChoice(input.sidebarStyle, ["docked", "floating", "hidden", "glass", "solid", "minimal"], "docked"));
@@ -565,7 +576,7 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   data("spmtMicButton", safeChoice(input.micButtonStyle, ["filled", "outline", "minimal"], "filled"));
   data("spmtVoiceWave", safeChoice(input.voiceWaveStyle, ["bars", "wave", "pulse"], "bars"));
   root.style.colorScheme = "dark";
-  if (reduceMotion || !bool(animation.enabled ?? input.uiAnimations, true)) {
+  if (reduceMotion || !bool(animation.enabled ?? input.uiAnimations, true) || !bool(input.smoothTransitions, true)) {
     set("--spmt-motion-scale", 0);
   } else {
     set("--spmt-motion-scale", 1);
