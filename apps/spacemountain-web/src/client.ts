@@ -146,7 +146,7 @@ const recoveryPasswordConfirm = element<HTMLInputElement>("apollo-recovery-passw
 const recoverySubmit = element<HTMLButtonElement>("apollo-recovery-submit");
 const recoveryMessage = element<HTMLParagraphElement>("apollo-recovery-message");
 const recoveryQuery = new URLSearchParams(window.location.search);
-const recoveryReady = recoveryQuery.get("recovery") === "verified";
+let recoveryReady = recoveryQuery.get("recovery") === "verified";
 const recoveryError = recoveryQuery.get("recoveryError");
 const recoveryUsernameInput = apolloLoginForm.elements.namedItem("username") as HTMLInputElement | null;
 const recoveryUsername = recoveryQuery.get("recoveryUsername");
@@ -1018,6 +1018,20 @@ async function submitLinkedProviderRecovery() {
   } catch (error) {
     const detail = message(error);
     recoveryMessage.textContent = detail;
+    // A verified recovery ticket is single-use and may expire or be revoked
+    // before password submission. Restore provider selection so the user can
+    // retry without being trapped behind the stale ?recovery=verified URL.
+    recoveryPasswordPanel.hidden = true;
+    recoveryStart.hidden = false;
+    recoveryReady = false;
+    recoveryPasswordInput.value = "";
+    recoveryPasswordConfirm.value = "";
+    sessionStorage.setItem("apollo-recovery-username", username);
+    const recoveryUrl = new URL(window.location.href);
+    recoveryUrl.searchParams.delete("recovery");
+    recoveryUrl.searchParams.delete("recoveryUsername");
+    recoveryUrl.searchParams.delete("recoveryError");
+    window.history.replaceState(null, "", `${recoveryUrl.pathname}${recoveryUrl.search}${recoveryUrl.hash}`);
     setStatus(detail, "error");
   } finally {
     recoverySubmit.disabled = false;
