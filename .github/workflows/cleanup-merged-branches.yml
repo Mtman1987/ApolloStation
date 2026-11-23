@@ -104,7 +104,7 @@ jobs:
 
           is_open_pr_branch() {
             local branch="$1" candidate
-            for candidate in "${open_branches[@]}"; do
+            for candidate in "${open_branches[@]:-}"; do
               [[ "$candidate" == "$branch" ]] && return 0
             done
             return 1
