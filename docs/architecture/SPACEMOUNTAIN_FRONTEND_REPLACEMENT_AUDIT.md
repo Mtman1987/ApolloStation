@@ -172,6 +172,27 @@ The UI also exposes four established preset identities: `solar-flare`, `nebula-p
 3. Compare each endpoint with Apollo's existing server routes and service contracts.
 4. Generate the first machine-readable mapping manifest; do not connect production APIs yet.
 
+
+## Implemented appearance-wiring slice — PR #615
+
+The first settings implementation is now in the test branch and draft PR:
+
+- The canonical `AppearanceV1` profile accepts the legacy control fields that were missing: accent saturation, border/hover glow, corner radius, voice presentation, nested accessibility, animation enabled, and the legacy sidebar/topbar/tab layout choices.
+- The Workspace screen now exposes those controls and previews changes immediately as the user moves sliders, changes selectors, or toggles settings.
+- Save remains a revision-guarded SPMT workspace update; the existing canonical workspace profile remains the authority.
+- The shared `applyWorkspaceAppearance` renderer translates saved values into CSS tokens and root data attributes used by the shared product UI.
+- Apollo applies the profile to the shell and relays the versioned `SPACEMOUNTAIN_THEME` v2 envelope to same-origin app frames.
+- Embedded app frames apply that envelope and re-read the canonical workspace after a trusted `spmt.surface.updated` message from a mounted settings/worktray/profile iframe.
+- Profile updates remain complete/round-trippable even where a specialized voice or accessibility effect is only meaningful inside the app that owns that capability.
+
+### Verification
+
+- Latest test branch commit at this audit update: `dfdb646a981c2aa2fca57ce14b416c11316feee4`.
+- Draft PR: https://github.com/Mtman1987/ApolloStation/pull/615
+- Hostless release-gate typecheck and focused Node 1/Node 2 build passed for the immediately preceding code commit; deploy jobs were skipped because the ref is a pull request.
+- The full pull-request offline regression suite is still running; do not mark the settings slice fully accepted until that run completes successfully.
+- No production deployment or production workspace/profile writes were performed.
+
 ## Current status
 
 - Isolated test branch exists.
