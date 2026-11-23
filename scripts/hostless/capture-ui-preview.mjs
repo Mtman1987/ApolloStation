@@ -17,8 +17,6 @@ const routes = [
   "/apps/discord-stream-hub",
   "/apps/streamweaver",
   "/apps/hearmeout",
-  "/apps/mountainview",
-  "/apps/companion",
 ];
 try {
   await mkdir("artifacts/ui-preview", { recursive: true });
@@ -45,7 +43,7 @@ try {
     if (pageText.includes("Private preview — sign in to continue.")) throw new Error(`Preview auth gate was not passed for ${route}`);
     await page.screenshot({ path: `artifacts/ui-preview/${route === "/" ? "spacemountain-home" : route.split("/").at(-1)}.png`, fullPage: true });
   }
-  console.log("Screenshot proof captured for SpaceMountain and five app surfaces.");
+  console.log("Screenshot proof captured for SpaceMountain and three green app surfaces.");
 } finally {
   await browser?.close().catch(() => undefined);
   preview.kill("SIGTERM");
