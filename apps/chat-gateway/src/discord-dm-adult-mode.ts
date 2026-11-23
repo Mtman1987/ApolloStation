@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import type { NormalizedChatMessageV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
 import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
-import type { ChatGatewayRuntime } from "./index.js";
+import type { ChatGatewayRuntime, ProviderChatEnvelopeV1 } from "./index.js";
 
-type DmMessage = Pick<NormalizedChatMessageV1, "tenantId" | "provider" | "connectionId" | "channelId" | "messageId" | "text" | "providerUserId" | "username" | "displayName" | "isBot" | "guildId">;
+type DmMessage = ProviderChatEnvelopeV1;
 type IdentityResolver = typeof resolveProviderIdentity;
 type AssistantClient = Pick<SpmtClient, "invokeCommunityAssistant" | "getExecutionJob">;
 
