@@ -178,11 +178,25 @@ async function syncRuntimeSecrets(projectId, appName) {
   if (Object.keys(bundle).length === 0) fail("No explicitly mapped GitHub Actions runtime secrets were supplied.");
   const excluded = new Set(["HOSTLESS_NODE1_TOKEN", "HOSTLESS_NODE2_TOKEN", "HOSTLESS_NODE3_TOKEN", "GITHUB_TOKEN"]);
   const nodePrefix = nodeKey.toUpperCase() + "_";
-  const entries = Object.entries(bundle).filter(([key, value]) =>
-    /^[A-Z][A-Z0-9_]{1,127}$/.test(key) && !excluded.has(key) &&
-    !/^HOSTLESS_.*TOKEN$/.test(key) && key.startsWith(nodePrefix) &&
-    typeof value === "string" && value.length > 0
-  ).map(([key, value]) => [key.slice(nodePrefix.length), value]);
+  const sharedEntries = Object.entries(bundle)
+    .filter(([key, value]) =>
+      /^[A-Z][A-Z0-9_]{1,127}$/.test(key) && key.startsWith("SHARED_") &&
+      !excluded.has(key.slice("SHARED_".length)) &&
+      !/^HOSTLESS_.*TOKEN$/.test(key.slice("SHARED_".length)) &&
+      typeof value === "string" && value.length > 0
+    )
+    .map(([key, value]) => [key.slice("SHARED_".length), value]);
+  const nodeEntries = Object.entries(bundle)
+    .filter(([key, value]) =>
+      /^[A-Z][A-Z0-9_]{1,127}$/.test(key) && !excluded.has(key) &&
+      !/^HOSTLESS_.*TOKEN$/.test(key) && key.startsWith(nodePrefix) &&
+      typeof value === "string" && value.length > 0
+    )
+    .map(([key, value]) => [key.slice(nodePrefix.length), value]);
+  // Shared entries are copied to BOTH nodes; explicit node-scoped values
+  // override the shared value only for that node. Hostless control-plane tokens
+  // and GitHub tokens are never injected into application runtime environments.
+  const entries = [...new Map([...sharedEntries, ...nodeEntries]).entries()];
   if (nodeKey === "node1") {
     // Production Apollo must never inherit the obsolete sandbox preview gate or
     // sandbox account mode from a copied Actions secret. These values are
@@ -285,8 +299,13 @@ if (process.env.APOLLO_SYNC_ONLY === "1") {
   const present = new Set(variables.map(item => item?.name ?? item?.key).filter(value => typeof value === "string"));
   const prefix = nodeKey.toUpperCase() + "_";
   const expected = Object.keys(Object.fromEntries(Object.entries(process.env)
-    .filter(([key, value]) => key.startsWith("APOLLO_RUNTIME_" + prefix) && typeof value === "string" && value.length > 0)
-    .map(([key, value]) => [key.slice("APOLLO_RUNTIME_".length + prefix.length), value])));
+    .filter(([key, value]) =>
+      (key.startsWith("APOLLO_RUNTIME_SHARED_") || key.startsWith("APOLLO_RUNTIME_" + prefix)) &&
+      typeof value === "string" && value.length > 0
+    )
+    .map(([key, value]) => [key.startsWith("APOLLO_RUNTIME_SHARED_")
+      ? key.slice("APOLLO_RUNTIME_SHARED_".length)
+      : key.slice("APOLLO_RUNTIME_".length + prefix.length), value])));
   const missing = expected.filter(key => !present.has(key));
   if (missing.length) fail(`Hostless secret migration verification failed for ${node.app}; missing names: ${missing.join(", ")}`);
   console.log(JSON.stringify({ node: nodeKey, app: node.app, verified: true, expectedNames: expected.length, missingNames: [] }));
