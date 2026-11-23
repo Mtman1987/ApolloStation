@@ -18,7 +18,7 @@ function parseRunAt(value, timeZone) {
     const match = local || absolute;
     if (match) {
       const year=Number(match[1]), month=Number(match[2]), day=Number(match[3]), hour=Number(match[4]), minute=Number(match[5]), second=Number(match[6]||0);
-      const calendarDate=new Date(Date.UTC(year,month-1,day));
+      const calendarDate=new Date(0); calendarDate.setUTCFullYear(year,month-1,day); calendarDate.setUTCHours(0,0,0,0);
       if(calendarDate.getUTCFullYear()!==year||calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)throw new Error("One-time schedule date is invalid");
       if(hour>23||minute>59||second>59)throw new Error("One-time schedule time is invalid");
       if(absolute) {
