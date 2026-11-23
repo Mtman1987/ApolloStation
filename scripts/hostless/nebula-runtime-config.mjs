@@ -32,3 +32,29 @@ export function mergeNebulaRuntimeConfig(saved, discovered) {
     tenants: [...tenants.values()],
   };
 }
+
+
+/**
+ * Resolve the public Nebula front door before provider OAuth discovery finishes.
+ * A live provider connection may be registered dynamically after Chat Gateway
+ * starts; the web server still needs the existing system tenant/channel so the
+ * UI and health route can come up immediately.
+ */
+export function resolveNebulaServerTarget(config, fallbackTenantId, fallbackChannelId) {
+  if (!config || config.schemaVersion !== 1 || !Array.isArray(config.tenants)) {
+    throw new Error("Nebula server target requires a version 1 tenant configuration.");
+  }
+  const tenant = config.tenants.find(item => item.tenantId === fallbackTenantId) ??
+    config.tenants.find(item => Array.isArray(item.channels) &&
+      item.channels.some(channel => channel.provider === "twitch" && channel.channelId === fallbackChannelId)) ??
+    config.tenants.find(item => Array.isArray(item.channels) &&
+      item.channels.some(channel => channel.provider === "twitch"));
+  const channel = tenant?.channels?.find(item => item.provider === "twitch" && item.channelId === fallbackChannelId) ??
+    tenant?.channels?.find(item => item.provider === "twitch");
+  if (tenant && channel) return { tenantId: tenant.tenantId, channelId: channel.channelId };
+  if (typeof fallbackTenantId === "string" && fallbackTenantId.trim() &&
+      typeof fallbackChannelId === "string" && fallbackChannelId.trim()) {
+    return { tenantId: fallbackTenantId, channelId: fallbackChannelId };
+  }
+  return undefined;
+}
