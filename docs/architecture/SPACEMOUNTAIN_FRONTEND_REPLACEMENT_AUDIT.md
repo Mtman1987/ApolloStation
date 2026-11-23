@@ -9,7 +9,7 @@ Purpose: test replacing the legacy SpaceMountain browser experience with Apollo'
 
 - This is an isolated branch experiment only.
 - No production branch, Hostless deployment, live database, user records, OAuth configuration, Discord bot, or provider integration was changed.
-- The legacy repository is included as a pinned Git submodule at `apps/spacemountain`; its source remains independently versioned.
+- The legacy repository is included as a pinned Git submodule at `legacy/spacemountain-live`; its source remains independently versioned.
 - Do not point the test branch at production data or start its server with production credentials.
 - Before running the legacy server, inspect its boot-time database initialization and all write paths. Use a disposable test database.
 
