@@ -468,3 +468,96 @@ export function portalLayer(kind: PortalKindV1) {
 }
 
 export * from "./community-calendar.js";
+
+
+/** Full canonical workspace appearance contract consumed by shell and app surfaces. */
+export type WorkspaceAppearanceInputV1 = {
+  theme?: unknown; themeId?: unknown; accent?: unknown; accentColor?: unknown; accentSecondary?: unknown;
+  backgroundUrl?: unknown; glowIntensity?: unknown; starDensity?: unknown; glassOpacity?: unknown; blurStrength?: unknown;
+  nebulaIntensity?: unknown; parallaxDepth?: unknown; borderStrength?: unknown; borderGlow?: unknown; hoverGlow?: unknown;
+  accentSaturation?: unknown; chatTransparency?: unknown; density?: unknown; uiDensity?: unknown;
+  sidebarCollapsed?: unknown; sidebarStyle?: unknown; sidebarPosition?: unknown; topbarStyle?: unknown;
+  tabStyle?: unknown; tabPosition?: unknown; cornerRadius?: unknown; showAvatars?: unknown;
+  smoothTransitions?: unknown; pushToTalk?: unknown; pushToTalkKey?: unknown; micButtonStyle?: unknown; voiceWaveStyle?: unknown;
+  highContrast?: unknown; colorVisionMode?: unknown; textScale?: unknown; reduceMotion?: unknown; focusHighlight?: unknown;
+  uiAnimations?: unknown; animationSpeed?: unknown; particleEffects?: unknown; shootingStars?: unknown;
+  animation?: { enabled?: unknown; speed?: unknown; particles?: unknown; shootingStars?: unknown };
+};
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+function percentage(value: unknown, fallback: number) {
+  return boundedNumber(value, fallback, 0, 100);
+}
+function bool(value: unknown, fallback: boolean) { return typeof value === "boolean" ? value : fallback; }
+function safeChoice(value: unknown, allowed: readonly string[], fallback: string) {
+  return typeof value === "string" && allowed.includes(value) ? value : fallback;
+}
+
+/**
+ * Applies the account-backed appearance model to a live app/shell root.
+ * Unknown fields are ignored for rendering but remain untouched in the saved profile.
+ */
+export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppearanceInputV1) {
+  const themeId = typeof input.themeId === "string" ? input.themeId : typeof input.theme === "string" ? input.theme : "solar-flare";
+  const accent = typeof input.accentColor === "string" ? input.accentColor : typeof input.accent === "string" ? input.accent : undefined;
+  const secondary = typeof input.accentSecondary === "string" ? input.accentSecondary : undefined;
+  const theme = resolveProductTheme(themeId, accent, secondary);
+  const animation = input.animation ?? {};
+  const set = (name: string, value: string | number) => root.style.setProperty(name, String(value));
+  const data = (name: string, value: string | boolean) => { root.dataset[name] = String(value); };
+
+  set("--spmt-accent", theme.accent);
+  set("--spmt-accent-secondary", theme.accentSecondary);
+  set("--spmt-accent-tertiary", theme.accentTertiary);
+  set("--spmt-accent-saturation", percentage(input.accentSaturation, 100));
+  set("--spmt-glow", percentage(input.glowIntensity, 78) / 100);
+  set("--spmt-stars", percentage(input.starDensity, 70) / 100);
+  set("--spmt-glass-opacity", percentage(input.glassOpacity, 76) / 100);
+  set("--spmt-blur", boundedNumber(input.blurStrength, 18, 0, 64) + "px");
+  set("--spmt-nebula-intensity", percentage(input.nebulaIntensity, 55) / 100);
+  set("--spmt-parallax-depth", percentage(input.parallaxDepth, 35) / 100);
+  set("--spmt-border-strength", percentage(input.borderStrength, 35) / 100);
+  set("--spmt-chat-transparency", percentage(input.chatTransparency, 20) / 100);
+  set("--spmt-corner-radius", safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg"));
+  set("--spmt-animation-speed", boundedNumber(animation.speed ?? input.animationSpeed, 100, 25, 250) / 100);
+  set("--spmt-sidebar-position", safeChoice(input.sidebarPosition, ["left", "right"], "left"));
+  set("--spmt-tab-position", safeChoice(input.tabPosition, ["top", "bottom", "left", "right"], "top"));
+  data("spmtTheme", themeId);
+  data("spmtDensity", safeChoice(input.density ?? input.uiDensity, ["compact", "comfortable", "spacious"], "comfortable"));
+  data("spmtSidebar", safeChoice(input.sidebarStyle, ["docked", "floating", "hidden", "glass", "solid", "minimal"], "docked"));
+  data("spmtSidebarCollapsed", bool(input.sidebarCollapsed, false));
+  data("spmtTopbar", safeChoice(input.topbarStyle, ["transparent", "glass", "solid", "minimal"], "glass"));
+  data("spmtTabStyle", safeChoice(input.tabStyle, ["pills", "underline", "cards"], "pills"));
+  data("spmtBorderGlow", bool(input.borderGlow, true));
+  data("spmtHoverGlow", bool(input.hoverGlow, true));
+  data("spmtShowAvatars", bool(input.showAvatars, true));
+  data("spmtSmoothTransitions", bool(input.smoothTransitions, true));
+  data("spmtAnimations", bool(animation.enabled ?? input.uiAnimations, true));
+  data("spmtParticles", bool(animation.particles ?? input.particleEffects, true));
+  data("spmtShootingStars", bool(animation.shootingStars ?? input.shootingStars, true));
+  data("spmtReduceMotion", bool(input.reduceMotion, false));
+  data("spmtHighContrast", bool(input.highContrast, false));
+  data("spmtFocusHighlight", bool(input.focusHighlight, true));
+  data("spmtColorVision", safeChoice(input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
+  data("spmtTextScale", safeChoice(input.textScale, ["sm", "md", "lg"], "md"));
+  data("spmtPushToTalk", bool(input.pushToTalk, false));
+  data("spmtMicButton", safeChoice(input.micButtonStyle, ["filled", "outline", "minimal"], "filled"));
+  data("spmtVoiceWave", safeChoice(input.voiceWaveStyle, ["bars", "wave", "pulse"], "bars"));
+  root.style.colorScheme = "dark";
+  if (bool(input.reduceMotion, false) || !bool(animation.enabled ?? input.uiAnimations, true)) {
+    set("--spmt-motion-scale", 0);
+  } else {
+    set("--spmt-motion-scale", 1);
+  }
+  return theme;
+}
+
+/** Notify a same-origin embedded app that canonical appearance changed. */
+export function relayWorkspaceAppearance(target: Window, targetOrigin: string, appearance: WorkspaceAppearanceInputV1, revision?: number) {
+  const origin = new URL(targetOrigin);
+  if (origin.origin !== targetOrigin || origin.origin === "null") throw new Error("A concrete target origin is required for appearance relay");
+  target.postMessage({ type: "SPACEMOUNTAIN_THEME", version: 2, revision, appearance }, origin.origin);
+}
