@@ -103,6 +103,7 @@ test("canonical workspace authority accepts and validates the complete appearanc
 
 test("Apollo workspace controls expose the full legacy appearance model and preview it before saving", () => {
   const shell = readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", import.meta.url), "utf8");
+  const hostClient = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
   for (const field of [
     "accentSaturation", "borderGlow", "hoverGlow", "cornerRadius", "micButtonStyle",
     "voiceWaveStyle", "pushToTalkKey", "highContrast", "colorVisionMode", "textScale",
