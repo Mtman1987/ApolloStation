@@ -10,7 +10,7 @@ Node 1 requires:
 - `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`
 
-Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The cron command calls the owner-protected `/bulletin/api/cron/tick` endpoint using `APOLLO_BULLETIN_CRON_TOKEN` or `APOLLO_BROWSER_CONTROL_PASSWORD`. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
+Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The cron command calls the owner-protected `/bulletin/api/cron/tick` endpoint using `APOLLO_BULLETIN_CRON_TOKEN` or `APOLLO_BROWSER_CONTROL_PASSWORD`. `APOLLO_BULLETIN_OWNER_ACTOR_ID` is an optional owner pin. When set, the proxy rejects other Apollo actor IDs; when unset, any authenticated Apollo session can access task APIs. Configure the pin before onboarding additional users. Readiness reports only whether the pin is configured, not its value. Weekly/monthly and `datetime-local` one-time schedules use the explicit IANA timezone (default `America/Chicago`) instead of the Hostless runtime timezone. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
 
 ## Owner sign-in from a phone
 

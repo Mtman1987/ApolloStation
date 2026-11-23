@@ -11,10 +11,19 @@ function localDateTimeToUtc(year, month, day, hour, minute, timeZone) {
   for(let i=0;i<=180;i++){const candidate=guess+i*60000,p=zonedParts(candidate,timeZone);if(Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute)>=target)return candidate;}
   throw new Error("Unable to resolve schedule time in timezone");
 }
+function parseRunAt(value, timeZone) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) {
+    const [date,time]=value.split("T"),[year,month,day]=date.split("-").map(Number),[hour,minute,second=0]=time.split(":").map(Number);
+    const calendarDate=new Date(Date.UTC(year,month-1,day));
+    if(calendarDate.getUTCFullYear()!==year||calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)throw new Error("One-time schedule date is invalid");
+    return localDateTimeToUtc(year,month,day,hour,minute,timeZone)+second*1000;
+  }
+  return new Date(value).getTime();
+}
 export function normalizeSchedule(input = {}, now = Date.now()) {
   const type=["manual","once","interval","weekly","monthly"].includes(input.type)?input.type:"manual";
   if(type==="manual")return {type};
-  if(type==="once"){const at=new Date(input.runAt).getTime();if(!Number.isFinite(at)||at<=now)throw new Error("One-time schedule must be in the future");return {type,runAt:at};}
+  if(type==="once"){const timeZone=validTimeZone(input.timeZone||DEFAULT_TIME_ZONE),at=parseRunAt(input.runAt,timeZone);if(!Number.isFinite(at)||at<=now)throw new Error("One-time schedule must be in the future");return {type,runAt:at,timeZone};}
   if(type==="interval"){const every=Number(input.every),unit=["seconds","minutes","hours","days"].includes(input.unit)?input.unit:"minutes";if(!Number.isInteger(every)||every<1||every>100000)throw new Error("Interval must be a positive whole number");return {type,every,unit};}
   const time=/^([01]\d|2[0-3]):([0-5]\d)$/.test(input.time||"")?input.time:"09:00",timeZone=validTimeZone(input.timeZone||DEFAULT_TIME_ZONE);
   if(type==="weekly"){const weekdays=Array.isArray(input.weekdays)?input.weekdays.map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6):[];if(!weekdays.length)throw new Error("Choose at least one weekday");return {type,weekdays:[...new Set(weekdays)].sort(),time,timeZone};}
@@ -27,4 +36,4 @@ export function nextScheduledAt(schedule,now=Date.now()){
   if(schedule.type==="weekly"){for(let offset=0;offset<=7;offset++){const date=new Date(Date.UTC(current.year,current.month-1,current.day+offset));if(!schedule.weekdays.includes(date.getUTCDay()))continue;const candidate=localDateTimeToUtc(date.getUTCFullYear(),date.getUTCMonth()+1,date.getUTCDate(),hour,minute,timeZone);if(candidate>now)return candidate;}return null;}
   if(schedule.type==="monthly"){for(let offset=0;offset<=24;offset++){const monthDate=new Date(Date.UTC(current.year,current.month-1+offset,1)),year=monthDate.getUTCFullYear(),month=monthDate.getUTCMonth()+1,lastDay=new Date(Date.UTC(year,month,0)).getUTCDate();if(schedule.day>lastDay)continue;const candidate=localDateTimeToUtc(year,month,schedule.day,hour,minute,timeZone);if(candidate>now)return candidate;}return null;}return null;
 }
-export function scheduleLabel(schedule){if(!schedule||schedule.type==="manual")return "Manual";if(schedule.type==="once")return "Once";if(schedule.type==="interval")return "Every "+schedule.every+" "+schedule.unit;if(schedule.type==="weekly")return "Weekly · "+schedule.weekdays.map(d=>["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d]).join(", ")+" · "+schedule.time+" "+(schedule.timeZone||DEFAULT_TIME_ZONE);if(schedule.type==="monthly")return "Monthly · day "+schedule.day+" · "+schedule.time+" "+(schedule.timeZone||DEFAULT_TIME_ZONE);return schedule.type;}
+export function scheduleLabel(schedule){if(!schedule||schedule.type==="manual")return "Manual";if(schedule.type==="once")return "Once"+(schedule.timeZone?" · "+schedule.timeZone:"");if(schedule.type==="interval")return "Every "+schedule.every+" "+schedule.unit;if(schedule.type==="weekly")return "Weekly · "+schedule.weekdays.map(d=>["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d]).join(", ")+" · "+schedule.time+" "+(schedule.timeZone||DEFAULT_TIME_ZONE);if(schedule.type==="monthly")return "Monthly · day "+schedule.day+" · "+schedule.time+" "+(schedule.timeZone||DEFAULT_TIME_ZONE);return schedule.type;}
