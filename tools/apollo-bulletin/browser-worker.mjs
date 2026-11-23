@@ -113,9 +113,9 @@ export class ApolloChatGptBrowserWorker {
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("Task prompt is missing");
     const targetUrl = normalizeChatGptConversationUrl(task.conversationUrl);
     this.busy = true;
-    const page = this.#requirePage();
     let clickAttempted = false;
     try {
+      const page = this.#requirePage();
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("ChatGPT redirected away from the exact target conversation; refusing to send");
