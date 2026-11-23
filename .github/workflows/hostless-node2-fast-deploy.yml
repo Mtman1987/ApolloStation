@@ -68,7 +68,6 @@ jobs:
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           # Always refresh Node 2 from the canonical ApolloStation Discord token.
-          APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           APOLLO_RUNTIME_NODE2_STELLAR_WORKER_CREDENTIAL: ${{ secrets.STELLAR_WORKER_CREDENTIAL }}
           APOLLO_RUNTIME_NODE2_VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
           APOLLO_RUNTIME_NODE2_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
