@@ -252,6 +252,13 @@ if (nodeKey === "node1") {
     runCli(["env", "set", `STELLAR_WORKER_CREDENTIAL=${stellar.credential}`, "--write-only", "--app", node.app, "--project", String(projectId)],
       "Synchronize the existing Stellar Chat worker credential");
   }
+  const ownerActorId = process.env.APOLLO_RUNTIME_NODE1_APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim();
+  if (ownerActorId) {
+    runCli(["env", "set", `APOLLO_BULLETIN_OWNER_ACTOR_ID=${ownerActorId}`, "--app", node.app, "--project", String(projectId)],
+      "Configure the non-secret Bulletin owner actor pin");
+  } else {
+    console.warn("Bulletin owner actor pin is not configured; task APIs remain locked and live readiness will fail closed.");
+  }
   console.log("Configured Node 1 OAuth and safe Stellar Chat state; credential values are not logged.");
 }
 
