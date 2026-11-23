@@ -1,0 +1,41 @@
+name: Discord Direct Message Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipient_user_id:
+        description: Discord user ID to receive the test DM
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send-test-dm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord test DM
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          RECIPIENT_USER_ID: ${{ inputs.recipient_user_id }}
+        run: |
+          node <<'NODE'
+          const token = process.env.DISCORD_BOT_TOKEN;
+          const recipient = process.env.RECIPIENT_USER_ID;
+          if (!token) { console.error('Missing DISCORD_BOT_TOKEN secret'); process.exit(1); }
+          if (!recipient || !/^\d{17,20}$/.test(recipient)) { console.error('Invalid recipient user ID'); process.exit(1); }
+          const headers = { Authorization: 'Bot ' + token, 'Content-Type': 'application/json' };
+          async function request(path, body) {
+            const res = await fetch('https://discord.com/api/v10' + path, { method: 'POST', headers, body: JSON.stringify(body) });
+            const text = await res.text();
+            if (!res.ok) { console.error('Discord API HTTP ' + res.status + ': ' + text.slice(0, 500)); process.exit(1); }
+            return text ? JSON.parse(text) : {};
+          }
+          (async () => {
+            const dm = await request('/users/@me/channels', { recipient_id: recipient });
+            if (!dm.id) { console.error('Discord did not return a DM channel'); process.exit(1); }
+            const sent = await request('/channels/' + dm.id + '/messages', { content: 'Apollo Discord connectivity test: direct bot DM delivery is working.' });
+            console.log('SUCCESS: DM message sent. Message ID: ' + sent.id);
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
