@@ -220,7 +220,15 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-focus,var(--spmt-accent-secondary)); outline-offset: 3px; }
-.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
+.spmt-product-surface[data-spmt-focus-highlight="false"] :focus-visible { outline:none; }
+.spmt-product-surface[data-spmt-high-contrast="true"] { --spmt-ink:#fff; --spmt-muted:#e5e7eb; --spmt-border:rgba(255,255,255,.72); }
+.spmt-product-surface[data-spmt-reduce-motion="true"] *, .spmt-product-surface[data-spmt-animations="false"] * { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+.spmt-product-surface[data-spmt-text-scale="sm"] { font-size:90%; }
+.spmt-product-surface[data-spmt-text-scale="lg"] { font-size:112.5%; }
+.spmt-product-surface[data-spmt-sidebar-collapsed="true"] [data-spmt-sidebar-label] { display:none; }
+.spmt-product-surface[data-spmt-sidebar="hidden"] [data-spmt-sidebar] { display:none !important; }
+.spmt-product-surface[data-spmt-border-glow="false"] .spmt-product-glass { box-shadow:none; }
+.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(var(--spmt-blur,24px)) saturate(calc(100% + var(--spmt-glow,0) * 45%)); border-radius:var(--spmt-radius,1rem); transition-duration:calc(160ms * var(--spmt-motion-scale,1)); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
 .spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24),0 0 34px color-mix(in srgb,var(--spmt-accent-secondary) 7%,transparent); }
@@ -521,7 +529,7 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   set("--spmt-parallax-depth", percentage(input.parallaxDepth, 35) / 100);
   set("--spmt-border-strength", percentage(input.borderStrength, 35) / 100);
   set("--spmt-chat-transparency", percentage(input.chatTransparency, 20) / 100);
-  set("--spmt-corner-radius", safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg"));
+  set("--spmt-radius", ({ sm: "0.5rem", md: "0.75rem", lg: "1rem", full: "9999px" } as const)[safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg") as "sm" | "md" | "lg" | "full"]);
   set("--spmt-animation-speed", boundedNumber(animation.speed ?? input.animationSpeed, 100, 25, 250) / 100);
   set("--spmt-sidebar-position", safeChoice(input.sidebarPosition, ["left", "right"], "left"));
   set("--spmt-tab-position", safeChoice(input.tabPosition, ["top", "bottom", "left", "right"], "top"));
