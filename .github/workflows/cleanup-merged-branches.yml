@@ -28,8 +28,8 @@ jobs:
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Manual dispatch defaults to dry-run; push and merged PR-close events clean reviewed branches.
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+      # Pushes are preview-only; merged PR-close events clean reviewed branches. Manual dispatch defaults to dry-run.
+      DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != false) }}
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
