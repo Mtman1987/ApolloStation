@@ -252,7 +252,7 @@ if (nodeKey === "node1") {
     runCli(["env", "set", `STELLAR_WORKER_CREDENTIAL=${stellar.credential}`, "--write-only", "--app", node.app, "--project", String(projectId)],
       "Synchronize the existing Stellar Chat worker credential");
   }
-  console.log("Configured Node 1 Bulletin production dependencies and safe Stellar Chat state; credential values are not logged.");
+  console.log("Configured Node 1 OAuth and safe Stellar Chat state; credential values are not logged.");
 }
 
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
