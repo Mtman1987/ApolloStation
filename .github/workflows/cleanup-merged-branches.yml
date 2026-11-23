@@ -23,12 +23,13 @@ concurrency:
 
 jobs:
   cleanup:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Pushes to main are preview-only until the exact candidate list is reviewed.
-      DRY_RUN: "true"
+      # Manual dispatch defaults to dry-run; push and merged PR-close events clean reviewed branches.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
