@@ -310,7 +310,7 @@ test("Bulletin widgets render scheduled times in their configured timezone and a
     const response = await fetch("http://127.0.0.1:"+address.port+"/widgets/scheduler");
     assert.equal(response.status,200);
     const html = await response.text();
-    assert.match(html,/function nextRun\\(t\\)/);
+    assert.match(html,/function nextRun\(t\)/);
     assert.match(html,/timeZoneName:"short"/);
     assert.match(html,/aria-live="polite"/);
   } finally {
@@ -342,10 +342,14 @@ test("Bulletin readiness fails when completed cron proof cannot be persisted", a
     const wake = await fetch(origin+"/api/cron/tick",{method:"POST",headers:{authorization:"Bearer cron-health-fail-token"}});
     assert.equal(wake.status,202);
     await wake.text();
-    await new Promise(resolve=>setTimeout(resolve,40));
-    const health = await fetch(origin+"/health/ready");
+    let health, data;
+    for(let attempt=0;attempt<50;attempt++){
+      await new Promise(resolve=>setTimeout(resolve,20));
+      health=await fetch(origin+"/health/ready");
+      data=await health.json();
+      if(data.cron.lastTickStatus==="failed")break;
+    }
     assert.equal(health.status,503);
-    const data = await health.json();
     assert.equal(data.cron.lastTickStatus,"failed");
     assert.equal(data.cron.completedTicks,0);
   } finally {
