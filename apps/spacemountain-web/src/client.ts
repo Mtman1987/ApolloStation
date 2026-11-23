@@ -213,6 +213,17 @@ async function watchWorkspace() {
   } catch { /* Keep the last authorized state through brief network failures. */ }
   finally { watchingWorkspace = false; }
 }
+
+window.addEventListener("message", (event) => {
+  const message = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : undefined;
+  if (message?.type !== "spmt.surface.updated" || !["settings", "worktray", "profile"].includes(String(message.surface))) return;
+  const sourceIsMountedFrame = Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe")).some((frame) => {
+    if (frame.contentWindow !== event.source || !frame.src) return false;
+    try { return new URL(frame.src, window.location.href).origin === event.origin; }
+    catch { return false; }
+  });
+  if (sourceIsMountedFrame) void watchWorkspace();
+});
 window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCompletion(event as CustomEvent));
 
 void boot();
