@@ -1,0 +1,192 @@
+name: Generate SPMT Terminal-First Execution Plan
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  generate-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate execution checklist
+        shell: bash
+        run: |
+          cat > spmt-opencode-apollo-terminal-first-execution-plan.txt <<'PLAN'
+SPMT ECOSYSTEM / APOLLOSTATION
+OPENCODE + APOLLO TERMINAL FIRST EXECUTION PLAN
+Version 2.0 | 23 November 2026
+
+PURPOSE / DEFINITION OF DONE
+Build one reliable execution foundation that lets the owner direct high-level goals while the Ally can inspect, execute, validate, checkpoint, recover, and report. The authenticated Apollo terminal is the first deliverable. OpenCode is the execution runtime; SPMT Ecosystem supplies the shared operating contract, capability map, skills, policy, and continuity. Bulletin is durable coordination; Stella Core is orchestration. Completion requires evidence, not claims.
+
+OPERATING ARCHITECTURE
+- SPMT Ecosystem: shared identity, Ally contract, risk policy, capability discovery, skill catalog, evaluations.
+- ApolloStation: implementation/control plane, authenticated owner UI, services, storage, workflows.
+- Apollo Terminal: mobile/desktop terminal UI with authenticated same-origin HTTP/WebSocket proxy.
+- OpenCode: scoped runtime in the correct repository/workspace, following shared instructions and verified tool/skill inventory.
+- Bulletin: durable queue, scheduler, leases, checkpoints, receipts, pause/stop, recovery.
+- Stella Core: goal decomposition, delegation, dependency management, supervision, bounded self-healing, evidence-backed reports.
+- Donor repositories: source-of-truth for parity evidence and behavior; port incrementally, never blindly.
+- Hostless: Node 1 and Node 2 only. Node 3 inactive; split its workload across Nodes 1/2. No Fly or Sprite runtime fallback.
+
+NON-NEGOTIABLE SAFETY / TRUTH RULES
+- Reuse existing approved credentials; create no secrets, tokens, or keys. Never expose secret values in logs, prompts, artifacts, UI, or reports.
+- Owner authorization is required for terminal sessions and consequential actions. Login alone is not equivalent to owner approval.
+- Tier 0: read-only inspection. Tier 1: reversible scoped edits/tests on branches. Tier 2: external/shared mutations require explicit task authorization. Tier 3: production deploys, migrations, deletion, secrets, OAuth, DNS, public access, permissions, purchases require owner approval.
+- Bound autonomous work by time, attempts, concurrency, resource/budget, repo, paths, and allowed operations. Stop on uncertainty, repeated failure, or scope expansion.
+- Preserve existing work and data. Backup/restore proof before any migration. No destructive cleanup.
+- Report statuses distinctly: found, authenticated, authorized, executed, validated, dispatched, deployed, live-verified. Never conflate them.
+- Every action gets traceable evidence: commit/SHA, test output summary, run IDs, task receipts, or health/read-back.
+
+PHASE 0 — BASELINE / INVENTORY
+[ ] Record repository, branch, commit SHA, clean/dirty status, active work and uncommitted changes.
+[ ] Inventory apps, services, workflows, scripts, docs, tests, runtime processes, routes, proxy rules, storage and DB ownership.
+[ ] Confirm Node 1/2 workload map; Node 3 disabled and workloads reassigned.
+[ ] Locate existing terminal, process supervisor, Bulletin, Stella Core, OpenCode, auth and MCP integrations.
+[ ] Identify existing credentials by name/scope only; do not display values or create new ones.
+[ ] Inventory CLI versions and authentication proofs (GitHub CLI, git, Node/npm, OpenCode, supported MCPs).
+[ ] Record baseline health, tests, deployment state, persistent storage and rollback paths.
+[ ] Produce a baseline report and preserve unknown/unfinished work.
+
+PHASE 1 — AUTHENTICATED APOLLO TERMINAL FIRST (P0)
+Architecture: Apollo owner UI -> same-origin backend proxy -> authenticated WebSocket/HTTP -> loopback-only terminal service -> scoped workspace/OpenCode.
+[ ] Inspect existing terminal/proxy/auth conventions and choose smallest compatible implementation.
+[ ] Pin/reproducibly install OpenCode; document version and config.
+[ ] Terminal service binds loopback only; never expose raw terminal port publicly.
+[ ] Same-origin proxy authenticates owner session on HTTP and WebSocket handshake.
+[ ] Enforce origin checks, rate limits, idle timeout, session expiry, and sanitized logs.
+[ ] Prevent arbitrary host/port forwarding and unapproved workspace access.
+[ ] Process supervisor handles start, stop, restart, health, clean shutdown and orphan cleanup.
+[ ] Non-root execution where feasible; workspace boundaries; no secret-bearing shell environment dumps.
+[ ] Mobile-friendly terminal UI: connect/reconnect, clear, copy, stop/end, diagnostics, repo/branch/SHA, dirty state.
+[ ] Show connection/auth state accurately; reconnect does not duplicate processes.
+[ ] OpenCode starts in the intended repo/worktree and reads shared contract/skills.
+[ ] Add tests for anonymous/non-owner denial, websocket auth/origin, session expiry, loopback binding, process lifecycle, workspace scope, reconnect, logging redaction.
+[ ] Run acceptance checks and capture evidence before enabling autonomous execution.
+
+TERMINAL ACCEPTANCE GATE
+[ ] Anonymous user denied.
+[ ] Non-owner denied.
+[ ] Owner opens terminal through Apollo.
+[ ] Raw terminal endpoint is not publicly reachable.
+[ ] WebSocket authentication and origin checks pass.
+[ ] Run pwd, whoami, node/npm, git status safely.
+[ ] Correct Apollo repo/workspace and branch confirmed.
+[ ] OpenCode version/help/config works.
+[ ] OpenCode reads shared Ally contract and relevant skills.
+[ ] Existing GitHub read access proven without printing credentials.
+[ ] MCP tools are listed from actual schemas and individually health/proven; no assumed credential sharing.
+[ ] Stop/end, reconnect, restart, idle timeout and sanitized diagnostics verified.
+[ ] No new secrets created; tests and audit evidence recorded.
+No unattended execution before this gate passes.
+
+PHASE 2 — OPENCODE WORKBENCH
+[ ] Workspace/repo/branch selector restricted to approved repositories.
+[ ] Isolated task worktrees and locks prevent collisions.
+[ ] Context panel displays repo, SHA, branch, dirty status, active task and scope.
+[ ] Git flow: status, fetch, diff, tests, secret scan, review; commit only authorized; push/PR only when allowed; never auto-merge by default.
+[ ] Tool inventory includes CLI, API, MCP, capability, auth and limitations with verification timestamps.
+[ ] OpenCode permissions least-privilege; shell not blanket-allowed.
+[ ] Provider/model policy supports cost-conscious options; never promise unlimited free models.
+[ ] Task queue, logs, diffs, test results, checkpoints and audit history surfaced.
+[ ] Add bounded task execution and cancel semantics.
+
+PHASE 3 — SHARED SPMT ALLY CONTRACT
+[ ] Establish canonical operating contract, AGENTS instructions, capability map, skill catalog, risk policy and eval suite.
+[ ] OpenCode and Apollo agents reference canonical files rather than drifted copies.
+[ ] Skill discovery deterministic; machine-readable index; validate links, metadata and stale skills.
+[ ] Capability discovery searches tools, integrations, prior routes, workflows and scripts before declaring unavailable.
+[ ] Shared principles: recover context, map system, choose proven route, act, verify, preserve continuity, report.
+[ ] Evaluation suite tests context recall, repo/branch awareness, correct skills, tool discovery, auth boundaries, risk decisions, evidence vocabulary, recovery, preserving user work, approvals and truthful live status.
+[ ] Ensure shared contract changes propagate with version/read-back.
+
+PHASE 4 — BULLETIN DURABLE COORDINATOR (P1)
+Audit and reuse existing Bulletin code, state, scheduler and adapters; do not build duplicate systems.
+[ ] Identify canonical queue/scheduler/state and persistence. Replace ephemeral /tmp state for durable work.
+[ ] Task envelope: ID, created/updated, goal, repo, branch/worktree, adapter, allowed paths/actions, forbidden actions, skills, preconditions, acceptance criteria, schedule/timezone, lease, attempts, state, checkpoint, evidence, errors, approvals, receipt.
+[ ] Preserve persisted state names or provide tested migrations.
+[ ] Lifecycle: queued -> leased -> running -> checkpointed -> completed/failed/cancelled/paused, map to existing actual states.
+[ ] Dispatch: lease task; validate scope/skills/tools; check adapter health; issue task envelope; inspect before editing; scoped execute; checkpoint; validate; structured result; durable receipt read-back.
+[ ] Pause/stop semantics: no new steps after accepted stop/pause; handle races and cancellation versions/timestamps.
+[ ] Scheduler: one canonical scheduler, timezone/DST, one-time and recurring jobs, idempotency, duplicate ticks, wake receipts.
+[ ] Retries bounded and classified; no repeated identical failure loops.
+[ ] OpenCode adapter supports health, capabilities, start, status, checkpoint, cancel, result, close.
+[ ] Tests: persistence, lease expiry, duplicate tick, pause/stop race, crash recovery, idempotency, receipts, adapter failure.
+[ ] Browser/remote adapters only after live acceptance tests.
+
+PHASE 5 — STELLA CORE ORCHESTRATION (P1)
+[ ] Audit existing Stella Core entry points, state, providers, tasks, schedules and capabilities; reuse.
+[ ] Decompose owner goals into measurable task graph with dependencies, scopes, acceptance criteria and risk.
+[ ] Discover capabilities and route tasks to best proven executor (OpenCode, existing agents, tools).
+[ ] Delegate through Bulletin durable envelopes; no ad hoc competing queues.
+[ ] Manage concurrency, leases, dependencies, stalled tasks, checkpoints and owner-visible progress.
+[ ] Shared continuity: goal, decisions, evidence, state, blockers and exact next action.
+[ ] Self-healing limited to evidence-backed, idempotent, reversible actions with cooldown, attempt limits and rollback.
+[ ] Safe examples: retry transient read, reclaim stale lease, resume checkpoint, rebuild cache, restart approved non-production worker.
+[ ] Approval required for production deploy, migration, deletion, secrets, OAuth, DNS, public exposure or permission widening.
+[ ] Global pause/stop and owner approval gate.
+[ ] Evals: decomposition, capability routing, dependency ordering, concurrency, recovery, approval boundaries, receipts, stop-all.
+
+PHASE 6 — DONOR PARITY / PORTING
+[ ] Snapshot donor repo SHA/branch; inventory routes, UI, behavior, services, data, auth, tests and docs.
+[ ] Compare Apollo; classify each feature: implemented, partial, missing, unverified, obsolete.
+[ ] Port behavior and dependencies, not blind file copies; reuse Apollo/shared contracts.
+[ ] Each port: brief -> isolated branch/worktree -> smallest slice -> tests -> diff/secret scan -> PR -> live acceptance when authorized.
+[ ] Protect data ownership; backup and restore proof before any migration; single-writer rules.
+Priority: StreamWeaver + Discord Stream Hub; Nebula/Chat Tag; HearMeOut; OverlayBay/Lounge. Re-rank only with evidence.
+[ ] Capture parity report and remaining gaps.
+
+PHASE 7 — SUPERVISED OVERNIGHT WORK
+[ ] Work manifest: goal, duration, max concurrency, budget/resource cap, allowed repos/paths, risk, priority, attempts, checkpoints, stop criteria, approval requirements.
+[ ] Allowed: inventory, docs, code search, scoped reversible branch edits, tests, parity reports, diagnostics, PR preparation.
+[ ] Not allowed without approval: merge, production deploy/restart, data migration/deletion, secrets, OAuth, DNS, permission/public-access changes, purchases.
+[ ] Selection loop: recover unfinished tasks; inspect queue; exclude risky tasks; lease; scope; execute bounded step; validate; checkpoint; continue only if safe.
+[ ] Idempotent work and task locks; no overlapping edits.
+[ ] Stop on repeated errors, uncertainty, budget/time limit, scope drift, missing credentials or approval.
+[ ] Morning report: completed, evidence, commits/PRs, tests, failures, checkpoints, risks, approval requests, next tasks.
+[ ] No autonomous work until terminal/Bulletin/Stella gates pass; first run supervised dry-run.
+
+PHASE 8 — VALIDATION / RELEASE / LIVE PROOF
+[ ] Terminal security and process tests.
+[ ] OpenCode integration, permissions, contract/skills and tool proofs.
+[ ] Bulletin persistence, scheduling, leases, pause/stop, recovery, receipts.
+[ ] Stella decomposition, routing, supervision, approvals and recovery.
+[ ] Format/lint, unit, integration, typecheck, build, skill/plugin validation, secret scan.
+[ ] CI and PR review.
+[ ] Deployment requires explicit authorization and correct workflow/target.
+[ ] Verify exact SHA, intended Node 1/2 app, deployment result, health/read-back, browser behavior and restart persistence.
+[ ] Offline green tests do not imply live Discord/Twitch/provider/browser success.
+[ ] Record rollback method and evidence.
+
+TASK BOARD
+P0 Terminal T001-T010: baseline; terminal design; OpenCode pin/config; loopback service; owner HTTP/WS proxy; mobile UI; canonical Ally loading; GitHub proof; MCP proofs; security tests; approved deployment/live verification.
+P1 Workbench W001-W007: repo context; worktrees; tool inventory; adapter interface; evidence panel; model policy; audit history.
+P1 Bulletin B001-B010: state audit; durable schema; adapter; pause/stop race; schedules; auth; leases/recovery; receipts; live browser proof; UI.
+P1 Stella S001-S010: inventory; capability map; decomposition; Bulletin delegation; OpenCode routing; concurrency; approval; bounded healing; evals; supervised overnight.
+P2 Parity P001-P010: donor inventory; comparison; prioritized briefs; isolated ports; tests; PRs; live acceptance; data safety; workload split; report.
+P2 Automation A001-A008: manifest; durable batch; recovery; idempotency; morning report; supervised dry run; non-prod run; expand only after owner review.
+
+OPEN CODE SESSION 1 — READ-ONLY AUDIT
+Read shared Ally instructions and relevant skills. Inspect terminal, auth, process lifecycle, workspace, OpenCode, CLI/MCP inventory, Bulletin persistence and adapters, scheduler, Stella Core, workflows, Node1/2 mapping and tests. Report exact paths/symbols, actual behavior, missing wiring, existing successful routes, smallest implementation step, validation plan. Do not edit, commit, push, dispatch workflows, deploy, or change secrets in this audit.
+
+SESSION 2 — TERMINAL IMPLEMENTATION
+Implement confirmed missing P0 items using existing conventions and shared contracts. Owner-only same-origin proxy, loopback terminal, scoped workspace, mobile UI, process lifecycle, OpenCode configuration and skill loading. No new credentials. Add tests, run full validation, inspect diff, secret scan. Do not deploy.
+
+SESSION 3 — RELEASE READINESS
+Inspect release workflow and target. Confirm SHA, gate, Node target, rollback, secret reuse and health checks. Wait for owner authorization. After approved release, independently verify run, job, intended deployment, exact SHA, health, browser behavior and persistence.
+
+HANDOFF RECORD
+Date/time; repos and SHAs; branch/worktree; Node/app; terminal security; OpenCode version/config; shared contract/skills loaded; CLI/MCP capabilities with proof; Bulletin state/persistence/scheduler/adapter; Stella status; tasks/leases/checkpoints; tests/validation; workflow/run IDs; deployment/live verification; resource limits; blockers/approval requests; rollback; exact next action.
+
+IMPLEMENTATION ORDER / STOP CONDITIONS
+Terminal baseline and secure owner access first. Then OpenCode and canonical Ally contract. Then workbench and durable Bulletin. Then Stella Core. Then donor parity. Finally supervised overnight autonomy. Each phase must pass its acceptance gate before expanding permissions. Maintain one shared task/checkpoint record. Do not stop to ask the owner to repeat context or approve routine reversible steps; reserve questions for material uncertainty or consequential actions.
+PLAN
+          cat > plan-summary.md <<'SUMMARY' 
+# Terminal-first execution plan generated
+See the complete checklist in the TXT artifact.
+SUMMARY
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spmt-opencode-apollo-terminal-first-execution-plan
+          path: spmt-opencode-apollo-terminal-first-execution-plan.txt
+          retention-days: 30
