@@ -107,6 +107,7 @@ test("Discord gateway accepts DM messages from channels outside the configured g
     socket.message(JSON.stringify({ op: 0, t: "MESSAGE_CREATE", s: 2, d: { id: "dm-message-1", channel_id: "direct-message-channel", content: "Athena, are you there?", timestamp: "2026-11-22T12:00:00Z", author: { id: "owner-user", username: "owner", global_name: "Owner", bot: false }, attachments: [{ id: "a1", filename: "context.txt", url: "https://cdn.discordapp.com/attachments/context.txt", content_type: "text/plain", size: 12 }] } }));
     assert.equal(opened.envelopes.length, 1);
     assert.equal(opened.envelopes[0].channelId, "direct-message-channel");
+    assert.notEqual(opened.envelopes[0].channelId, opened.input.connection.channelId, "DM replies must never inherit the configured guild channel");
     assert.equal(opened.envelopes[0].guildId, undefined);
     assert.equal(opened.envelopes[0].rich.attachments.length, 1);
     const sent = await driver.send({ schemaVersion: 1, tenantId: "tenant-a", provider: "discord", connectionId: "discord-main", channelId: "direct-message-channel", text: "Yes, I'm here.", idempotencyKey: "dm-reply-1", replyToMessageId: "dm-message-1" });
