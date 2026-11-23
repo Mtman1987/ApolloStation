@@ -3,6 +3,8 @@ name: Archive and clean reviewed Apollo branches
 on:
   push:
     branches: [main]
+  pull_request:
+    types: [closed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -26,7 +28,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Pushes to main are preview-only until the exact candidate list is reviewed.
-      DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != false) }}
+      DRY_RUN: "true"
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
@@ -39,6 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*'
+          MAIN_SHA="$(git rev-parse origin/main)"
 
           open_branches_file="$(mktemp)"
           closed_pr_heads_file="$(mktemp)"
@@ -210,7 +213,7 @@ jobs:
             echo "ApolloStation branch master inventory"
             echo "Captured: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "Repository: $GITHUB_REPOSITORY"
-            echo "Main SHA: $GITHUB_SHA"
+            echo "Main SHA: $MAIN_SHA"
             echo "Workflow run: $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)"
             echo "Remote refs inspected: $branch_count"
             echo "Open PR branch count: ${#open_branches[@]}"
@@ -257,7 +260,7 @@ jobs:
 
           if ! gh release view "$ARCHIVE_TAG" >/dev/null 2>&1; then
             gh release create "$ARCHIVE_TAG" \
-              --target "$GITHUB_SHA" \
+              --target "$MAIN_SHA" \
               --title "ApolloStation full-history branch archives" \
               --notes "Verified full-history Git bundles and branch master inventories captured before branch cleanup. Each cleanup run adds a unique bundle and inventory asset."
           fi
