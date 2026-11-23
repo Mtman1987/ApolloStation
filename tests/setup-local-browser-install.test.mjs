@@ -22,9 +22,19 @@ test("Chromium package install runs npm ci from an ensured prefix directory", as
     await rm(root, { recursive: true, force: true });
   }
 });
-test("Chromium package installer fails explicitly when npm exits nonzero", () => {
-  assert.throws(() => installLocalBrowserPackage(tmpdir() + "/apollo-browser-install-fail", () => ({ status: 1 })), /exit code 1/);
+test("Chromium package installer fails explicitly when npm exits nonzero", async () => {
+  const root = await mkdtemp(tmpdir() + "/apollo-browser-install-fail-");
+  try {
+    assert.throws(() => installLocalBrowserPackage(root, () => ({ status: 1 })), /exit code 1/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
-test("Chromium package installer surfaces npm spawn errors", () => {
-  assert.throws(() => installLocalBrowserPackage(tmpdir() + "/apollo-browser-install-error", () => ({ status: null, error: new Error("spawn failed") })), /spawn failed/);
+test("Chromium package installer surfaces npm spawn errors", async () => {
+  const root = await mkdtemp(tmpdir() + "/apollo-browser-install-error-");
+  try {
+    assert.throws(() => installLocalBrowserPackage(root, () => ({ status: null, error: new Error("spawn failed") })), /spawn failed/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
