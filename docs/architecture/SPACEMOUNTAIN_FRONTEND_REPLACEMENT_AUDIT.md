@@ -87,6 +87,55 @@ Target rule:
 - Use one canonical account-backed settings source (SPMT/Apollo shared settings) and adapt the legacy theme model to it.
 - Do not create competing Apollo-vs-SpaceMountain preference databases or silently discard fields. Build an explicit field mapping and report unsupported fields before migration.
 
+
+## Verified settings contract — preserve the controls and make them real
+
+A source-level inspection of the legacy `SettingsPanel.tsx`, `workspace-profile.ts`, `types.ts`, and `SHARED_THEME_BRIDGE.md` confirms that this is not a speculative settings design. The controls already have a complete preference model and a persistence/relay contract.
+
+### Canonical ownership and persistence
+
+- The legacy shared-theme specification explicitly assigns account-backed `WorkspaceProfileV1` and universal Settings to SPMT.
+- The canonical surface is `/embed/settings?mode=full&app=<app-id>`; Apollo/SpaceMountain should host or expose this existing surface rather than invent another settings database.
+- The profile is read and patched through `/api/workspace-profile`; PATCH uses the `If-Match: "workspace-<revision>"` revision guard and returns conflict state on HTTP 409.
+- The profile draft includes `appearance`, `dockSlots`, `activeOverlaySceneId`, `ttsSubscriptions`, `appThemeMappings`, and `savedThemes`.
+- `spmt.surface.updated` is an invalidation signal. The host must re-read the authoritative profile instead of trusting profile data in the message.
+- `SPACEMOUNTAIN_THEME` v2 is a compatibility/presentation relay for embedded apps, not durable state ownership.
+
+### Exact appearance fields to retain
+
+The legacy preference model and profile converter cover:
+- Theme and color: `themeId`, `accentColor`, `accentSaturation`.
+- Visual effects: `glowIntensity`, `borderStrength`, `borderGlow`, `hoverGlow`.
+- Cosmos/background: `starDensity`, `shootingStars`, `nebulaIntensity`, `parallaxDepth`.
+- Surfaces: `glassOpacity`, `blurStrength`, `cornerRadius`.
+- Layout: `density`, `sidebarCollapsed`, `sidebarStyle`, `sidebarPosition`, `topbarStyle`, `tabStyle`, `tabPosition`.
+- Chat: `chatTransparency`, `showAvatars`.
+- Motion: `smoothTransitions`, and nested animation `enabled`, `speed`, `particles`, `shootingStars`.
+- Voice UI: `pushToTalk`, `pushToTalkKey`, `micButtonStyle`, `voiceWaveStyle`.
+- Accessibility: nested `highContrast`, `colorVisionMode`, `textScale`, `reduceMotion`, `focusHighlight`.
+
+The UI also exposes four established preset identities: `solar-flare`, `nebula-purple`, `oceanic-blue`, and `aurora-green`. Keep these IDs stable so saved themes and app mappings remain valid.
+
+### Wiring requirements
+
+1. Every control must update the in-memory appearance state immediately and visibly affect the Apollo shell/component styles where that capability exists.
+2. Persist the full normalized appearance through the canonical revision-guarded workspace profile API; handle 409 by reloading/reconciling rather than overwriting another device's changes.
+3. On startup and after `spmt.surface.updated`, re-read the canonical profile and hydrate all controls and rendered tokens from it.
+4. Relay the derived appearance to embedded app frames using the versioned compatibility envelope; do not treat the relay as the database.
+5. Keep voice/chat-specific settings available even when the current screen cannot use them; apply them in capable chat/voice surfaces.
+6. Saved theme import/export/apply/delete and app-theme mappings must use the existing profile fields, not localStorage as durable storage.
+7. Any field not yet consumed by a component must remain round-trippable and be explicitly marked as pending effect implementation. Never silently drop it.
+
+### Acceptance checks for the settings replacement
+
+- Change each range/toggle/segmented control and verify the corresponding visual or behavioral effect, not merely a state label change.
+- Reload and verify values are restored from the canonical profile.
+- Change settings in the SPMT Settings surface and verify Apollo refreshes after the invalidation event.
+- Verify embedded app frames receive the same derived appearance update.
+- Verify all four preset IDs and saved theme round trips.
+- Verify reduced-motion, high-contrast, text scale, color-vision mode, and focus highlight have actual accessibility effects.
+- Verify profile revision conflicts do not lose edits.
+
 ## Proposed replacement boundary
 
 1. Keep Apollo's existing `apps/spacemountain-web` shell and route composition.
