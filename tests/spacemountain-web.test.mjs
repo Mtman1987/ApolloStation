@@ -104,7 +104,7 @@ test("linked-provider recovery is username-bound, password-setting, and automati
 
 test("missing local Apollo passwords immediately expose direct provider recovery", () => {
   const login = client.slice(client.indexOf("async function submitApolloLogin"), client.indexOf("async function submitApolloRegistration"));
-  assert.match(login, /valid local password/);
+  assert.match(login, /Password setup required — verify your linked account to continue/);
   assert.match(login, /recoveryStart\.hidden = false/);
   assert.match(login, /recoveryDiscord\.focus/);
   assert.match(page, /Verify with Discord/);
