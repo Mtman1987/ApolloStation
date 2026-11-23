@@ -282,8 +282,6 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
     refreshOnceSignedIn();
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     sessionRecovery.authenticated();
-  } catch (error) {
-    setStatus(message(error), "error");
   } finally {
     if (button) button.disabled = false;
   }
@@ -968,7 +966,7 @@ async function submitApolloLogin() {
     if (detail.toLowerCase().includes("valid local password") || (error instanceof SpmtApiError && error.status === 401)) {
       recoveryStart.hidden = false;
       recoveryMessage.textContent = "Enter your Apollo username above, then choose the Discord or Twitch identity already linked to it.";
-      setStatus("Choose a linked provider to recover your existing Apollo account.", "error");
+      setStatus("This account needs a local password. Verify the Discord or Twitch account already linked to it to set one.", "working");
       recoveryStart.scrollIntoView({ behavior: "smooth", block: "center" });
       recoveryDiscord.focus({ preventScroll: true });
       return;
