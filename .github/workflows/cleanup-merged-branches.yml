@@ -28,7 +28,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Pushes to main are preview-only until the exact candidate list is reviewed.
-      DRY_RUN: true
+      DRY_RUN: "true"
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
