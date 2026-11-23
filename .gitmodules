@@ -1,3 +1,3 @@
-[submodule "apps/spacemountain"]
-	path = apps/spacemountain
+[submodule "legacy/spacemountain-live"]
+	path = legacy/spacemountain-live
 	url = https://github.com/Mtman1987/spacemountain-live.git
