@@ -407,7 +407,6 @@ jobs:
           APOLLO_RUNTIME_SHARED_TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           APOLLO_RUNTIME_SHARED_VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
           APOLLO_RUNTIME_SHARED_TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
-          APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_NODE_ROLE: ${{ matrix.node }}
         run: node scripts/hostless/ensure-node-app.mjs "${APOLLO_NODE_ROLE}" "${GITHUB_SHA}"
 
