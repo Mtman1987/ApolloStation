@@ -1,135 +1,62 @@
-# Apollo Two-Node Resource Pool & Local Preview Plan
+# UI Port Visual Proof & Node Deployment Flow
 
-Status: Proposed architecture and acceptance plan. Do not deploy or change live Hostless nodes from this document alone.
+Status: Scope narrowed by owner. This is a visual UI proof—not a full migration acceptance or resource-pool project. Do not deploy to live nodes from this document.
 
-## Owner intent
+## Goal
 
-- Node 1 and Node 2 together host the complete Apollo app portfolio.
-- Keep all existing live Node 1/Node 2 deployments intact until the full replacement build is locally previewed and accepted.
-- Node 1 currently has limited capacity; replacement must be an intentional complete-stack cutover, not piecemeal app additions.
-- Use every permitted free-tier resource efficiently, but never exceed provider limits, hide usage, or sacrifice reliability/data integrity.
-- Build, validate, preview, and measure locally (or in an isolated, non-production preview) before production deployment.
-- When two nodes have headroom, cross-node workload placement should be possible; overflow must be controlled and reversible.
+Port the existing app UIs into Apollo's consolidated Node deployment structure, then produce a local browser screenshot showing the port visually works before deployment.
 
-## 1. Local preview: no phone install, no production deployment
+The legacy backends are already known to work; this phase is primarily consolidation and wiring. Do not spend days fixing unrelated backend behavior or running Apollo's 2,000-rule validation suite against legacy apps.
 
-Prefer a browser-accessible preview on a development workstation, using the existing monorepo scripts and standard desktop browser. The user should be able to open a URL and inspect the integrated Apollo UI without installing an app on their phone.
+## Scope
 
-Inventory existing preview tools before creating a new system:
-- scripts/hostless/run-private-preview.mjs
-- scripts/hostless/deploy-private-preview.mjs
-- package scripts and build targets
-- browser/e2e and screenshot tooling
+- Preserve the original app UI, navigation, layout, styles, screens, and controls as closely as possible.
+- Consolidate Node 1 apps into a single deployment flow.
+- Create a targeted app-bundle validation/build path that does not run Apollo's extensive validation suite against apps that are structurally different from Apollo.
+- Use fixture/mock responses or safely disabled external integrations as needed for local preview.
+- Launch the integrated UI locally in a desktop browser.
+- Capture screenshot proof and share it for owner review before deployment.
 
-The current private preview runner starts isolated SPMT + SpaceMountain processes and uses sandbox fixtures with outbound mode disabled. It is **not yet proven to preview the entire two-node app portfolio**. Extend it only after tracing existing launchers, service dependencies, ports, runtime config, and app data boundaries.
+## Keep validation separate
 
-Preview acceptance:
-1. Node 1 and Node 2 compositions can both be launched locally with clear ports.
-2. Fixtures/test databases only; no production user data.
-3. No outbound actions, live bots, OAuth writes, webhooks, or production integrations unless explicitly mocked or safely disabled.
-4. Browser navigation provides a desktop-width and mobile-width view.
-5. Both node compositions and their shared routing are visible, with a resource/placement dashboard.
-6. Capture screenshots and publish a downloadable build/test artifact for review when a workflow is used.
-7. Preview can be stopped with one command and leaves no background processes or persistent changes.
-8. Acceptance evidence is recorded before production cutover.
+- Apollo's own core validation remains unchanged.
+- Migrated app bundle gets only relevant checks: required files/config, build/start, route or UI smoke checks, and basic integration wiring.
+- Do not delete or weaken Apollo validation globally.
+- Do not invent a new thousand-test acceptance burden for legacy app UIs.
+- Do not require production credentials, live bots, OAuth writes, webhooks, or real user data to render the preview.
 
-Do not call a Hostless deploy workflow a local preview. A hosted private preview may be a fallback, but it must use a separate app/project, password gate, no production volume, and fixture data only.
+## Visual proof acceptance
 
-## 2. Full portfolio inventory and node mapping
+1. The ported app screens load in the integrated shell.
+2. Navigation and major routes render.
+3. Original UI structure and styling are visibly retained.
+4. Key controls are present and wired to safe preview behavior where practical.
+5. Desktop browser screenshot is captured (mobile viewport is optional, not a blocker).
+6. Screenshot artifact is available for owner review.
+7. No production deployment or data changes occur during this proof.
 
-Before deployment, produce an authoritative inventory for every app/service:
-- user-facing entrypoint, internal service and worker
-- current repo/path and build/start command
-- ports and health checks
-- CPU/memory footprint (idle and representative peak)
-- persistent data path, DB owner, backup/export/import method
-- storage footprint and growth estimates
-- required secrets/integrations
-- dependencies and traffic direction
-- node affinity constraints and reason
+## Deployment flow
 
-Proposed initial placements (validate against measured dependencies):
-- Node 1: SPMT authority, SpaceMountain, OverlayBay, core shell/control-plane services, and apps that need authority-local integration.
-- Node 2: Chat Gateway, StreamWeaver, Discord Stream Hub, Nebula Arcade and other chat/media workers.
-- HearMeOut/media worker: assign only after measuring storage and memory; avoid storing large media on a scarce node if external/object storage or a user-controlled source can be used.
+- Node 1's consolidated apps are built and deployed through one dedicated app-bundle flow.
+- The bundle flow is not gated by Apollo's full validation suite; it runs its own focused build/smoke checks.
+- Node 2 follows the same consolidation approach for its assigned apps.
+- Keep existing live deployments intact until screenshot review and explicit cutover approval.
+- Do not deploy from this plan alone.
 
-## 3. Two-node shared capacity / overflow placement
+## Out of scope for this visual proof
 
-Treat the nodes as a logical pool for eligible stateless workloads, not as one magically shared filesystem or process.
+- Full backend parity audit.
+- Rewriting known-working backends.
+- Full Apollo validation suite.
+- Resource overflow scheduler, cross-node workload movement, load/chaos testing.
+- Data migration, destructive cleanup, or production cutover.
 
-Implement a placement scheduler/dispatcher with:
-- Node capacity snapshots: available memory, CPU/worker slots, disk quota, and app-specific limits.
-- Workload classes: stateless, cache/temporary, persistent/stateful, latency-sensitive, singleton/authority, and bot connection singleton.
-- Placement policy: prefer configured home node; if capacity thresholds are reached, move/dispatch eligible tasks to the other node if it has headroom.
-- Node 1 overflow may route to Node 2; Node 2 overflow may route to Node 1.
-- Admission checks and hysteresis to prevent rapid oscillation between nodes.
-- Reservations and maximum concurrency per workload; avoid accepting work when both nodes are saturated.
-- Graceful degradation/backpressure: queue or reject with a clear retry signal rather than crash or overcommit.
-- Health-aware routing: exclude unhealthy nodes; reintroduce only after a stability window.
-- Workload-specific routing and sticky placement when session/state locality is required.
-- Capacity calculations must include service baseline, cron/dispatcher, shared dependencies, and safety reserve.
+## Immediate sequence
 
-## 4. Non-negotiable safety/data constraints
-
-- Never move authoritative SQLite files or live DB writers across nodes as an overflow mechanism.
-- Persistent/stateful services remain pinned unless a separately designed replication/ownership mechanism exists.
-- Do not duplicate Discord/Twitch bot sessions or singleton workers without explicit sharding/lease ownership.
-- Shared state and job queues must use the established remote durable backend (Turso where appropriate), with tenant and permission boundaries preserved.
-- Temporary files/cache can be overflowed only if they are disposable and cleanup/TTL are implemented.
-- Do not treat free-tier storage from different accounts as a combined filesystem. Cross-node capacity is logical scheduling, not shared disks.
-- Keep owner, tenant, and user authorization checks at the API boundary, not only in the router.
-- Do not rotate credentials or provider keys to evade rate limits or free-tier restrictions. Resource pooling must stay within provider terms and explicit quota limits.
-- Ensure a single owner for migrations and DB writes, backups before any cutover, and rollback tested.
-
-## 5. Resource efficiency / capacity envelope
-
-Build a measured capacity dashboard rather than assuming quotas:
-- Hostless account/project/app limits, actual CPU and memory usage, storage allocations and current consumption.
-- Per-app runtime and build image size, idle memory, peak memory, CPU, request concurrency, and temporary disk.
-- Build artifact sizes and dependency duplication.
-- SQLite/Turso usage, indexes, WAL size and cleanup/retention.
-- Cache and media retention policy.
-- Node capacity safety reserve; keep emergency headroom and do not target 100% utilization.
-- Identify heavy services and options to consolidate shared libraries, separate workers, use lazy loading, and scale concurrency safely.
-
-## 6. Deployment/cutover gates
-
-Production cutover is a separate, explicit operation after review:
-1. Inventory complete; every app/service has an owner and destination.
-2. Both local node compositions build and run.
-3. Local integration tests and browser acceptance pass.
-4. Resource measurements fit both node budgets with safety reserve.
-5. Backups/export and restore validation completed.
-6. Persistent paths and Turso ownership verified; no unintended migrations.
-7. Bot singleton/lease rules verified.
-8. Node 1/2 deployment plans and secrets are audited.
-9. Deploy Node 1 then verify; deploy Node 2 then verify (or only use parallel rollout if dependencies and workflow explicitly prove it safe).
-10. Confirm commit, health, UI, routes, data, and integrations after each.
-11. Rollback path and previous deployment identifiers recorded.
-
-**No live deployment is authorized by this plan.** The user wants a full two-node replacement only after the complete portfolio is locally proven and approved.
-
-## 7. Work sequence
-
-1. Finish current migration/porting work.
-2. Inventory the full app/service portfolio and existing local preview tools.
-3. Build complete Node 1 and Node 2 local compositions, with fixture data and integration stubs.
-4. Create a browser-accessible local preview (desktop, not phone installation); add preview screenshots/artifact workflow if needed.
-5. Add cross-node capacity measurement and eligible-workload overflow routing.
-6. Run load/chaos tests: node unavailable, saturation, queue full, restart, stale capacity, sticky sessions, and DB ownership.
-7. Review/accept the preview.
-8. Backup, cutover, verify, and roll back if any gate fails.
-
-## 8. Initial acceptance checklist
-
-- [ ] Complete app portfolio present (no missing app or worker).
-- [ ] Node 1/2 start locally using documented commands.
-- [ ] Local preview accessible from a desktop browser.
-- [ ] No production data or credentials in preview.
-- [ ] Every service has health/readiness checks.
-- [ ] Capacity dashboard reflects measured, not guessed, values.
-- [ ] Eligible stateless work can overflow bidirectionally.
-- [ ] Stateful/singleton work remains pinned or lease-controlled.
-- [ ] Node loss and saturation are tested.
-- [ ] Build and test artifact/screenshots available for review.
-- [ ] Production cutover not performed before explicit approval.
+1. Inventory only the UI/app paths and existing Node deployment entrypoints needed for the port.
+2. Port and consolidate the apps without redesigning their UIs.
+3. Add a lightweight dedicated bundle build/smoke flow.
+4. Start locally and open in a desktop browser.
+5. Capture and review screenshot proof.
+6. Continue wiring only the visible gaps identified by the screenshot.
+7. Wait for explicit approval before deployment.
