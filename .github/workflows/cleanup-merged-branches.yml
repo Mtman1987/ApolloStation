@@ -104,7 +104,7 @@ jobs:
 
           is_open_pr_branch() {
             local branch="$1" candidate
-            for candidate in "\${open_branches[@]}"; do
+            for candidate in "${open_branches[@]}"; do
               [[ "$candidate" == "$branch" ]] && return 0
             done
             return 1
@@ -112,7 +112,7 @@ jobs:
 
           is_protected_branch() {
             local branch="$1" candidate
-            for candidate in "\${protected_branches[@]}"; do
+            for candidate in "${protected_branches[@]}"; do
               [[ "$candidate" == "$branch" ]] && return 0
             done
             return 1
@@ -126,7 +126,7 @@ jobs:
 
           while read -r remote_ref sha; do
             [[ -z "$remote_ref" ]] && continue
-            branch="\${remote_ref#origin/}"
+            branch="${remote_ref#origin/}"
             branch_count=$((branch_count + 1))
             reason=""
 
@@ -151,7 +151,7 @@ jobs:
               reason="branch head is already contained in main"
             elif grep -Fxq "$branch $sha" "$merged_pr_heads_file"; then
               reason="exact head of a pull request merged into main"
-            elif [[ "\${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
+            elif [[ "${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
               reason="closed PR individually reviewed as superseded"
             else
               inventory_lines+=("KEEP $branch $sha — unique/unmerged or not individually reviewed")
@@ -174,20 +174,20 @@ jobs:
             echo "Cleanup mode: DRY_RUN=$DRY_RUN"
             echo
             echo "Open PR branches:"
-            printf '  %s\n' "\${open_branches[@]}"
+            printf '  %s\n' "${open_branches[@]:-}"
             echo
             echo "Explicitly protected recovery branches:"
-            printf '  %s\n' "\${protected_branches[@]}"
+            printf '  %s\n' "${protected_branches[@]}"
             echo
             echo "Branch dispositions:"
-            printf '%s\n' "\${inventory_lines[@]}"
+            printf '%s\n' "${inventory_lines[@]}"
           } > "$inventory_file"
 
           echo "Inspected $branch_count remote branch refs."
-          echo "Eligible branches: \${#candidate_branches[@]}"
-          printf '%s\n' "\${inventory_lines[@]}"
+          echo "Eligible branches: ${#candidate_branches[@]}"
+          printf '%s\n' "${inventory_lines[@]}"
 
-          if [[ "\${#candidate_branches[@]}" -eq 0 ]]; then
+          if [[ "${#candidate_branches[@]}" -eq 0 ]]; then
             {
               echo "### Apollo branch cleanup"
               echo "Inspected $branch_count refs. No eligible branches to delete."
@@ -200,9 +200,9 @@ jobs:
           if [[ "$DRY_RUN" == "true" ]]; then
             {
               echo "### Apollo branch cleanup — dry run"
-              echo "Inspected $branch_count refs. Eligible: \${#candidate_branches[@]}. No branches were deleted."
-              for index in "\${!candidate_branches[@]}"; do
-                echo "  - \${candidate_branches[$index]} — \${candidate_reasons[$index]}"
+              echo "Inspected $branch_count refs. Eligible: ${#candidate_branches[@]}. No branches were deleted."
+              for index in "${!candidate_branches[@]}"; do
+                echo "  - ${candidate_branches[$index]} — ${candidate_reasons[$index]}"
               done
             } >> "$GITHUB_STEP_SUMMARY"
             echo "Dry run complete. No archive or deletion was performed."
@@ -237,9 +237,9 @@ jobs:
           git bundle verify "$verified_bundle"
           bundle_heads="$(git bundle list-heads "$verified_bundle")"
 
-          for index in "\${!candidate_branches[@]}"; do
-            branch="\${candidate_branches[$index]}"
-            sha="\${candidate_shas[$index]}"
+          for index in "${!candidate_branches[@]}"; do
+            branch="${candidate_branches[$index]}"
+            sha="${candidate_shas[$index]}"
             if ! grep -Fqx "$sha refs/remotes/origin/$branch" <<<"$bundle_heads" \
               && ! grep -Fqx "$sha refs/heads/$branch" <<<"$bundle_heads"; then
               echo "Archive does not contain the exact candidate ref: $branch ($sha)" >&2
@@ -251,16 +251,16 @@ jobs:
           # causes the entire delete operation to fail rather than deleting a newer branch.
           push_args=(--atomic)
           refspecs=()
-          for index in "\${!candidate_branches[@]}"; do
-            branch="\${candidate_branches[$index]}"
-            sha="\${candidate_shas[$index]}"
+          for index in "${!candidate_branches[@]}"; do
+            branch="${candidate_branches[$index]}"
+            sha="${candidate_shas[$index]}"
             push_args+=("--force-with-lease=refs/heads/$branch:$sha")
             refspecs+=(":refs/heads/$branch")
           done
-          git push "\${push_args[@]}" origin "\${refspecs[@]}"
+          git push "${push_args[@]}" origin "${refspecs[@]}"
 
           # Verify every intended deletion against the remote before reporting success.
-          for branch in "\${candidate_branches[@]}"; do
+          for branch in "${candidate_branches[@]}"; do
             if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
               echo "Branch still exists after cleanup: $branch" >&2
               exit 1
@@ -270,7 +270,7 @@ jobs:
           {
             echo "### Apollo branch cleanup"
             echo "Inspected $branch_count refs."
-            echo "Deleted \${#candidate_branches[@]} reviewed branches after verifying the full-history archive."
+            echo "Deleted ${#candidate_branches[@]} reviewed branches after verifying the full-history archive."
             echo "Archive release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$ARCHIVE_TAG"
             echo "Bundle: $bundle_file (SHA-256: $bundle_sha)"
             echo "Inventory: $inventory_file (SHA-256: $inventory_sha)"
@@ -278,6 +278,6 @@ jobs:
             echo "Protected recovery branches and all open PR branches were preserved."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Verified archive and cleanup complete. Deleted \${#candidate_branches[@]} branches."
+          echo "Verified archive and cleanup complete. Deleted ${#candidate_branches[@]} branches."
           rm -rf "$verify_dir"
           rm -f "$open_branches_file" "$merged_pr_heads_file"
