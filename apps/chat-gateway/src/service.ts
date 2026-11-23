@@ -206,6 +206,7 @@ export class SupervisedChatGatewayService {
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   private readonly discordDashboard: NebulaDiscordDashboardEgressV1;
   private readonly discordDriver: ReturnType<typeof createFirstPartyChatProviderAdapters>["discord"];
+  private discordDmAssistant?: DiscordDmAdultModeAssistant;
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -243,12 +244,11 @@ export class SupervisedChatGatewayService {
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
     let connectedGateway: ChatGatewayRuntime | undefined;
-    let discordDmAssistant: DiscordDmAdultModeAssistant | undefined;
     if (options.streamweaver) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
-      discordDmAssistant = new DiscordDmAdultModeAssistant({ client: streamweaverClient, databasePath: options.databasePath, sender: adapters.discord });
+      this.discordDmAssistant = new DiscordDmAdultModeAssistant({ client: streamweaverClient, databasePath: options.databasePath, sender: adapters.discord });
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
       const generationMode=options.operationMode==="active"?(process.env.STREAMWEAVER_GENERATION_STORE??"sqlite"):"sqlite";if(generationMode!=="sqlite"&&generationMode!=="turso")throw new Error("STREAMWEAVER_GENERATION_STORE must be sqlite or turso");if(generationMode==="turso"&&(!process.env.STREAMWEAVER_TURSO_DATABASE_URL||!process.env.STREAMWEAVER_TURSO_AUTH_TOKEN))throw new Error("STREAMWEAVER_GENERATION_STORE=turso requires STREAMWEAVER_TURSO_DATABASE_URL and STREAMWEAVER_TURSO_AUTH_TOKEN");const generationSettings=this.generationSettings=generationMode==="turso"?new AsyncStreamWeaverGenerationStore({mode:"turso",url:process.env.STREAMWEAVER_TURSO_DATABASE_URL!,authToken:process.env.STREAMWEAVER_TURSO_AUTH_TOKEN!}):new StreamWeaverGenerationStore(options.streamweaver.databasePath);
       const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=(await generationSettings.read(context.tenantId)).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
@@ -374,7 +374,7 @@ export class SupervisedChatGatewayService {
         // DMs are private: handle only owner-linked messages through Stellar,
         // and never persist them into the shared Commlink chat projection.
         if (envelope.provider === "discord" && !envelope.guildId) {
-          await discordDmAssistant?.handle(envelope);
+          await this.discordDmAssistant?.handle(envelope);
           return false;
         }
         // OAuth/provider connections are dynamic. Register the exact channel
@@ -549,7 +549,7 @@ export class SupervisedChatGatewayService {
       }
     }
   }
-  async close() { await this.tiktok?.close();await this.supervisor.stop(); discordDmAssistant?.close(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); await this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.tiktok?.close();await this.supervisor.stop(); this.discordDmAssistant?.close(); await this.nebulaArcade?.close(); await this.streamweaver?.close(); await this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function isSharedSpaceMountainTwitchConnection(connection: ProviderConnectionConfigV1) {
