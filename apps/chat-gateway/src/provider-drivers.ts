@@ -298,7 +298,7 @@ function parseDiscord(value: unknown, c: ProviderConnectionConfigV1): ProviderCh
   const m = record(value);
   if (!m) return;
   const guildId = scalarString(m.guild_id), channelId = scalarString(m.channel_id);
-  const directMessage = !guildId && [1,3].includes(numberValue(m.type) ?? -1);
+  const directMessage = !guildId && numberValue(m.type) === 1;
   if (!channelId || (directMessage ? !/^[0-9]{15,22}$/.test(channelId) : channelId !== c.channelId)) return;
   const rich=parseDiscordRich(m,"message");
   const embedText=rich?.embeds?.slice(0,4).flatMap(item=>[item.title,item.description].filter(Boolean)).join("\n").slice(0,2000)??"";
