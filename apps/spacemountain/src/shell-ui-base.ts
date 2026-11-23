@@ -263,7 +263,7 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--spmt-accent", theme.accent);
     root.style.setProperty("--spmt-accent-secondary", theme.accentSecondary);
     document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme.accent);
-    root.style.setProperty("--spmt-glow", `${recordNumber(appearance, "glowIntensity") ?? 55}%`);
+    root.style.setProperty("--spmt-glow", String((recordNumber(appearance, "glowIntensity") ?? 55) / 100));
     root.style.setProperty("--spmt-stars", String((recordNumber(appearance, "starDensity") ?? 70) / 100));
     root.style.setProperty("--spmt-glass-opacity", String((recordNumber(appearance, "glassOpacity") ?? 76) / 100));
     root.style.setProperty("--spmt-blur", `${recordNumber(appearance, "blurStrength") ?? 18}px`);
