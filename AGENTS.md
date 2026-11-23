@@ -22,3 +22,12 @@
 ## Runtime constraints
 
 There is no local Qwen model for this deployment. Do not provision or launch Qwen or wait for it. Stella uses the existing OpenAI integration when its private credential is configured; AI availability must not block the rest of Apollo.
+
+## Secrets and credential approval (owner-mandated)
+
+- Reuse the existing GitHub Actions secrets and credentials already provisioned for ApolloStation. Do not invent, create, rename, duplicate, or proliferate secret names or credentials to solve a mapping or configuration problem.
+- Runtime-secret synchronization may copy existing, explicitly mapped GitHub Actions secret values to Hostless Node 1 and Node 2. It must not create GitHub secrets or generate replacement credentials. Updating an existing GitHub secret is picked up by the next deployment that synchronizes it.
+- Before adding any new secret name, external credential, API key, token, or secret-generation step, stop and ask the owner. Explain the exact external requirement and why none of the existing credentials can be reused. Proceed only if the owner explicitly approves that specific request; approval or denial applies only to that request.
+- If approval is denied or not yet given, do not add the secret or build an alternate credential path. Reuse an existing credential where technically valid, or leave the integration unconfigured and report the concrete dependency.
+- Never expose secret values in chat, commits, logs, workflow output, or verification reports. Verify presence using names/status only.
+- Do not mistake adding a workflow mapping for creating a secret: mappings must reference already-existing repository secrets, and missing values must be reported rather than silently replaced or fabricated.
