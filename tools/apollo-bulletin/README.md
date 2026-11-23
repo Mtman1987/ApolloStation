@@ -33,6 +33,8 @@ Node 1 starts the Bulletin API/renderer on loopback port 3210. SpaceMountain's e
 
 The Node 1 app uses one embedded Hostless cron job, `apollo-bulletin-resumer`, configured in the root `hostless.yaml`. It wakes once per minute and asks the existing Bulletin service to process at most one due task. Hostless owns the schedule and run history; task schedules, continuation state, and activity remain in Turso. Do not create a separate Hostless cron job per task. The cron endpoint is protected by `APOLLO_BULLETIN_CRON_TOKEN`, falling back to the existing `APOLLO_BROWSER_CONTROL_PASSWORD`, and is the only Bulletin route that does not require an interactive Apollo session.
 
+The Node 1 launcher explicitly enables the managed Chromium worker, requires Turso persistence, and disables local polling in favor of Hostless cron. Readiness requires the configured owner actor pin (`APOLLO_BULLETIN_OWNER_ACTOR_ID`), the browser session when Chromium is required, required persistence, and the Hostless cron mode/token. The public readiness payload exposes only aggregate cron execution evidence (last tick timestamps/count), never task IDs or queue contents. The release workflow waits for a recent completed Hostless tick before treating Bulletin as ready.
+
 Set `APOLLO_BULLETIN_PUBLIC_URL` to the public Node 1 origin if it differs from the current default. Queue and browser session persistence use the existing shared Turso database, not a Hostless volume. Node 1 accepts `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`, paired with `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`. The Node 1 process disables its own polling loop when Hostless cron is enabled.
 
 ## Deliberate prototype boundary

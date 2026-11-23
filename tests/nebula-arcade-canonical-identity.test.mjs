@@ -42,7 +42,10 @@ test("every executable integration names Nebula Arcade as the sole current owner
       "config/apollo-parity-capabilities.v1.json",
       ".github/workflows/apollo-parity-nightly.yml",
     ]).has(relativePath);
-    return relativePath !== "config/apollo-parity-tracker.v1.json" && !migrationOnly && !donorProvenanceOnly && forbidden.test(source) ? [relativePath] : [];
+    const planningOnly = new Set([
+      ".github/workflows/generate-spmt-terminal-first-plan.yml",
+    ]).has(relativePath);
+    return relativePath !== "config/apollo-parity-tracker.v1.json" && !migrationOnly && !donorProvenanceOnly && !planningOnly && forbidden.test(source) ? [relativePath] : [];
   });
   assert.deepEqual(leaks, [], `obsolete Games Hub identity leaked into executable files: ${leaks.join(", ")}`);
 

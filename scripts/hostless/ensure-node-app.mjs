@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
+import { resolveNode1StellarChatConfig } from "./node1-runtime-config.mjs";
 
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
@@ -241,9 +242,24 @@ console.log(`Resolved ${node.label} to Hostless project ${nameOf(project)} (${pr
 // Keep OAuth redirects and browser recovery anchored to the stable Hostless
 // origin. The custom domain is an additional alias, not the callback origin.
 if (nodeKey === "node1") {
-  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "--app", node.app, "--project", String(projectId)],
-    "Pin Apollo OAuth callback origin to the stable Hostless app URL");
-  console.log("Pinned SPMT_PUBLIC_URL to the stable Node 1 Hostless origin.");
+  const stellar = resolveNode1StellarChatConfig(
+    process.env.APOLLO_RUNTIME_NODE1_STELLAR_WORKER_CREDENTIAL,
+    process.env.APOLLO_RUNTIME_SHARED_STELLAR_WORKER_CREDENTIAL,
+  );
+  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", `SPMT_STELLAR_CHAT_ENABLED=${stellar.enabled}`, "--app", node.app, "--project", String(projectId)],
+    "Configure Node 1 production URL and credential-safe Stellar Chat flag");
+  if (stellar.credential) {
+    runCli(["env", "set", `STELLAR_WORKER_CREDENTIAL=${stellar.credential}`, "--write-only", "--app", node.app, "--project", String(projectId)],
+      "Synchronize the existing Stellar Chat worker credential");
+  }
+  const ownerActorId = process.env.APOLLO_RUNTIME_NODE1_APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim();
+  if (ownerActorId) {
+    runCli(["env", "set", `APOLLO_BULLETIN_OWNER_ACTOR_ID=${ownerActorId}`, "--app", node.app, "--project", String(projectId)],
+      "Configure the non-secret Bulletin owner actor pin");
+  } else {
+    console.warn("Bulletin owner actor pin is not configured; task APIs remain locked and live readiness will fail closed.");
+  }
+  console.log("Configured Node 1 OAuth and safe Stellar Chat state; credential values are not logged.");
 }
 
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
