@@ -413,7 +413,7 @@ jobs:
 
       - name: Verify live Node 1 and Bulletin readiness
         if: ${{ matrix.node == 'node1' }}
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           node --input-type=module <<'NODE'
           const base = "https://apollo-node-1.hostless.app";
