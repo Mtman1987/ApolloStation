@@ -85,7 +85,6 @@ jobs:
           # Nebula needs a real Hostless worker and an enabled provider bot, not the legacy Sprite default.
 
           APOLLO_RUNTIME_NODE2_SPMT_OUTBOUND_MODE: "enabled"
-          APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_DATABASE_PATH: "/tmp/apollo-streamweaver.sqlite"
           APOLLO_RUNTIME_NODE2_STREAMWEAVER_WORKER_CREDENTIAL: ${{ secrets.STREAMWEAVER_WORKER_CREDENTIAL }}
