@@ -45,3 +45,16 @@ test("one-time ISO timestamps with offsets remain absolute instants", () => {
 test("one-time schedules reject invalid calendar dates", () => {
   assert.throws(() => normalizeSchedule({ type:"once", runAt:"2026-02-30T09:00", timeZone:"America/Chicago" }, Date.UTC(2026,1,1)), /date is invalid/);
 });
+
+test("one-time local wall-clock schedules reject out-of-range hours, minutes and seconds", () => {
+  const invalid = ["2026-03-08T24:00", "2026-03-08T09:60", "2026-03-08T09:30:60"];
+  for (const runAt of invalid) {
+    assert.throws(() => normalizeSchedule({ type:"once", runAt, timeZone:"America/Chicago" }, Date.UTC(2026,2,7,12)), /time is invalid/);
+  }
+});
+test("one-time offset timestamps reject invalid dates and timezone offsets", () => {
+  const invalid = ["2026-02-30T09:30:00-06:00", "2026-03-08T09:30:00+99:00"];
+  for (const runAt of invalid) {
+    assert.throws(() => normalizeSchedule({ type:"once", runAt, timeZone:"America/Chicago" }, Date.UTC(2026,2,7,12)));
+  }
+});
