@@ -13,8 +13,8 @@ function localDateTimeToUtc(year, month, day, hour, minute, timeZone) {
 }
 function parseRunAt(value, timeZone) {
   if (typeof value === "string") {
-    const local = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})(?::(\\d{2}))?$/);
-    const absolute = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d{1,3}))?)?(Z|[+-]\\d{2}:\\d{2})$/);
+    const local = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    const absolute = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})$/);
     const match = local || absolute;
     if (match) {
       const year=Number(match[1]), month=Number(match[2]), day=Number(match[3]), hour=Number(match[4]), minute=Number(match[5]), second=Number(match[6]||0);
@@ -30,7 +30,7 @@ function parseRunAt(value, timeZone) {
       }
       return localDateTimeToUtc(year,month,day,hour,minute,timeZone)+second*1000;
     }
-    if(/^\\d{4}-\\d{2}-\\d{2}T/.test(value))throw new Error("One-time schedule date/time is invalid");
+    if(/^\d{4}-\d{2}-\d{2}T/.test(value))throw new Error("One-time schedule date/time is invalid");
   }
   return new Date(value).getTime();
 }
