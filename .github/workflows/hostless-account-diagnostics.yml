@@ -69,3 +69,28 @@ jobs:
             }
           }
           NODE
+      - name: Publish node result pointer to Apollo diagnostics issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          NODE_LABEL: ${{ matrix.node }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = 'Hostless Node 1 / Node 2 diagnostics';
+            const body = [
+              'Read-only Hostless diagnostics executed for **' + process.env.NODE_LABEL + '**.',
+              '',
+              '- Run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Commit: ' + context.sha,
+              '- Matrix target: ' + process.env.NODE_LABEL,
+              '',
+              'Open the run and select the matching matrix job to read the endpoint HTTP statuses and redacted response summaries.'
+            ].join('\\n');
+            const found = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 });
+            const existing = found.data.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
