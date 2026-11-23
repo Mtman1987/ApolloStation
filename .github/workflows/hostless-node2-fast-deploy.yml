@@ -66,6 +66,7 @@ jobs:
         env:
           HOSTLESS_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
           HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          APOLLO_SYNC_RUNTIME_SECRETS: "1"
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: "https://apollo-node-1.hostless.app"
           APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           # Always refresh Node 2 from the canonical ApolloStation Discord token.
