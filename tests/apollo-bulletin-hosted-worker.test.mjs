@@ -187,14 +187,23 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
   assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 1);
 });
 
-test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes", async () => {
+test("Apollo Bulletin proxy requires an owner pin and signed-in owner session for app routes", async () => {
   const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
   const publicHealth = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/health/ready", "http://127.0.0.1:3000", async () => { throw new Error("readiness must not call the identity service"); }, {});
   assert.equal(publicHealth.authorized, true);
   assert.equal(publicHealth.reason, "public-readiness");
+  const unconfigured = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=apollo-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("identity must not be checked without the owner pin"); },
+    {},
+  );
+  assert.equal(unconfigured.authorized, false);
+  assert.equal(unconfigured.status, 503);
   const denied = await authorizeBulletinRequest({ headers: {} }, "/bulletin/api/tasks", "http://127.0.0.1:3000", async () => {
     throw new Error("must not call identity service without a cookie");
-  }, {});
+  }, { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" });
   assert.equal(denied.authorized, false);
   assert.equal(denied.status, 401);
   let seenCookie = "";
@@ -207,10 +216,11 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
       seenCookie = options.headers.cookie;
       return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
     },
-    {},
+    { APOLLO_BULLETIN_OWNER_ACTOR_ID: " owner-1 " },
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "actor pin is optional until configured");
+  assert.equal(allowed.authorized, true);
+  assert.equal(allowed.reason, "apollo-owner-session");
   const wrongOwner = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=other-session" } },
     "/bulletin/api/tasks",
