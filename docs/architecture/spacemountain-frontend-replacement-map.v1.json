@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "application": "spacemountain-live",
+  "source": {
+    "repository": "Mtman1987/spacemountain-live",
+    "ref": "main",
+    "commit": "1b6eea2f601694c9e9de77b9ec3a39c642ccf02d"
+  },
+  "target": {
+    "repository": "Mtman1987/ApolloStation",
+    "branch": "node1/spacemountain-frontend-test",
+    "shell": "apps/spacemountain-web",
+    "sharedShellPackage": "apps/spacemountain"
+  },
+  "status": "initial-inventory-not-yet-contract-verified",
+  "rules": [
+    "Do not route production traffic or production credentials through this experiment.",
+    "Do not mutate legacy data during read-only mapping.",
+    "Use canonical SPMT/Apollo identity, account settings, overlay and platform contracts where those domains are already owned centrally.",
+    "Preserve legacy backend business logic and endpoint semantics until an explicit adapter is tested.",
+    "Do not infer target contracts from route names; verify request and response shapes before connecting."
+  ],
+  "endpoints": [
+    {
+      "path": "/api/health",
+      "method": "GET",
+      "feature": "legacy-host-health",
+      "target": "Apollo readiness/health contract",
+      "status": "verify"
+    },
+    {
+      "path": "/auth/callback",
+      "method": "GET",
+      "feature": "SPMT-session-bridge",
+      "target": "canonical SPMT auth/session",
+      "status": "central-owned"
+    },
+    {
+      "path": "/auth/login",
+      "method": "GET",
+      "feature": "SPMT-session-bridge",
+      "target": "canonical SPMT auth/session",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/session",
+      "method": "GET",
+      "feature": "SPMT-session-bridge",
+      "target": "canonical SPMT auth/session",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/session/upgrade",
+      "method": "POST",
+      "feature": "SPMT-session-bridge",
+      "target": "canonical SPMT auth/session",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/session/logout",
+      "method": "POST",
+      "feature": "SPMT-session-bridge",
+      "target": "canonical SPMT auth/session",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/embed/launch",
+      "method": "POST",
+      "feature": "app-launch",
+      "target": "Apollo app catalog/frame target",
+      "status": "verify"
+    },
+    {
+      "path": "/api/spmt/*",
+      "method": "ALL",
+      "feature": "SPMT-proxy",
+      "target": "canonical SPMT SDK/API",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/branding",
+      "method": "GET",
+      "feature": "branding",
+      "target": "Apollo shell/theme configuration",
+      "status": "verify"
+    },
+    {
+      "path": "/api/tools",
+      "method": "GET",
+      "feature": "community-tool-registry",
+      "target": "Apollo app catalog/registration",
+      "status": "verify"
+    },
+    {
+      "path": "/api/tools/:id/points",
+      "method": "POST",
+      "feature": "tool-points",
+      "target": "SPMT points contract",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/arena/kill-xp",
+      "method": "POST",
+      "feature": "arena-xp",
+      "target": "SPMT XP event contract",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/messages/inbox",
+      "method": "GET",
+      "feature": "messages",
+      "target": "SPMT Commlink/messages",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/messages/outbox",
+      "method": "GET",
+      "feature": "messages",
+      "target": "SPMT Commlink/messages",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/messages",
+      "method": "POST",
+      "feature": "messages",
+      "target": "SPMT Commlink/messages",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/messages/:id/read",
+      "method": "POST",
+      "feature": "messages",
+      "target": "SPMT Commlink/messages",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/user",
+      "method": "POST",
+      "feature": "profile",
+      "target": "SPMT identity/profile",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/user/:id/preference",
+      "method": "POST",
+      "feature": "user-preferences",
+      "target": "SPMT WorkspaceProfileV1/settings",
+      "status": "central-owned"
+    },
+    {
+      "path": "/api/stats",
+      "method": "GET",
+      "feature": "dashboard-stats",
+      "target": "Apollo shell summary or legacy adapter",
+      "status": "verify"
+    },
+    {
+      "path": "/api/integrations/dsh/points/:action",
+      "method": "POST",
+      "feature": "DSH-points",
+      "target": "DSH service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/integrations/hearmeout/rooms",
+      "method": "GET",
+      "feature": "HearMeOut-rooms",
+      "target": "HearMeOut service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/integrations/hearmeout/voice",
+      "method": "POST",
+      "feature": "HearMeOut-voice",
+      "target": "HearMeOut service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/integrations/chat-tag/state",
+      "method": "GET",
+      "feature": "Chat-Tag-state",
+      "target": "Nebula/Chat Tag service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/integrations/chat-tag/quackverse",
+      "method": "GET",
+      "feature": "Quackverse-state",
+      "target": "Nebula/Quackverse service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/community/shoutouts",
+      "method": "GET",
+      "feature": "community-shoutouts",
+      "target": "DSH/community service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/community/shoutouts",
+      "method": "POST",
+      "feature": "community-shoutouts",
+      "target": "DSH/community service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/integrations/dsh/shoutout",
+      "method": "POST",
+      "feature": "community-shoutouts",
+      "target": "DSH service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/forum/forwarded",
+      "method": "GET",
+      "feature": "forwarded-forum-feed",
+      "target": "SPMT forums/Commlink or DSH integration",
+      "status": "verify"
+    },
+    {
+      "path": "/api/forum/forward",
+      "method": "POST",
+      "feature": "forum-forwarding",
+      "target": "SPMT forums/Commlink or DSH integration",
+      "status": "verify"
+    },
+    {
+      "path": "/api/integrations/dsh/forum-forward",
+      "method": "POST",
+      "feature": "forum-forwarding",
+      "target": "DSH service contract",
+      "status": "legacy-adapter"
+    },
+    {
+      "path": "/api/shop/products",
+      "method": "GET",
+      "feature": "shop-catalog",
+      "target": "monetization/shop contract",
+      "status": "verify"
+    },
+    {
+      "path": "/api/shop/create-order",
+      "method": "POST",
+      "feature": "shop-orders",
+      "target": "monetization/order contract",
+      "status": "verify"
+    },
+    {
+      "path": "/api/shop/capture-order",
+      "method": "POST",
+      "feature": "shop-orders",
+      "target": "monetization/order contract",
+      "status": "verify"
+    }
+  ],
+  "next": "Trace each endpoint to the exact UI caller, request body, response shape, auth requirement and side effects; then verify the matching Apollo contract before writing adapters."
+}
