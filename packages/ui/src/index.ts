@@ -208,17 +208,21 @@ export const PRODUCT_UI_CSS = `
 }
 .spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--spmt-background,#050710); }
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
-.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
-.spmt-product-backdrop-tint { background: linear-gradient(128deg,var(--spmt-accent) 0%,var(--spmt-accent-secondary) 54%,var(--spmt-accent-tertiary) 100%); opacity: .66; mix-blend-mode: color; }
+.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(calc(1.015 + var(--spmt-parallax-depth,.35) * .04)); }
+.spmt-product-backdrop-tint { background: linear-gradient(128deg,var(--spmt-accent) 0%,var(--spmt-accent-secondary) 54%,var(--spmt-accent-tertiary) 100%); opacity: calc(.12 + var(--spmt-nebula-intensity,.55) * .54); filter:saturate(var(--spmt-accent-saturation-factor,1)); mix-blend-mode: color; }
 .spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 34%,transparent),transparent 42%),radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--spmt-accent-secondary) 22%,transparent),transparent 34%),radial-gradient(circle at 72% 82%,color-mix(in srgb,var(--spmt-accent-tertiary) 15%,transparent),transparent 36%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
 .spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
-.spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
-.spmt-star-layer i:nth-child(2) { width: 2px; height: 2px; box-shadow: ${PRODUCT_STAR_FIELDS[1]!.shadow}; animation: spmt-stars-up 150s linear infinite; }
-.spmt-star-layer i:nth-child(3) { width: 3px; height: 3px; box-shadow: ${PRODUCT_STAR_FIELDS[2]!.shadow}; animation: spmt-stars-up 100s linear infinite; }
+.spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up calc(200s / var(--spmt-animation-speed,1)) linear infinite; }
+.spmt-star-layer i:nth-child(2) { width: 2px; height: 2px; box-shadow: ${PRODUCT_STAR_FIELDS[1]!.shadow}; animation: spmt-stars-up calc(150s / var(--spmt-animation-speed,1)) linear infinite; }
+.spmt-star-layer i:nth-child(3) { width: 3px; height: 3px; box-shadow: ${PRODUCT_STAR_FIELDS[2]!.shadow}; animation: spmt-stars-up calc(100s / var(--spmt-animation-speed,1)) linear infinite; }
 @keyframes spmt-stars-up { from { transform: translateY(0); } to { transform: translateY(-2000px); } }
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
+.spmt-product-surface button:hover,.spmt-product-surface a:hover { box-shadow:0 0 calc(var(--spmt-hover-glow,1) * var(--spmt-glow,.78) * 24px) color-mix(in srgb,var(--spmt-accent) 28%,transparent); }
+.spmt-product-surface[data-spmt-hover-glow="false"] button:hover,.spmt-product-surface[data-spmt-hover-glow="false"] a:hover { box-shadow:none; }
+.spmt-product-surface[data-spmt-particles="false"] .spmt-star-layer { display:none; }
+.spmt-product-surface [data-spmt-chat-surface] { background-color:rgb(var(--spmt-surface-rgb,24 19 31) / calc(1 - var(--spmt-chat-transparency,.2))); }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-focus,var(--spmt-accent-secondary)); outline-offset: 3px; }
 .spmt-product-surface[data-spmt-focus-highlight="false"] :focus-visible { outline:none; }
 .spmt-product-surface[data-spmt-high-contrast="true"] { --spmt-ink:#fff; --spmt-muted:#e5e7eb; --spmt-border:rgba(255,255,255,.72); }
@@ -228,7 +232,7 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-surface[data-spmt-sidebar-collapsed="true"] [data-spmt-sidebar-label] { display:none; }
 .spmt-product-surface[data-spmt-sidebar="hidden"] [data-spmt-sidebar] { display:none !important; }
 .spmt-product-surface[data-spmt-border-glow="false"] .spmt-product-glass { box-shadow:none; }
-.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(var(--spmt-blur,24px)) saturate(calc(100% + var(--spmt-glow,0) * 45%)); border-radius:var(--spmt-radius,1rem); transition-duration:calc(160ms * var(--spmt-motion-scale,1)); }
+.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); border-color:color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-strength,.35) * 100%),var(--spmt-border)); box-shadow:0 0 calc(var(--spmt-glow,.78) * 28px) color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-glow,1) * 18%),transparent); backdrop-filter: blur(var(--spmt-blur,24px)) saturate(calc(100% + var(--spmt-glow,0) * 45%)); border-radius:var(--spmt-radius,1rem); transition-duration:calc(160ms * var(--spmt-motion-scale,1)); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
 .spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24),0 0 34px color-mix(in srgb,var(--spmt-accent-secondary) 7%,transparent); }
@@ -522,6 +526,7 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   set("--spmt-accent-secondary", theme.accentSecondary);
   set("--spmt-accent-tertiary", theme.accentTertiary);
   set("--spmt-accent-saturation", boundedNumber(input.accentSaturation, 100, 0, 150));
+  set("--spmt-accent-saturation-factor", boundedNumber(input.accentSaturation, 100, 0, 150) / 100);
   set("--spmt-glow", percentage(input.glowIntensity, 78) / 100);
   set("--spmt-stars", percentage(input.starDensity, 70) / 100);
   set("--spmt-glass-opacity", percentage(input.glassOpacity, 76) / 100);
@@ -529,6 +534,8 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   set("--spmt-nebula-intensity", percentage(input.nebulaIntensity, 55) / 100);
   set("--spmt-parallax-depth", percentage(input.parallaxDepth, 35) / 100);
   set("--spmt-border-strength", percentage(input.borderStrength, 35) / 100);
+  set("--spmt-border-glow", bool(input.borderGlow, true) ? 1 : 0);
+  set("--spmt-hover-glow", bool(input.hoverGlow, true) ? 1 : 0);
   set("--spmt-chat-transparency", percentage(input.chatTransparency, 20) / 100);
   set("--spmt-radius", ({ sm: "0.5rem", md: "0.75rem", lg: "1rem", full: "9999px" } as const)[safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg") as "sm" | "md" | "lg" | "full"]);
   set("--spmt-animation-speed", boundedNumber(animation.speed ?? input.animationSpeed, 100, 25, 250) / 100);
