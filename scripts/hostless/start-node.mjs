@@ -190,14 +190,6 @@ if (nebulaConfigForServer && process.env.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED 
   }
 }
 
-// Apollo-only Adult Mode bridge: observe the bot's own DM error messages and repair them in place.
-if (role === "node2" && process.env.DISCORD_BOT_TOKEN?.trim()) {
-  node2.push(["scripts/hostless/adult-mode-discord-bridge.mjs", {}]);
-  console.info("[adult-mode-bridge] Discord DM recovery watcher enabled on Node 2.");
-} else if (role === "node2") {
-  console.warn("[adult-mode-bridge] Deferred: DISCORD_BOT_TOKEN is not configured.");
-}
-
 // Hostless Node 2 runs the hosted Stellar worker. No retired local Qwen or Fly endpoint is required.
 const stellarCredential = process.env.STELLAR_WORKER_CREDENTIAL?.trim();
 const hasHostedChatProvider = Boolean(
