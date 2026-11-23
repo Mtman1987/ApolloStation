@@ -197,7 +197,7 @@ jobs:
               reason="branch head is already contained in main"
             elif grep -Fxq "$branch $sha" "$merged_pr_heads_file"; then
               reason="exact current head of a PR merged into main"
-            elif [[ "\${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
+            elif [[ "${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
               reason="exact head of a closed PR individually reviewed as superseded"
             elif git diff --quiet origin/main "$sha"; then
               reason="branch tree is identical to main"
