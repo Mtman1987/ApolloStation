@@ -244,6 +244,9 @@ if (nodeKey === "node1") {
   runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "--app", node.app, "--project", String(projectId)],
     "Pin Apollo OAuth callback origin to the stable Hostless app URL");
   console.log("Pinned SPMT_PUBLIC_URL to the stable Node 1 Hostless origin.");
+  runCli(["env", "set", "APOLLO_BULLETIN_ENABLE_BROWSER=1", "APOLLO_BULLETIN_REQUIRE_TURSO=1", "APOLLO_BULLETIN_USE_HOSTLESS_CRON=1", "--app", node.app, "--project", String(projectId)],
+    "Configure Node 1 Bulletin for Chromium, required Turso persistence, and Hostless cron");
+  console.log("Configured Bulletin production dependencies on Node 1; no credentials were changed.");
 }
 
 const appsResponse = await request(`/projects/${encodeURIComponent(projectId)}/apps`);
