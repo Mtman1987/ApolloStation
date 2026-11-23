@@ -25,9 +25,9 @@ export interface AppearanceV1 {
   chatTransparency?: number;
   density?: "compact" | "comfortable" | "spacious";
   sidebarCollapsed?: boolean;
-  sidebarStyle?: "glass" | "solid" | "minimal";
+  sidebarStyle?: "glass" | "solid" | "minimal" | "docked" | "floating" | "hidden";
   sidebarPosition?: "left" | "right";
-  topbarStyle?: "glass" | "solid" | "minimal";
+  topbarStyle?: "glass" | "solid" | "minimal" | "transparent";
   tabStyle?: "pills" | "underline" | "cards";
   tabPosition?: "top" | "bottom" | "left" | "right";
   showAvatars?: boolean;
@@ -674,9 +674,9 @@ function validateAppearance(value: AppearanceV1) {
     if (setting !== undefined && (!Number.isFinite(setting) || setting < 0 || setting > maximum)) throw new AuthorityValidationError(`Workspace ${name} must be from 0 through ${maximum}`);
   }
   if (value.density !== undefined && !["compact", "comfortable", "spacious"].includes(value.density)) throw new AuthorityValidationError("Workspace density is invalid");
-  if (value.sidebarStyle !== undefined && !["glass", "solid", "minimal"].includes(value.sidebarStyle)) throw new AuthorityValidationError("Workspace sidebar style is invalid");
+  if (value.sidebarStyle !== undefined && !["glass", "solid", "minimal", "docked", "floating", "hidden"].includes(value.sidebarStyle)) throw new AuthorityValidationError("Workspace sidebar style is invalid");
   if (value.sidebarPosition !== undefined && !["left", "right"].includes(value.sidebarPosition)) throw new AuthorityValidationError("Workspace sidebar position is invalid");
-  if (value.topbarStyle !== undefined && !["glass", "solid", "minimal"].includes(value.topbarStyle)) throw new AuthorityValidationError("Workspace topbar style is invalid");
+  if (value.topbarStyle !== undefined && !["glass", "solid", "minimal", "transparent"].includes(value.topbarStyle)) throw new AuthorityValidationError("Workspace topbar style is invalid");
   if (value.tabStyle !== undefined && !["pills", "underline", "cards"].includes(value.tabStyle)) throw new AuthorityValidationError("Workspace tab style is invalid");
   if (value.tabPosition !== undefined && !["top", "bottom", "left", "right"].includes(value.tabPosition)) throw new AuthorityValidationError("Workspace tab position is invalid");
   if (value.cornerRadius !== undefined && !["sm", "md", "lg", "full"].includes(value.cornerRadius)) throw new AuthorityValidationError("Workspace corner radius is invalid");
