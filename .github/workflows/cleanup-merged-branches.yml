@@ -28,8 +28,8 @@ jobs:
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Pushes are preview-only; merged PR-close events clean reviewed branches. Manual dispatch defaults to dry-run.
-      DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != false) }}
+      # One-time follow-up cleanup; restore push preview mode immediately after this run.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
@@ -131,6 +131,7 @@ jobs:
             ["fix/overlay-bay-home-navigation"]="7ba4bbe03e29347d37995d9f2f19b1b6901ec433"
             ["migration/nebula-network-caller-inventory"]="425f5059fe9649142613105dd068aff18dbe5914"
             ["prototype/apollo-bulletin-open-review"]="a629bd1e5b38ffe6b5b8eb57c3d190829faa048f"
+            ["parity/dsh-raid-train-slots"]="959466c50764c2c02f40d9853b6baad209bab0bb"
             ["spmt/hostless-control-plane-foundation"]="4a2fdcb9df3ed202f774f1449530703adc27d91a"
           )
 
