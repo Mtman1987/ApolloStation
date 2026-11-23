@@ -13,11 +13,15 @@ export class DiscordDmAdultModeStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
-    this.db.exec("CREATE TABLE IF NOT EXISTS discord_dm_preferences(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,adult_mode INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id)) STRICT");
+    this.db.exec("CREATE TABLE IF NOT EXISTS discord_dm_preferences(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,adult_mode INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id)) STRICT; CREATE TABLE IF NOT EXISTS discord_dm_processed(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,message_id TEXT NOT NULL,processed_at TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id,message_id)) STRICT");
   }
   adultMode(tenantId: string, userId: string): boolean {
     const row = this.db.prepare("SELECT adult_mode AS value FROM discord_dm_preferences WHERE tenant_id=? AND user_id=?").get(tenantId,userId) as {value?:number}|undefined;
     return row?.value === 1;
+  }
+  claimMessage(tenantId: string, userId: string, messageId: string): boolean {
+    const result = this.db.prepare("INSERT OR IGNORE INTO discord_dm_processed(tenant_id,user_id,message_id,processed_at) VALUES(?,?,?,?)").run(tenantId,userId,messageId,new Date().toISOString());
+    return Number(result.changes) === 1;
   }
   setAdultMode(tenantId: string, userId: string, enabled: boolean): void {
     this.db.prepare("INSERT INTO discord_dm_preferences(tenant_id,user_id,adult_mode,updated_at) VALUES(?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET adult_mode=excluded.adult_mode,updated_at=excluded.updated_at").run(tenantId,userId,enabled?1:0,new Date().toISOString());
@@ -48,7 +52,7 @@ export class DiscordDmAdultModeAssistant {
     } catch {
       return; // Unlinked DMs are ignored; no passive identity is created.
     }
-    if (identity.tenantRole !== "owner") return;
+    if (identity.tenantRole !== "owner" || !this.settings.claimMessage(message.tenantId,identity.userId,message.messageId)) return;
 
     const action = adultModeCommand(message.text);
     const enabled = this.settings.adultMode(message.tenantId,identity.userId);
