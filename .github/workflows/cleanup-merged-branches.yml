@@ -29,7 +29,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # One-time follow-up cleanup; restore push preview mode immediately after this run.
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false && 'true' || 'false' }}
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
