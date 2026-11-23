@@ -246,8 +246,8 @@ if (nodeKey === "node1") {
     process.env.APOLLO_RUNTIME_NODE1_STELLAR_WORKER_CREDENTIAL,
     process.env.APOLLO_RUNTIME_SHARED_STELLAR_WORKER_CREDENTIAL,
   );
-  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", "APOLLO_BULLETIN_ENABLE_BROWSER=1", "APOLLO_BULLETIN_REQUIRE_TURSO=1", "APOLLO_BULLETIN_USE_HOSTLESS_CRON=1", `SPMT_STELLAR_CHAT_ENABLED=${stellar.enabled}`, "--app", node.app, "--project", String(projectId)],
-    "Configure Node 1 production URL, Bulletin dependencies, and credential-safe Stellar Chat flag");
+  runCli(["env", "set", "SPMT_PUBLIC_URL=https://apollo-node-1.hostless.app", `SPMT_STELLAR_CHAT_ENABLED=${stellar.enabled}`, "--app", node.app, "--project", String(projectId)],
+    "Configure Node 1 production URL and credential-safe Stellar Chat flag");
   if (stellar.credential) {
     runCli(["env", "set", `STELLAR_WORKER_CREDENTIAL=${stellar.credential}`, "--write-only", "--app", node.app, "--project", String(projectId)],
       "Synchronize the existing Stellar Chat worker credential");
