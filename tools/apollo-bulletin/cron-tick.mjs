@@ -14,4 +14,5 @@ const body = await response.text();
 let result;
 try { result = body ? JSON.parse(body) : {}; } catch { result = { raw: body.slice(0, 500) }; }
 if (!response.ok) throw new Error(`Apollo Bulletin cron tick failed with HTTP ${response.status}: ${JSON.stringify(result)}`);
+if (result?.accepted !== true && !(result?.accepted === false && result?.busy === true)) throw new Error(`Apollo Bulletin cron endpoint did not accept the tick: ${JSON.stringify(result)}`);
 console.log(JSON.stringify({ endpoint: endpoint.toString(), ...result }));
