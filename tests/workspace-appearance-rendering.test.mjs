@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { applyWorkspaceAppearance, PRODUCT_UI_CSS, relayWorkspaceAppearance } from "../packages/ui/dist/index.js";
 import { AuthorityService, MemoryAuthorityStore } from "../packages/authority-core/dist/index.js";
 
@@ -97,4 +98,18 @@ test("canonical workspace authority accepts and validates the complete appearanc
   assert.equal(saved.appearance.animation.enabled, true);
   assert.throws(() => authority.updateWorkspace("appearance-tenant", 2, { appearance: { ...appearance, accentSaturation: 151 } }), /accentSaturation/);
   assert.throws(() => authority.updateWorkspace("appearance-tenant", 2, { appearance: { ...appearance, voiceWaveStyle: "invalid" } }), /voice wave style/);
+});
+
+
+test("Apollo workspace controls expose the full legacy appearance model and preview it before saving", () => {
+  const shell = readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", import.meta.url), "utf8");
+  for (const field of [
+    "accentSaturation", "borderGlow", "hoverGlow", "cornerRadius", "micButtonStyle",
+    "voiceWaveStyle", "pushToTalkKey", "highContrast", "colorVisionMode", "textScale",
+    "reduceMotion", "focusHighlight", "uiAnimations",
+  ]) assert.ok(shell.includes(field), "missing workspace control: " + field);
+  assert.match(shell, /previewWorkspaceAppearance/);
+  assert.match(shell, /addEventListener\("input", previewWorkspaceAppearance\)/);
+  assert.match(shell, /rangeControl\("accentSaturation"[^)]*150\)/);
+  assert.match(shell, /accessibility:\s*\{\s*highContrast:/);
 });
