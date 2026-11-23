@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { SpmtClient } from "@spmt/sdk";
 import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
-import type { ChatGatewayRuntime, ProviderChatEnvelopeV1 } from "./index.js";
+import type { ChatProviderSenderV1, ProviderChatEnvelopeV1 } from "./index.js";
 
 type DmMessage = ProviderChatEnvelopeV1;
 type IdentityResolver = typeof resolveProviderIdentity;
@@ -30,7 +30,7 @@ export class DiscordDmAdultModeAssistant {
   private readonly settings: DiscordDmAdultModeStore;
   constructor(private readonly options: {
     client: AssistantClient;
-    gateway: Pick<ChatGatewayRuntime, "send">;
+    sender: ChatProviderSenderV1;
     databasePath: string;
     resolveIdentity?: IdentityResolver;
     waitMs?: number;
@@ -100,7 +100,7 @@ export class DiscordDmAdultModeAssistant {
   }
 
   private async reply(message: DmMessage,text: string): Promise<void> {
-    await this.options.gateway.send({
+    await this.options.sender.send({
       schemaVersion: 1,
       tenantId: message.tenantId,
       provider: "discord",
