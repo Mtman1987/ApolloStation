@@ -44,7 +44,7 @@ jobs:
           MAIN_SHA="$(git rev-parse origin/main)"
 
           open_branches_file="$(mktemp)"
-          closed_pr_heads_file="$(mktemp)"
+          merged_pr_heads_file="$(mktemp)"
           pr_metadata_file="$(mktemp)"
           inventory_file="apollo-branch-inventory-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
           bundle_file="apollo-branches-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.bundle"
@@ -74,8 +74,8 @@ jobs:
           done
           mapfile -t open_branches < <(sort -u "$open_branches_file")
 
-          # Record all closed PR heads, merged or unmerged. A branch is eligible only
-          # when its current SHA still exactly matches the reviewed closed PR head.
+          # Only PR heads actually merged into main are automatic candidates.
+          # Closed-but-unmerged PR branches stay protected unless explicitly listed below.
           page=1
           while :; do
             closed_prs="$(curl -fsS \
@@ -86,9 +86,10 @@ jobs:
             [[ "$count" -eq 0 ]] && break
             jq -r --arg repo "$GITHUB_REPOSITORY" '
               .[]
+              | select(.merged_at != null and .base.ref == "main")
               | select(.head.repo != null and .head.repo.full_name == $repo)
               | "\(.head.ref) \(.head.sha)"
-            ' <<<"$closed_prs" >> "$closed_pr_heads_file"
+            ' <<<"$closed_prs" >> "$merged_pr_heads_file"
             jq -r --arg repo "$GITHUB_REPOSITORY" '
               .[]
               | select(.head.repo != null and .head.repo.full_name == $repo)
@@ -112,21 +113,34 @@ jobs:
             "feat/oracle-core-runtime-image"
           )
 
-          # No-PR experiments individually reviewed as obsolete/superseded.
+          # Closed, unmerged PR heads individually reviewed as superseded/obsolete.
           # Exact SHA guards prevent deleting a branch that has since received new work.
+          declare -A reviewed_closed_heads=(
+            ["audit/foundation-donor-final-sweep"]="af435c59e7ef0f62d1c2a6ec56b25bd7fc37b701"
+            ["ci/hostless-gated-three-node-deploy"]="3aae284ec10b37fc3e20dc3c00723fa2daf6f7fc"
+            ["ci/run-full-validation-before-merge"]="1152f8f4ac22aa8cce5303bb19056a4197f5c42a"
+            ["docs/apollo-final-handoff-current-main-2026-11-19"]="11280692482a0599a25385f931933c8b50139561"
+            ["docs/apollo-final-handoff-2026-11-19"]="189b7dd9d0cac2991156f8db666b9a2e66b99d6b"
+            ["feat/apollo-local-chrome-actions-bridge"]="41bc57478a0af183fd49c50d790e53daa8191a0c"
+            ["feat/bulletin-chatgpt-browser-poc"]="1a4ad9a6a19eae9c0406069d3241ba820102e5f9"
+            ["feature/manual-spmt-token-handoff"]="2b811a68d92f6d43211d7968b5f250b1003e0121"
+            ["fix/direct-oauth-recovery"]="cff3c0bbc9f73dc506f2667542e45950577466e1"
+            ["fix/hostless-deploy-cli-progress"]="bfcfb7d9662cd04594cbd76855d02be43c115fba"
+            ["fix/nebula-bang-spmt-prefix"]="bc05c590875d2ac77d19f282c4b71bdd15853763"
+            ["fix/overlay-bay-home-navigation"]="7ba4bbe03e29347d37995d9f2f19b1b6901ec433"
+            ["migration/nebula-network-caller-inventory"]="425f5059fe9649142613105dd068aff18dbe5914"
+            ["prototype/apollo-bulletin-open-review"]="a629bd1e5b38ffe6b5b8eb57c3d190829faa048f"
+            ["spmt/hostless-control-plane-foundation"]="4a2fdcb9df3ed202f774f1449530703adc27d91a"
+          )
+
+          # No-PR experiments individually reviewed as obsolete/superseded.
+          # Unlisted experiments remain protected for manual review.
           declare -A reviewed_no_pr_heads=(
             ["ci/hmo-media-browser-in-shard4"]="f5f6267e51d9bc02221a91320d780b27c64a55a2"
             ["fix/hostless-deploy-api-polling"]="4632bc0e1a951b5d410c7f8d2626769733b2860a"
-            ["diagnostics/apollo-launch-20260912"]="9d1f1caf4cb4d1c9de86de8ff782a7615ff43d2a"
-            ["diagnostics/hmo-cutover-install-20260912"]="edee34dc761bc29b622c228e8a53a921e75dd5b1"
-            ["diagnostics/hmo-cutover-runtime-20260912"]="17278843b4a4e068eadb2be9009a5bb6465a3054"
-            ["diagnostics/node1-hostless-validation"]="e98d543974e61d3569bbff4cf643eb5132bb1fc6"
             ["fix/node3-explicit-free-20261105"]="1f6ba31d5b144280c351500bff9bf42bff133e0a"
             ["hostless-node3-bootstrap"]="3725b73628c9d00fa4930b346e43528d26d2d4be"
             ["node3-bootstrap-free"]="10c36e525d9dfde5bc564e24c18802abf4d90544"
-            ["fix/hostless-three-node-readiness"]="0b9264b24df01f93b7775ca75b85db05e2451209"
-            ["docs/apollo-final-handoff-2026-11-19"]="189b7dd9d0cac2991156f8db666b9a2e66b99d6b"
-            ["test/hmo-youtube-single-av-proof"]="0c9dce46c07b9ff9fe6e7ebbda445599ab2b83cc"
           )
 
           is_open_pr_branch() {
@@ -181,8 +195,10 @@ jobs:
 
             if git merge-base --is-ancestor "$sha" origin/main; then
               reason="branch head is already contained in main"
-            elif grep -Fxq "$branch $sha" "$closed_pr_heads_file"; then
-              reason="exact current head of a closed PR (merged or closed)"
+            elif grep -Fxq "$branch $sha" "$merged_pr_heads_file"; then
+              reason="exact current head of a PR merged into main"
+            elif [[ "\${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
+              reason="exact head of a closed PR individually reviewed as superseded"
             elif git diff --quiet origin/main "$sha"; then
               reason="branch tree is identical to main"
             else
@@ -235,7 +251,7 @@ jobs:
               echo "### Apollo branch cleanup"
               echo "Inspected $branch_count refs. No eligible branches to delete."
             } >> "$GITHUB_STEP_SUMMARY"
-            rm -f "$open_branches_file" "$closed_pr_heads_file" "$pr_metadata_file" "$inventory_file"
+            rm -f "$open_branches_file" "$merged_pr_heads_file" "$pr_metadata_file" "$inventory_file"
             exit 0
           fi
 
@@ -248,7 +264,7 @@ jobs:
               done
             } >> "$GITHUB_STEP_SUMMARY"
             echo "Dry run complete. No archive or deletion was performed."
-            rm -f "$open_branches_file" "$closed_pr_heads_file" "$pr_metadata_file"
+            rm -f "$open_branches_file" "$merged_pr_heads_file" "$pr_metadata_file"
             exit 0
           fi
 
@@ -317,4 +333,4 @@ jobs:
 
           echo "Verified archive and cleanup complete. Deleted ${#candidate_branches[@]} branches."
           rm -rf "$verify_dir"
-          rm -f "$open_branches_file" "$closed_pr_heads_file" "$pr_metadata_file"
+          rm -f "$open_branches_file" "$merged_pr_heads_file" "$pr_metadata_file"
