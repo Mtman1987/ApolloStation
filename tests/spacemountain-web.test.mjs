@@ -119,9 +119,12 @@ test("linked-provider recovery restores provider selection after a failed passwo
 
 test("missing local Apollo passwords immediately expose direct provider recovery", () => {
   const login = client.slice(client.indexOf("async function submitApolloLogin"), client.indexOf("async function submitApolloRegistration"));
+  const authRequest = client.slice(client.indexOf("async function authRequest"), client.indexOf("async function spmtAuthRequest"));
+  assert.doesNotMatch(authRequest, /catch\s*\(\s*error\s*\)/, "the shared auth helper must let login failures reach the recovery handler");
   assert.match(login, /valid local password/);
   assert.match(login, /recoveryStart\.hidden = false/);
   assert.match(login, /recoveryDiscord\.focus/);
+  assert.match(login, /This account needs a local password[\s\S]*?"working"/);
   assert.match(page, /Verify with Discord/);
   assert.match(page, /Verify with Twitch/);
   assert.match(page, /data-tab="apollo" aria-selected="true"/);
