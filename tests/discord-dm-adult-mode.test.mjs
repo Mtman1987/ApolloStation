@@ -71,3 +71,15 @@ test("non-owner DMs are ignored and never enter the assistant", async () => {
     assert.equal(f.sent.length,0);
   } finally { await f.close(); }
 });
+
+test("replayed Discord DM toggle cannot flip Adult Mode twice", async () => {
+  const f = await fixture();
+  try {
+    const original = dm("adult mode toggle");
+    await f.assistant.handle(original);
+    await f.assistant.handle(original);
+    await f.assistant.handle(dm("adult mode status",{messageId:"1416041303707353122"}));
+    assert.equal(f.sent.length,2);
+    assert.match(f.sent[1].text,/Adult Mode is ON/);
+  } finally { await f.close(); }
+});
