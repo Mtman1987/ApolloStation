@@ -3,6 +3,8 @@ import { applyWorkspaceAppearance, bindProductRocketNavigation, configureSurface
 
 interface AppearanceLike {
   theme?: unknown;
+  themeId?: unknown;
+  accentColor?: unknown;
   accent?: unknown;
   accentSecondary?: unknown;
   backgroundUrl?: unknown;
@@ -29,7 +31,7 @@ function ratio(value: unknown, fallback: number) {
 
 function applyAppearance(root: HTMLElement, sceneUrl: string, appearance: AppearanceLike) {
   applyWorkspaceAppearance(root, appearance as import("@spmt/ui").WorkspaceAppearanceInputV1);\n  const themeId = typeof appearance.theme === "string" ? appearance.theme : typeof appearance.themeId === "string" ? appearance.themeId : "solar-flare";
-  const accent = typeof appearance.accent === "string" ? appearance.accent : undefined;
+  const accent = typeof appearance.accentColor === "string" ? appearance.accentColor : typeof appearance.accent === "string" ? appearance.accent : undefined;
   const customBackground = typeof appearance.backgroundUrl === "string" ? appearance.backgroundUrl : undefined;
   const secondary = typeof appearance.accentSecondary === "string" ? appearance.accentSecondary : undefined;
   const theme = resolveProductTheme(themeId, accent, secondary);
