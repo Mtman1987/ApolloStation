@@ -1,6 +1,8 @@
 name: Clean merged Apollo branches
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,35 +22,48 @@ concurrency:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      DRY_RUN: ${{ inputs.dry_run != false }}
+      # Pushes to main perform cleanup after archiving. Manual runs stay dry-run by default.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+      ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Delete only branches fully contained in main
+      - name: Archive and remove only reviewed merged branches
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*'
-          open_prs="$(curl -fsS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")"
 
-          mapfile -t open_branches < <(
+          open_branches_file="$(mktemp)"
+          merged_pr_heads_file="$(mktemp)"
+          inventory_file="apollo-branch-inventory-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+          bundle_file="apollo-branches-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.bundle"
+
+          # Enumerate every open PR page so no active PR branch is considered for deletion.
+          page=1
+          while :; do
+            open_prs="$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100&page=$page")"
+            count="$(jq 'length' <<<"$open_prs")"
             jq -r --arg repo "$GITHUB_REPOSITORY" '
               .[]
-              | select(.head.repo.full_name == $repo)
+              | select(.head.repo != null and .head.repo.full_name == $repo)
               | .head.ref
-            ' <<<"$open_prs"
-          )
+            ' <<<"$open_prs" >> "$open_branches_file"
+            [[ "$count" -lt 100 ]] && break
+            page=$((page + 1))
+          done
+          mapfile -t open_branches < <(sort -u "$open_branches_file")
 
-          merged_pr_heads_file="$(mktemp)"
+          # Record exact heads of all merged PRs targeting main, across every page.
           page=1
           while :; do
             closed_prs="$(curl -fsS \
@@ -59,53 +74,210 @@ jobs:
             [[ "$count" -eq 0 ]] && break
             jq -r --arg repo "$GITHUB_REPOSITORY" '
               .[]
-              | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == $repo)
+              | select(.merged_at != null and .base.ref == "main"
+                  and .head.repo != null and .head.repo.full_name == $repo)
               | "\(.head.ref) \(.head.sha)"
             ' <<<"$closed_prs" >> "$merged_pr_heads_file"
             [[ "$count" -lt 100 ]] && break
             page=$((page + 1))
           done
 
+          # Explicit recovery candidates from the owner's reviewed November 19 inventory.
+          protected_branches=(
+            "feat/nebula-game-runtime-turso-store"
+            "feature/turso-live-runtime-smoke"
+            "feat/stellar-kokoro-self-hosted-tts"
+            "feat/hmo-xtream-watch-catalog"
+            "feat/dsh-mtfixit-intake-turso-followup"
+            "port/streamweaver-restream-golive-parity"
+            "feat/recovered-json-manifest-verification"
+            "feat/oracle-core-runtime-image"
+          )
+
+          # Closed PRs individually reviewed as superseded after their useful work was captured.
+          # Delete only if each branch still has the exact reviewed head SHA.
+          declare -A reviewed_closed_heads=(
+            ["feat/bulletin-chatgpt-browser-poc"]="1a4ad9a6a19eae9c0406069d3241ba820102e5f9"
+            ["fix/hostless-deploy-cli-progress"]="bfcfb7d9662cd04594cbd76855d02be43c115fba"
+            ["docs/apollo-final-handoff-current-main-2026-11-19"]="11280692482a0599a25385f931933c8b50139561"
+          )
+
           is_open_pr_branch() {
             local branch="$1" candidate
-            for candidate in "${open_branches[@]}"; do
+            for candidate in "\${open_branches[@]}"; do
               [[ "$candidate" == "$branch" ]] && return 0
             done
             return 1
           }
 
-          deleted=0
-          skipped=0
-          while read -r ref sha; do
-            branch="${ref#origin/}"
+          is_protected_branch() {
+            local branch="$1" candidate
+            for candidate in "\${protected_branches[@]}"; do
+              [[ "$candidate" == "$branch" ]] && return 0
+            done
+            return 1
+          }
+
+          declare -a candidate_branches=()
+          declare -a candidate_shas=()
+          declare -a candidate_reasons=()
+          declare -a inventory_lines=()
+          branch_count=0
+
+          while read -r remote_ref sha; do
+            [[ -z "$remote_ref" ]] && continue
+            branch="\${remote_ref#origin/}"
+            branch_count=$((branch_count + 1))
+            reason=""
+
             case "$branch" in
-              main|HEAD) continue ;;
+              main|HEAD)
+                inventory_lines+=("KEEP $branch $sha — primary branch/reference")
+                continue
+                ;;
             esac
 
-            if is_open_pr_branch "$branch"; then
-              echo "KEEP $branch — has an open pull request"
-              skipped=$((skipped + 1))
+            if is_protected_branch "$branch"; then
+              inventory_lines+=("KEEP $branch $sha — explicitly protected recovery candidate")
               continue
             fi
 
-            reason=""
+            if is_open_pr_branch "$branch"; then
+              inventory_lines+=("KEEP $branch $sha — open pull request")
+              continue
+            fi
+
             if git merge-base --is-ancestor "$sha" origin/main; then
               reason="branch head is already contained in main"
             elif grep -Fxq "$branch $sha" "$merged_pr_heads_file"; then
               reason="exact head of a pull request merged into main"
+            elif [[ "\${reviewed_closed_heads[$branch]:-}" == "$sha" ]]; then
+              reason="closed PR individually reviewed as superseded"
             else
+              inventory_lines+=("KEEP $branch $sha — unique/unmerged or not individually reviewed")
               continue
             fi
 
-            if [[ "$DRY_RUN" == "true" ]]; then
-              echo "DRY RUN — would delete $branch ($reason)"
-            else
-              echo "DELETE $branch — $reason"
-              git push origin --delete "$branch"
-              deleted=$((deleted + 1))
-            fi
+            candidate_branches+=("$branch")
+            candidate_shas+=("$sha")
+            candidate_reasons+=("$reason")
+            inventory_lines+=("DELETE-CANDIDATE $branch $sha — $reason")
           done < <(git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin | sort)
-          rm -f "$merged_pr_heads_file"
 
-          echo "Cleanup finished. Deleted: $deleted. Kept for open PRs: $skipped. Dry run: $DRY_RUN."
-          echo "Branches with unique/unmerged commits are deliberately preserved."
+          {
+            echo "ApolloStation branch inventory"
+            echo "Captured: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Main SHA: $GITHUB_SHA"
+            echo "Workflow run: $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)"
+            echo "Branch refs inspected: $branch_count"
+            echo "Cleanup mode: DRY_RUN=$DRY_RUN"
+            echo
+            echo "Open PR branches:"
+            printf '  %s\n' "\${open_branches[@]}"
+            echo
+            echo "Explicitly protected recovery branches:"
+            printf '  %s\n' "\${protected_branches[@]}"
+            echo
+            echo "Branch dispositions:"
+            printf '%s\n' "\${inventory_lines[@]}"
+          } > "$inventory_file"
+
+          echo "Inspected $branch_count remote branch refs."
+          echo "Eligible branches: \${#candidate_branches[@]}"
+          printf '%s\n' "\${inventory_lines[@]}"
+
+          if [[ "\${#candidate_branches[@]}" -eq 0 ]]; then
+            {
+              echo "### Apollo branch cleanup"
+              echo "Inspected $branch_count refs. No eligible branches to delete."
+              echo "Protected recovery branches and open PR branches were preserved."
+            } >> "$GITHUB_STEP_SUMMARY"
+            rm -f "$open_branches_file" "$merged_pr_heads_file" "$inventory_file"
+            exit 0
+          fi
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            {
+              echo "### Apollo branch cleanup — dry run"
+              echo "Inspected $branch_count refs. Eligible: \${#candidate_branches[@]}. No branches were deleted."
+              for index in "\${!candidate_branches[@]}"; do
+                echo "  - \${candidate_branches[$index]} — \${candidate_reasons[$index]}"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Dry run complete. No archive or deletion was performed."
+            rm -f "$open_branches_file" "$merged_pr_heads_file"
+            exit 0
+          fi
+
+          # Create a full-history bundle of all fetched refs before deleting anything.
+          git bundle create "$bundle_file" --all
+          git bundle verify "$bundle_file"
+          bundle_sha="$(sha256sum "$bundle_file" | awk '{print $1}')"
+          inventory_sha="$(sha256sum "$inventory_file" | awk '{print $1}')"
+
+          # Store durable archives as release assets, not expiring Actions artifacts.
+          if ! gh release view "$ARCHIVE_TAG" >/dev/null 2>&1; then
+            gh release create "$ARCHIVE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "ApolloStation full-history branch archives" \
+              --notes "Verified full-history Git bundles and exact branch inventories captured before automated merged-branch cleanup. Each run adds a uniquely named bundle and inventory asset."
+          fi
+          gh release upload "$ARCHIVE_TAG" "$bundle_file" "$inventory_file"
+
+          # Download the uploaded assets again and verify bytes, bundle integrity, and every
+          # candidate ref/SHA before any destructive operation is attempted.
+          verify_dir="$(mktemp -d)"
+          gh release download "$ARCHIVE_TAG" --pattern "$bundle_file" --dir "$verify_dir"
+          gh release download "$ARCHIVE_TAG" --pattern "$inventory_file" --dir "$verify_dir"
+          verified_bundle="$verify_dir/$bundle_file"
+          verified_inventory="$verify_dir/$inventory_file"
+          [[ "$(sha256sum "$verified_bundle" | awk '{print $1}')" == "$bundle_sha" ]]
+          [[ "$(sha256sum "$verified_inventory" | awk '{print $1}')" == "$inventory_sha" ]]
+          git bundle verify "$verified_bundle"
+          bundle_heads="$(git bundle list-heads "$verified_bundle")"
+
+          for index in "\${!candidate_branches[@]}"; do
+            branch="\${candidate_branches[$index]}"
+            sha="\${candidate_shas[$index]}"
+            if ! grep -Fqx "$sha refs/remotes/origin/$branch" <<<"$bundle_heads" \
+              && ! grep -Fqx "$sha refs/heads/$branch" <<<"$bundle_heads"; then
+              echo "Archive does not contain the exact candidate ref: $branch ($sha)" >&2
+              exit 1
+            fi
+          done
+
+          # Delete as one atomic, lease-protected push. Any ref that changed after inventory
+          # causes the entire delete operation to fail rather than deleting a newer branch.
+          push_args=(--atomic)
+          refspecs=()
+          for index in "\${!candidate_branches[@]}"; do
+            branch="\${candidate_branches[$index]}"
+            sha="\${candidate_shas[$index]}"
+            push_args+=("--force-with-lease=refs/heads/$branch:$sha")
+            refspecs+=(":refs/heads/$branch")
+          done
+          git push "\${push_args[@]}" origin "\${refspecs[@]}"
+
+          # Verify every intended deletion against the remote before reporting success.
+          for branch in "\${candidate_branches[@]}"; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              echo "Branch still exists after cleanup: $branch" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "### Apollo branch cleanup"
+            echo "Inspected $branch_count refs."
+            echo "Deleted \${#candidate_branches[@]} reviewed branches after verifying the full-history archive."
+            echo "Archive release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$ARCHIVE_TAG"
+            echo "Bundle: $bundle_file (SHA-256: $bundle_sha)"
+            echo "Inventory: $inventory_file (SHA-256: $inventory_sha)"
+            echo
+            echo "Protected recovery branches and all open PR branches were preserved."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Verified archive and cleanup complete. Deleted \${#candidate_branches[@]} branches."
+          rm -rf "$verify_dir"
+          rm -f "$open_branches_file" "$merged_pr_heads_file"
