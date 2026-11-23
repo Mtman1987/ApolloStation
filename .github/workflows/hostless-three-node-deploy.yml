@@ -359,6 +359,7 @@ jobs:
           APOLLO_RUNTIME_NODE1_STELLAR_WORKER_CREDENTIAL: ${{ matrix.node == 'node1' && secrets.STELLAR_WORKER_CREDENTIAL || '' }}
           APOLLO_RUNTIME_NODE2_SPMT_ORIGIN: ${{ matrix.node == 'node2' && 'https://apollo-node-1.hostless.app' || '' }}
           APOLLO_RUNTIME_NODE2_STELLAR_WORKER_CREDENTIAL: ${{ matrix.node == 'node2' && secrets.STELLAR_WORKER_CREDENTIAL || '' }}
+          APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN: ${{ matrix.node == 'node2' && secrets.DISCORD_BOT_TOKEN || '' }}
           APOLLO_RUNTIME_NODE2_VENICE_API_KEY: ${{ matrix.node == 'node2' && secrets.VENICE_API_KEY || '' }}
           APOLLO_RUNTIME_NODE2_GEMINI_API_KEY: ${{ matrix.node == 'node2' && secrets.GEMINI_API_KEY || '' }}
           APOLLO_RUNTIME_NODE2_OPENAI_API_KEY: ${{ matrix.node == 'node2' && secrets.OPENAI_API_KEY || '' }}
