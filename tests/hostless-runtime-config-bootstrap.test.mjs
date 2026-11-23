@@ -235,3 +235,16 @@ test("Nebula public front door prefers the discovered tenant and Twitch channel"
 test("Nebula public front door does not guess when no tenant or channel fallback exists", () => {
   assert.equal(resolveNebulaServerTarget({ schemaVersion: 1, tenants: [] }, "", ""), undefined);
 });
+
+
+test("Node 2 fast deploy preserves Hostless Nebula config when no Actions config is supplied", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
+  const step = workflow.slice(
+    workflow.indexOf("Prepare Nebula runtime config"),
+    workflow.indexOf("Install Hostless CLI"),
+  );
+  assert.match(step, /APOLLO_NODE2_NEBULA_ENABLED=1/);
+  assert.match(step, /if \(raw\) \{/);
+  assert.match(step, /No Actions-provided Nebula config; preserving existing Hostless runtime config/);
+  assert.match(step, /NEBULA_ARCADE_RUNTIME_CONFIG_PATH=\/tmp\/apollo-nebula-runtime\.json/);
+});
