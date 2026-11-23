@@ -282,3 +282,31 @@ test("Twitch shared bot session joins many player channels on one authenticated 
   assert.ok(socket.sent.some((line) => line === "PART #player155\r\n"));
   await handle.close();
 });
+
+test("Discord Gateway requests direct-message intent and normalizes owner DMs with their actual channel ID", async () => {
+  const f = socketFactoryCapture(), requests = [];
+  const driver = new DiscordGatewayProviderDriver({ websocketFactory: f.factory, handshakeTimeoutMs: 2_000, fetch: async (url, init) => {
+    requests.push({url,init});
+    return {ok:true,status:200,async json(){return {id:"dm-reply-1"};},async text(){return "";}};
+  }});
+  const opened = openInput("discord","guild-channel-1"), pending = driver.open(opened.input), socket = f.sockets[0];
+  socket.open();
+  socket.message(JSON.stringify({op:10,d:{heartbeat_interval:60_000}}));
+  const identify = socket.sent.map(value=>JSON.parse(value)).find(value=>value.op===2);
+  assert.ok((identify.d.intents & 4096) === 4096,"DIRECT_MESSAGES intent must be enabled");
+  socket.message(JSON.stringify({op:0,t:"READY",s:1,d:{session_id:"dm-session"}}));
+  const handle = await pending;
+  try {
+    socket.message(JSON.stringify({op:0,t:"MESSAGE_CREATE",s:2,d:{
+      id:"1416041303707353120",channel_id:"1416041303707353119",type:1,content:"adult mode on",
+      timestamp:"2026-11-23T00:00:00.000Z",author:{id:"767875979561009173",username:"mtman1987",bot:false},mentions:[]
+    }}));
+    assert.equal(opened.envelopes.length,1);
+    assert.equal(opened.envelopes[0].channelId,"1416041303707353119");
+    assert.equal(opened.envelopes[0].guildId,undefined);
+    const sent=await driver.send({schemaVersion:1,tenantId:"tenant-a",provider:"discord",connectionId:"discord-main",channelId:"1416041303707353119",text:"Adult Mode is now ON.",idempotencyKey:"dm-reply-key",replyToMessageId:"1416041303707353120"});
+    assert.equal(sent.providerMessageId,"dm-reply-1");
+    assert.match(requests[0].url,/channels\/1416041303707353119\/messages$/);
+    assert.equal(JSON.parse(requests[0].init.body).message_reference.message_id,"1416041303707353120");
+  } finally { await handle.close(); }
+});
