@@ -43,7 +43,7 @@ jobs:
           node --input-type=module - <<'NODE'
           import { appendFileSync } from "node:fs";
           const raw = process.env.NEBULA_ARCADE_RUNTIME_CONFIG_JSON?.trim();
-          appendFileSync(process.env.GITHUB_ENV, "APOLLO_NODE2_NEBULA_ENABLED=1\\n");
+          appendFileSync(process.env.GITHUB_ENV, "APOLLO_NODE2_NEBULA_ENABLED=1\n");
           if (raw) {
             let config;
             try { config = JSON.parse(raw); } catch {
@@ -55,7 +55,7 @@ jobs:
               process.exit(1);
             }
             appendFileSync(process.env.GITHUB_ENV,
-              `NEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\\n`);
+              `NEBULA_ARCADE_RUNTIME_CONFIG_JSON=${JSON.stringify(config)}\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/tmp/apollo-nebula-runtime.json\n`);
             console.log(`Nebula runtime prepared with ${config.tenants.length} Actions-provided tenant(s).`);
           } else {
             console.log("No Actions-provided Nebula config; preserving existing Hostless runtime config and allowing SPMT OAuth discovery.");
