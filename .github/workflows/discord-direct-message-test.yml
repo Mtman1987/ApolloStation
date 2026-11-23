@@ -7,6 +7,7 @@ on:
         description: Discord user ID to receive the test DM
         required: true
         type: string
+        default: '767875979561009173'
 
 permissions:
   contents: read
