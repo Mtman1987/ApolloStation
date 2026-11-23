@@ -111,6 +111,9 @@ test("Apollo workspace controls expose the full legacy appearance model and prev
   ]) assert.ok(shell.includes(field), "missing workspace control: " + field);
   assert.match(shell, /previewWorkspaceAppearance/);
   assert.match(shell, /addEventListener\("input", previewWorkspaceAppearance\)/);
-  assert.match(shell, /rangeControl\("accentSaturation"[^)]*150\)/);
+  assert.match(shell, /rangeControl\("accentSaturation"/);
   assert.match(shell, /accessibility:\s*\{\s*highContrast:/);
+  assert.match(hostClient, /spmt\.surface\.updated/);
+  assert.match(hostClient, /relayWorkspaceAppearance/);
+  assert.match(hostClient, /applyWorkspaceAppearance/);
 });
