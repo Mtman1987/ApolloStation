@@ -490,6 +490,7 @@ export type WorkspaceAppearanceInputV1 = {
   highContrast?: unknown; colorVisionMode?: unknown; textScale?: unknown; reduceMotion?: unknown; focusHighlight?: unknown;
   uiAnimations?: unknown; animationSpeed?: unknown; particleEffects?: unknown; shootingStars?: unknown;
   animation?: { enabled?: unknown; speed?: unknown; particles?: unknown; shootingStars?: unknown };
+  accessibility?: { highContrast?: unknown; colorVisionMode?: unknown; textScale?: unknown; reduceMotion?: unknown; focusHighlight?: unknown };
 };
 
 function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
@@ -520,7 +521,7 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   set("--spmt-accent", theme.accent);
   set("--spmt-accent-secondary", theme.accentSecondary);
   set("--spmt-accent-tertiary", theme.accentTertiary);
-  set("--spmt-accent-saturation", percentage(input.accentSaturation, 100));
+  set("--spmt-accent-saturation", boundedNumber(input.accentSaturation, 100, 0, 150));
   set("--spmt-glow", percentage(input.glowIntensity, 78) / 100);
   set("--spmt-stars", percentage(input.starDensity, 70) / 100);
   set("--spmt-glass-opacity", percentage(input.glassOpacity, 76) / 100);
@@ -546,16 +547,18 @@ export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppe
   data("spmtAnimations", bool(animation.enabled ?? input.uiAnimations, true));
   data("spmtParticles", bool(animation.particles ?? input.particleEffects, true));
   data("spmtShootingStars", bool(animation.shootingStars ?? input.shootingStars, true));
-  data("spmtReduceMotion", bool(input.reduceMotion, false));
-  data("spmtHighContrast", bool(input.highContrast, false));
-  data("spmtFocusHighlight", bool(input.focusHighlight, true));
-  data("spmtColorVision", safeChoice(input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
-  data("spmtTextScale", safeChoice(input.textScale, ["sm", "md", "lg"], "md"));
+  const accessibility = input.accessibility ?? {};
+  const reduceMotion = bool(accessibility.reduceMotion ?? input.reduceMotion, false);
+  data("spmtReduceMotion", reduceMotion);
+  data("spmtHighContrast", bool(accessibility.highContrast ?? input.highContrast, false));
+  data("spmtFocusHighlight", bool(accessibility.focusHighlight ?? input.focusHighlight, true));
+  data("spmtColorVision", safeChoice(accessibility.colorVisionMode ?? input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
+  data("spmtTextScale", safeChoice(accessibility.textScale ?? input.textScale, ["sm", "md", "lg"], "md"));
   data("spmtPushToTalk", bool(input.pushToTalk, false));
   data("spmtMicButton", safeChoice(input.micButtonStyle, ["filled", "outline", "minimal"], "filled"));
   data("spmtVoiceWave", safeChoice(input.voiceWaveStyle, ["bars", "wave", "pulse"], "bars"));
   root.style.colorScheme = "dark";
-  if (bool(input.reduceMotion, false) || !bool(animation.enabled ?? input.uiAnimations, true)) {
+  if (reduceMotion || !bool(animation.enabled ?? input.uiAnimations, true)) {
     set("--spmt-motion-scale", 0);
   } else {
     set("--spmt-motion-scale", 1);
