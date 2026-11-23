@@ -319,6 +319,41 @@ test("Bulletin widgets render scheduled times in their configured timezone and a
   }
 });
 
+test("Bulletin readiness fails when completed cron proof cannot be persisted", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_OWNER_ACTOR_ID","APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key,process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-health-fail-token";
+  process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID = "owner-1";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  let saves = 0;
+  let persisted = { tasks:[], activity:[] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { saves++; if(saves===2)throw new Error("simulated Turso write failure"); persisted=structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({port:0,store});
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:"+address.port;
+    const wake = await fetch(origin+"/api/cron/tick",{method:"POST",headers:{authorization:"Bearer cron-health-fail-token"}});
+    assert.equal(wake.status,202);
+    await wake.text();
+    await new Promise(resolve=>setTimeout(resolve,40));
+    const health = await fetch(origin+"/health/ready");
+    assert.equal(health.status,503);
+    const data = await health.json();
+    assert.equal(data.cron.lastTickStatus,"failed");
+    assert.equal(data.cron.completedTicks,0);
+  } finally {
+    await app.close();
+    for(const key of keys){if(previous[key]===undefined)delete process.env[key];else process.env[key]=previous[key];}
+  }
+});
+
 test("Node 1 disables its private polling loop when Hostless cron owns scheduling", async () => {
   const { readFile } = await import("node:fs/promises");
   const startNode = await readFile(new URL("../scripts/hostless/start-node.mjs", import.meta.url), "utf8");
