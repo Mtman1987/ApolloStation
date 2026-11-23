@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyWorkspaceAppearance, PRODUCT_UI_CSS, relayWorkspaceAppearance } from "../packages/ui/dist/index.js";
+import { AuthorityService, MemoryAuthorityStore } from "../packages/authority-core/dist/index.js";
 
 function rootStub() {
   const values = new Map();
@@ -72,4 +73,28 @@ test("appearance relay requires a concrete origin and emits the versioned compat
   assert.equal(message.revision, 17);
   assert.equal(message.appearance.themeId, "aurora-green");
   assert.throws(() => relayWorkspaceAppearance(target, "*", {}), /concrete target origin/);
+});
+
+
+test("canonical workspace authority accepts and validates the complete appearance control model", () => {
+  const authority = new AuthorityService({ store: new MemoryAuthorityStore() });
+  authority.getOrCreateWorkspace("appearance-tenant");
+  const appearance = {
+    theme: "aurora-green", accent: "#10b981", accentSecondary: "#a3e635",
+    accentSaturation: 145, glowIntensity: 70, starDensity: 80, glassOpacity: 65,
+    blurStrength: 24, nebulaIntensity: 50, parallaxDepth: 30, borderStrength: 45,
+    borderGlow: true, hoverGlow: false, cornerRadius: "md", density: "spacious",
+    sidebarCollapsed: false, sidebarStyle: "glass", sidebarPosition: "right",
+    topbarStyle: "minimal", tabStyle: "cards", tabPosition: "bottom",
+    chatTransparency: 30, showAvatars: true, smoothTransitions: true, pushToTalk: true,
+    pushToTalkKey: "V", micButtonStyle: "outline", voiceWaveStyle: "wave",
+    accessibility: { highContrast: true, colorVisionMode: "protanopia", textScale: "lg", reduceMotion: false, focusHighlight: true },
+    animation: { enabled: true, speed: 85, particles: true, shootingStars: false },
+  };
+  const saved = authority.updateWorkspace("appearance-tenant", 1, { appearance });
+  assert.equal(saved.appearance.accentSaturation, 145);
+  assert.equal(saved.appearance.accessibility.colorVisionMode, "protanopia");
+  assert.equal(saved.appearance.animation.enabled, true);
+  assert.throws(() => authority.updateWorkspace("appearance-tenant", 2, { appearance: { ...appearance, accentSaturation: 151 } }), /accentSaturation/);
+  assert.throws(() => authority.updateWorkspace("appearance-tenant", 2, { appearance: { ...appearance, voiceWaveStyle: "invalid" } }), /voice wave style/);
 });
