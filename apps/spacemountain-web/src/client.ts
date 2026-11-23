@@ -967,8 +967,8 @@ async function submitApolloLogin() {
     const detail = message(error);
     if (detail.toLowerCase().includes("valid local password") || (error instanceof SpmtApiError && error.status === 401)) {
       recoveryStart.hidden = false;
-      recoveryMessage.textContent = "Enter your Apollo username above, then choose the Discord or Twitch identity already linked to it.";
-      setStatus("Choose a linked provider to recover your existing Apollo account.", "error");
+      recoveryMessage.textContent = "This account needs a password setup. Verify the Discord or Twitch identity already linked to it, then choose a password.";
+      setStatus("Password setup required — verify your linked account to continue.", "working");
       recoveryStart.scrollIntoView({ behavior: "smooth", block: "center" });
       recoveryDiscord.focus({ preventScroll: true });
       return;
