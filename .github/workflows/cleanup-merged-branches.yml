@@ -26,7 +26,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Pushes to main perform cleanup after archiving. Manual runs stay dry-run by default.
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+      DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != false) }}
       ARCHIVE_TAG: apollo-branch-archive-2026-11-22
     steps:
       - name: Check out complete history
