@@ -16,27 +16,56 @@ jobs:
   send-test-dm:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Discord test DM
+      - name: Diagnose token and send Discord test DM
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           RECIPIENT_USER_ID: ${{ inputs.recipient_user_id }}
         run: |
           node <<'NODE'
-          const token = process.env.DISCORD_BOT_TOKEN;
-          const recipient = process.env.RECIPIENT_USER_ID;
-          if (!token) { console.error('Missing DISCORD_BOT_TOKEN secret'); process.exit(1); }
-          if (!recipient || !/^\d{17,20}$/.test(recipient)) { console.error('Invalid recipient user ID'); process.exit(1); }
+          const token = process.env.DISCORD_BOT_TOKEN ?? '';
+          const recipient = process.env.RECIPIENT_USER_ID ?? '';
+          console.log('[diagnostic] token secret injected:', token.length > 0);
+          console.log('[diagnostic] token character length:', token.length);
+          console.log('[diagnostic] token has leading/trailing whitespace:', token !== token.trim());
+          console.log('[diagnostic] recipient ID:', recipient);
+          if (!token.trim()) {
+            console.error('[diagnostic] FAIL: DISCORD_BOT_TOKEN is empty or whitespace.');
+            process.exit(1);
+          }
+          if (token !== token.trim()) {
+            console.error('[diagnostic] FAIL: token has surrounding whitespace; secret may have been pasted incorrectly.');
+            process.exit(1);
+          }
+          if (!/^\d{17,20}$/.test(recipient)) {
+            console.error('[diagnostic] FAIL: recipient ID is not a valid Discord snowflake format.');
+            process.exit(1);
+          }
           const headers = { Authorization: 'Bot ' + token, 'Content-Type': 'application/json' };
-          async function request(path, body) {
-            const res = await fetch('https://discord.com/api/v10' + path, { method: 'POST', headers, body: JSON.stringify(body) });
+          async function request(label, path, body) {
+            console.log('[diagnostic] request stage:', label, path);
+            const res = await fetch('https://discord.com/api/v10' + path, {
+              method: body === undefined ? 'GET' : 'POST',
+              headers,
+              body: body === undefined ? undefined : JSON.stringify(body)
+            });
             const text = await res.text();
-            if (!res.ok) { console.error('Discord API HTTP ' + res.status + ': ' + text.slice(0, 500)); process.exit(1); }
-            return text ? JSON.parse(text) : {};
+            console.log('[diagnostic] stage status:', label, res.status, res.statusText);
+            if (!res.ok) {
+              console.error('[diagnostic] Discord response body:', text.slice(0, 2000));
+              throw new Error(label + ' failed with HTTP ' + res.status);
+            }
+            try { return text ? JSON.parse(text) : {}; }
+            catch (e) { console.error('[diagnostic] response was not JSON:', text.slice(0, 500)); throw e; }
           }
           (async () => {
-            const dm = await request('/users/@me/channels', { recipient_id: recipient });
-            if (!dm.id) { console.error('Discord did not return a DM channel'); process.exit(1); }
-            const sent = await request('/channels/' + dm.id + '/messages', { content: 'Apollo Discord connectivity test: direct bot DM delivery is working.' });
-            console.log('SUCCESS: DM message sent. Message ID: ' + sent.id);
-          })().catch(err => { console.error(err); process.exit(1); });
+            const bot = await request('token validation', '/users/@me');
+            console.log('[diagnostic] authenticated bot username:', bot.username ?? '(missing)', 'bot ID:', bot.id ?? '(missing)');
+            const dm = await request('create/open DM', '/users/@me/channels', { recipient_id: recipient });
+            console.log('[diagnostic] DM channel returned:', dm.id ?? '(missing)');
+            if (!dm.id) throw new Error('Discord returned no DM channel ID');
+            const sent = await request('send message', '/channels/' + dm.id + '/messages', {
+              content: 'Apollo Discord connectivity test: direct bot DM delivery is working.'
+            });
+            console.log('[diagnostic] SUCCESS: message sent; message ID:', sent.id ?? '(missing)');
+          })().catch(err => { console.error('[diagnostic] FATAL:', err.message); process.exit(1); });
           NODE
