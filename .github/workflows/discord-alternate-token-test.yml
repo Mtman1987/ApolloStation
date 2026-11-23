@@ -1,0 +1,41 @@
+name: Discord Alternate Token Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-alternate-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate alternate token and DM
+        env:
+          TEST_DISCORD_TOKEN: ${{ secrets.DISCORD_TEST_TOKEN }}
+          RECIPIENT_USER_ID: '767875979561009173'
+        run: |
+          echo "::add-mask::$TEST_DISCORD_TOKEN"
+          node <<'NODE'
+          const token = process.env.TEST_DISCORD_TOKEN ?? '';
+          const recipient = process.env.RECIPIENT_USER_ID ?? '';
+          console.log('[test] alternate secret present:', !!token);
+          console.log('[test] token length:', token.length);
+          if (!token.trim()) throw new Error('DISCORD_TEST_TOKEN is empty');
+          const headers = { Authorization: 'Bot ' + token, 'Content-Type': 'application/json' };
+          async function req(stage, path, body) {
+            console.log('[test] stage:', stage);
+            const r = await fetch('https://discord.com/api/v10' + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+            const t = await r.text();
+            console.log('[test] HTTP:', r.status, r.statusText);
+            if (!r.ok) { console.error('[test] response:', t.slice(0,1000)); throw new Error(stage + ' failed'); }
+            return t ? JSON.parse(t) : {};
+          }
+          (async () => {
+            const bot = await req('token validation', '/users/@me');
+            console.log('[test] bot:', bot.username, 'ID:', bot.id);
+            const dm = await req('DM open', '/users/@me/channels', { recipient_id: recipient });
+            const sent = await req('message send', '/channels/' + dm.id + '/messages', { content: 'Apollo alternate-token test succeeded.' });
+            console.log('[test] SUCCESS message ID:', sent.id);
+          })().catch(e => { console.error('[test] FAILED:', e.message); process.exit(1); });
+          NODE
