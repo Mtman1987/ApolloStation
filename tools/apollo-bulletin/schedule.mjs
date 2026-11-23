@@ -12,11 +12,25 @@ function localDateTimeToUtc(year, month, day, hour, minute, timeZone) {
   throw new Error("Unable to resolve schedule time in timezone");
 }
 function parseRunAt(value, timeZone) {
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) {
-    const [date,time]=value.split("T"),[year,month,day]=date.split("-").map(Number),[hour,minute,second=0]=time.split(":").map(Number);
-    const calendarDate=new Date(Date.UTC(year,month-1,day));
-    if(calendarDate.getUTCFullYear()!==year||calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)throw new Error("One-time schedule date is invalid");
-    return localDateTimeToUtc(year,month,day,hour,minute,timeZone)+second*1000;
+  if (typeof value === "string") {
+    const local = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    const absolute = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})$/);
+    const match = local || absolute;
+    if (match) {
+      const year=Number(match[1]), month=Number(match[2]), day=Number(match[3]), hour=Number(match[4]), minute=Number(match[5]), second=Number(match[6]||0);
+      const calendarDate=new Date(0); calendarDate.setUTCFullYear(year,month-1,day); calendarDate.setUTCHours(0,0,0,0);
+      if(calendarDate.getUTCFullYear()!==year||calendarDate.getUTCMonth()+1!==month||calendarDate.getUTCDate()!==day)throw new Error("One-time schedule date is invalid");
+      if(hour>23||minute>59||second>59)throw new Error("One-time schedule time is invalid");
+      if(absolute) {
+        const offset=match[8];
+        if(offset!=="Z"&&((Number(offset.slice(1,3))>23)||(Number(offset.slice(4,6))>59)))throw new Error("One-time schedule timezone offset is invalid");
+        const at=Date.parse(value);
+        if(!Number.isFinite(at))throw new Error("One-time schedule timestamp is invalid");
+        return at;
+      }
+      return localDateTimeToUtc(year,month,day,hour,minute,timeZone)+second*1000;
+    }
+    if(/^\d{4}-\d{2}-\d{2}T/.test(value))throw new Error("One-time schedule date/time is invalid");
   }
   return new Date(value).getTime();
 }
