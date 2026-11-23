@@ -28,7 +28,7 @@ async function fixture(identityRole = "owner") {
   const assistant = new DiscordDmAdultModeAssistant({
     client, databasePath: join(directory, "chat.sqlite"),
     resolveIdentity: async () => ({ userId: "canonical-owner", tenantRole: identityRole }),
-    gateway: { async send(message) { sent.push(message); return { providerMessageId: "sent-1" }; } },
+    sender: { provider: "discord", async send(message) { sent.push(message); return { providerMessageId: "sent-1" }; } },
     pollMs: 1,
   });
   return { directory, assistant, sent, invocations, close: async () => { assistant.close(); await rm(directory,{recursive:true,force:true}); } };
