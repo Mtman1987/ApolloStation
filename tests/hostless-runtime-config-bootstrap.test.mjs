@@ -201,3 +201,10 @@ test("Node 2 fast deploy copies the canonical Discord bot token into the Chat Ga
   const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN: \$\{\{ secrets\.DISCORD_BOT_TOKEN \}\}/);
 });
+
+
+test("Node 2 fast deploy persists the mapped Discord bot token to Hostless", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
+  assert.match(workflow, /APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN:.*secrets\.DISCORD_BOT_TOKEN/);
+  assert.match(workflow, /APOLLO_SYNC_RUNTIME_SECRETS: "1"/);
+});
