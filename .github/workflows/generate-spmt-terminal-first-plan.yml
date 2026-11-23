@@ -132,7 +132,7 @@ PHASE 6 — DONOR PARITY / PORTING
 [ ] Port behavior and dependencies, not blind file copies; reuse Apollo/shared contracts.
 [ ] Each port: brief -> isolated branch/worktree -> smallest slice -> tests -> diff/secret scan -> PR -> live acceptance when authorized.
 [ ] Protect data ownership; backup and restore proof before any migration; single-writer rules.
-Priority: StreamWeaver + Discord Stream Hub; Nebula/Chat Tag; HearMeOut; OverlayBay/Lounge. Re-rank only with evidence.
+Priority: StreamWeaver + Discord Stream Hub; Nebula Arcade; HearMeOut; OverlayBay/Lounge. Re-rank only with evidence.
 [ ] Capture parity report and remaining gaps.
 
 PHASE 7 — SUPERVISED OVERNIGHT WORK
