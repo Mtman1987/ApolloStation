@@ -1,6 +1,17 @@
 name: Apollo local UI screenshot proof
 
 on:
+  push:
+    branches: [proof/local-ui-screenshot-artifact]
+    paths:
+      - "scripts/hostless/capture-ui-preview.mjs"
+      - ".github/workflows/apollo-local-ui-screenshot-proof.yml"
+      - "apps/spacemountain-web/**"
+      - "apps/spacemountain/**"
+      - "packages/**"
+      - "apps/spmt-service/**"
+      - "package.json"
+      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
