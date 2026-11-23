@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveNebulaServerTarget } from "../scripts/hostless/nebula-runtime-config.mjs";
 
 const entry = new URL("../scripts/hostless/start-node.mjs", import.meta.url);
 
@@ -207,4 +208,30 @@ test("Node 2 fast deploy persists the mapped Discord bot token to Hostless", () 
   const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /APOLLO_RUNTIME_NODE2_DISCORD_BOT_TOKEN:.*secrets\.DISCORD_BOT_TOKEN/);
   assert.match(workflow, /APOLLO_SYNC_RUNTIME_SECRETS: "1"/);
+});
+
+
+test("Nebula public front door starts on the existing system tenant/channel before OAuth discovery", () => {
+  assert.deepEqual(
+    resolveNebulaServerTarget({ schemaVersion: 1, tenants: [] }, "spacemountainlive", "mtman1987"),
+    { tenantId: "spacemountainlive", channelId: "mtman1987" },
+  );
+});
+
+test("Nebula public front door prefers the discovered tenant and Twitch channel", () => {
+  assert.deepEqual(
+    resolveNebulaServerTarget({
+      schemaVersion: 1,
+      tenants: [
+        { tenantId: "spacemountainlive", channels: [
+          { provider: "twitch", connectionId: "twitch-live", channelId: "mtman1987" },
+        ] },
+      ],
+    }, "spacemountainlive", "mtman1987"),
+    { tenantId: "spacemountainlive", channelId: "mtman1987" },
+  );
+});
+
+test("Nebula public front door does not guess when no tenant or channel fallback exists", () => {
+  assert.equal(resolveNebulaServerTarget({ schemaVersion: 1, tenants: [] }, "", ""), undefined);
 });
