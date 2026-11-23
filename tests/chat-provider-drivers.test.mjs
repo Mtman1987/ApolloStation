@@ -76,6 +76,8 @@ test("Discord driver identifies, stores a resumable cursor, normalizes messages,
   socket.open();
   socket.message(JSON.stringify({ op: 10, d: { heartbeat_interval: 60_000 } }));
   assert.ok(socket.sent.some((line) => JSON.parse(line).op === 2));
+  const identify = JSON.parse(socket.sent.find((line) => JSON.parse(line).op === 2));
+  assert.ok((identify.d.intents & 4_096) !== 0, "Discord Direct Messages intent must be enabled");
   socket.message(JSON.stringify({ op: 0, t: "READY", s: 10, d: { session_id: "session-1", resume_gateway_url: "wss://gateway-us-east.discord.gg" } }));
   const handle = await pending;
   const cursor = decodeDiscordCursor(opened.cursors.at(-1));
@@ -90,6 +92,29 @@ test("Discord driver identifies, stores a resumable cursor, normalizes messages,
   assert.equal(requests[0].init.headers.Authorization, "Bot ephemeral-token");
   assert.equal(JSON.parse(requests[0].init.body).nonce, "nonce-1");
   await handle.close();
+});
+
+
+test("Discord gateway accepts DM messages from channels outside the configured guild channel and replies in that DM", async () => {
+  const f = socketFactoryCapture(), requests = [];
+  const driver = new DiscordGatewayProviderDriver({ websocketFactory: f.factory, handshakeTimeoutMs: 2_000, fetch: async (url, init) => { requests.push({ url, init }); return { ok: true, status: 200, async json() { return { id: "discord-dm-reply" }; }, async text() { return ""; } }; } });
+  const opened = openInput("discord", "configured-guild-channel"), pending = driver.open(opened.input), socket = f.sockets[0];
+  socket.open();
+  socket.message(JSON.stringify({ op: 10, d: { heartbeat_interval: 60_000 } }));
+  socket.message(JSON.stringify({ op: 0, t: "READY", s: 1, d: { session_id: "dm-session" } }));
+  const handle = await pending;
+  try {
+    socket.message(JSON.stringify({ op: 0, t: "MESSAGE_CREATE", s: 2, d: { id: "dm-message-1", channel_id: "direct-message-channel", content: "Athena, are you there?", timestamp: "2026-11-22T12:00:00Z", author: { id: "owner-user", username: "owner", global_name: "Owner", bot: false }, attachments: [{ id: "a1", filename: "context.txt", url: "https://cdn.discordapp.com/attachments/context.txt", content_type: "text/plain", size: 12 }] } }));
+    assert.equal(opened.envelopes.length, 1);
+    assert.equal(opened.envelopes[0].channelId, "direct-message-channel");
+    assert.notEqual(opened.envelopes[0].channelId, opened.input.connection.channelId, "DM replies must never inherit the configured guild channel");
+    assert.equal(opened.envelopes[0].guildId, undefined);
+    assert.equal(opened.envelopes[0].rich.attachments.length, 1);
+    const sent = await driver.send({ schemaVersion: 1, tenantId: "tenant-a", provider: "discord", connectionId: "discord-main", channelId: "direct-message-channel", text: "Yes, I'm here.", idempotencyKey: "dm-reply-1", replyToMessageId: "dm-message-1" });
+    assert.equal(sent.providerMessageId, "discord-dm-reply");
+    assert.match(requests[0].url, /channels\/direct-message-channel\/messages$/);
+    assert.equal(JSON.parse(requests[0].init.body).message_reference.channel_id, "direct-message-channel");
+  } finally { await handle.close(); }
 });
 
 test("Kick driver subscribes to donor Pusher chatroom, normalizes ChatMessageEvent, and preserves outbound API shape", async () => {
