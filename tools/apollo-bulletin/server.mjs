@@ -130,6 +130,11 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (source === "hostless-cron") {
         state.cron.inFlight = false;
         state.cron.lastTickProcessed = processed;
+        const previousCron = {
+          lastTickCompletedAt: state.cron.lastTickCompletedAt,
+          completedTicks: state.cron.completedTicks,
+          failedTicks: state.cron.failedTicks,
+        };
         if (tickFailure) {
           state.cron.status = "failed";
           state.cron.lastTickFailedAt = now();
@@ -141,11 +146,6 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           state.cron.completedTicks += 1;
           log("hostless-cron-tick-completed", null, String(processed));
         }
-        const previousCron = {
-          lastTickCompletedAt: state.cron.lastTickCompletedAt,
-          completedTicks: state.cron.completedTicks,
-          failedTicks: state.cron.failedTicks,
-        };
         try { await save(); }
         catch (persistError) {
           state.cron.status = "failed";
