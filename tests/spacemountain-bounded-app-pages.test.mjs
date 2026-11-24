@@ -51,6 +51,7 @@ test("embedded app pages use the compact shell surface while standalone pages ke
     assert.match(embedded, /class="bounded-app-root"/, path);
     assert.match(standalone, /data-spmt-surface="standalone"/, path);
     assert.match(standalone, /class="bounded-rocket-dock/, path);
-    assert.match(standalone, new RegExp(name.replace(/[.*+?^\u0024{}()|[\\]\\\\]/g, "\\\\$&")));
+    assert.ok(standalone.includes(name), path);
+    assert.match(embedded, /<footer id="status"[^>]*hidden>/, path);
   }
 });
