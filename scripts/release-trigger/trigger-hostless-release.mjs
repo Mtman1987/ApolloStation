@@ -22,7 +22,7 @@ if (!token) {
 }
 
 const workflow = "hostless-three-node-deploy.yml";
-const reason = "linked-provider recovery cookie hardening and exact-deployment API polling";
+const reason = "Apollo Bulletin live readiness contract, Chromium health, and reviewed-task continuation fixes";
 const endpoint = `https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`;
 const response = await fetch(endpoint, {
   method: "POST",
