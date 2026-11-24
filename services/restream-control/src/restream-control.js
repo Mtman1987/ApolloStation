@@ -42,7 +42,7 @@ function allowedRestreamHost(value) {
   }
 }
 
-function createRestreamControl({ chromiumPath, chromium, profileDir }) {
+function createRestreamControl({ chromiumPath, chromium, profileDir, spawnImpl = spawn }) {
   if (typeof profileDir !== 'string' || !isAbsolute(profileDir)) throw Error('RESTREAM_PROFILE_DIR must be an explicit absolute persistent-volume path');
   const controlUrl = process.env.RESTREAM_CONTROL_URL || 'https://app.restream.io/channel';
   let display;
@@ -74,7 +74,7 @@ function createRestreamControl({ chromiumPath, chromium, profileDir }) {
       display = undefined;
 
       await mkdir(profileDir, { recursive: true });
-      display = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-ac'], {
+      display = spawnImpl('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-ac'], {
         stdio: ['ignore', 'ignore', 'pipe', 'pipe'],
       });
       const displayNumber = await new Promise((resolve, reject) => {
