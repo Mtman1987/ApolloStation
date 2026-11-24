@@ -77,7 +77,7 @@ export class ApolloChatGptBrowserWorker {
     try {
       const url = page.url();
       const title = await page.title().catch(() => "");
-      const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
+      const loginRequired = /\/auth\/(?:log-?in|sign-?in)|\/(?:log-?in|sign-?in)/i.test(url) ||
         await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
       return { connected: healthy, healthy, loginRequired, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
     } catch {
@@ -129,9 +129,9 @@ export class ApolloChatGptBrowserWorker {
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("Task prompt is missing");
     const targetUrl = normalizeChatGptConversationUrl(task.conversationUrl);
     this.busy = true;
-    const page = this.#requirePage();
     let clickAttempted = false;
     try {
+      const page = this.#requirePage();
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("ChatGPT redirected away from the exact target conversation; refusing to send");
