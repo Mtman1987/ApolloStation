@@ -617,7 +617,15 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (!principal || principal.actorType !== "user") {
           return json(response, 401, { authenticated: false, cookiePresent: Boolean(browserToken), apolloValidated: false });
         }
-        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds });
+        const tenantRoles = Object.fromEntries((principal.tenantIds ?? []).map((tenantId) => {
+          try {
+            const tenant = control.getTenant(tenantId);
+            return [tenantId, tenant?.status === "active" && tenant.ownerUserId === principal.actorId ? "owner" : "member"];
+          } catch {
+            return [tenantId, "member"];
+          }
+        }));
+        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds, tenantRoles });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/token/introspect") {
