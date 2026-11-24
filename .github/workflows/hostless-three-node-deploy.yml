@@ -423,16 +423,27 @@ jobs:
               try {
                 const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(8000) });
                 const data = await response.json().catch(() => ({}));
-                if (response.ok && isReadinessResponseReady(path, data)) {
-                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
+                const bulletinReady = path !== "/bulletin/health/ready" || (data.browserHealthy === true && data.persistence === "turso" && data.cronAuthConfigured === true);
+                if (response.ok && isReadinessResponseReady(path, data) && bulletinReady) {
+                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, cronAuthConfigured: data.cronAuthConfigured ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
                   last = null;
                   break;
                 }
-                last = { status: response.status, ready: data.ready, state: data.state, detail: data };
+                last = { status: response.status, ready: data.ready, state: data.state, browserHealthy: data.browserHealthy, persistence: data.persistence, cronAuthConfigured: data.cronAuthConfigured, detail: data };
               } catch (error) { last = { error: String(error?.message || error) }; }
               if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 3000));
             }
             if (last) throw new Error("Live readiness failed for " + path + ": " + JSON.stringify(last));
+          }
+          const protectedRoutes = [
+            { path: "/bulletin/api/tasks", method: "GET", allowed: [401, 403] },
+            { path: "/bulletin/api/browser/status", method: "GET", allowed: [401, 403] },
+            { path: "/bulletin/api/cron/tick", method: "POST", allowed: [401, 403, 503] },
+          ];
+          for (const probe of protectedRoutes) {
+            const response = await fetch(base + probe.path, { method: probe.method, cache: "no-store", signal: AbortSignal.timeout(8000) });
+            if (!probe.allowed.includes(response.status)) throw new Error("Unauthenticated Bulletin route was not denied: " + probe.method + " " + probe.path + " returned " + response.status);
+            console.log(JSON.stringify({ path: probe.path, method: probe.method, unauthenticatedStatus: response.status, denied: true }));
           }
           NODE
       - name: Attach domain and verify Hostless read-back
