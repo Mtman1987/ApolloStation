@@ -77,7 +77,7 @@ export class ApolloChatGptBrowserWorker {
     try {
       const url = page.url();
       const title = await page.title().catch(() => "");
-      const loginRequired = /\\/auth\\/(login|signin)|\\/login/i.test(url) ||
+      const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
         await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
       return { connected: healthy, healthy, loginRequired, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
     } catch {
