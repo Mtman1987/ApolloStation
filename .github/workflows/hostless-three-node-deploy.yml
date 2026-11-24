@@ -419,19 +419,27 @@ jobs:
           const base = "https://apollo-node-1.hostless.app";
           for (const path of ["/health/ready", "/bulletin/health/ready"]) {
             let last;
-            for (let attempt = 0; attempt < 8; attempt++) {
+            const attempts = path === "/bulletin/health/ready" ? 20 : 4;
+            for (let attempt = 0; attempt < attempts; attempt++) {
               try {
-                const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+                const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(4000) });
                 const data = await response.json().catch(() => ({}));
-                const bulletinReady = path !== "/bulletin/health/ready" || (data.browserHealthy === true && data.persistence === "turso" && data.cronRequired === true && data.cronAuthConfigured === true);
+                const lastTickAt = Number(data.cron?.lastTickCompletedAt);
+                const cronExecutionFresh = data.cronExecutionConfirmed === true &&
+                  data.cron?.lastTickStatus === "completed" && Number.isFinite(lastTickAt) &&
+                  lastTickAt > 0 && lastTickAt <= Date.now() && Date.now() - lastTickAt <= 180000;
+                const bulletinReady = path !== "/bulletin/health/ready" || (
+                  data.browserHealthy === true && data.persistence === "turso" &&
+                  data.cronRequired === true && data.cronAuthConfigured === true && cronExecutionFresh
+                );
                 if (response.ok && isReadinessResponseReady(path, data) && bulletinReady) {
-                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, cronRequired: data.cronRequired ?? undefined, cronAuthConfigured: data.cronAuthConfigured ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
+                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserSessionReady: data.browserSessionReady ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, cronRequired: data.cronRequired ?? undefined, cronAuthConfigured: data.cronAuthConfigured ?? undefined, cronExecutionConfirmed: data.cronExecutionConfirmed ?? undefined, cron: data.cron ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
                   last = null;
                   break;
                 }
-                last = { status: response.status, ready: data.ready, state: data.state, browserHealthy: data.browserHealthy, persistence: data.persistence, cronAuthConfigured: data.cronAuthConfigured, detail: data };
+                last = { status: response.status, ready: data.ready, state: data.state, browserHealthy: data.browserHealthy, persistence: data.persistence, cronAuthConfigured: data.cronAuthConfigured, cronExecutionConfirmed: data.cronExecutionConfirmed, cron: data.cron, detail: data };
               } catch (error) { last = { error: String(error?.message || error) }; }
-              if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 3000));
+              if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, path === "/bulletin/health/ready" ? 2500 : 1000));
             }
             if (last) throw new Error("Live readiness failed for " + path + ": " + JSON.stringify(last));
           }
