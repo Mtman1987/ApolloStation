@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   deploy-node2:
-    name: Deploy Node 2 only — Chat Gateway / StreamWeaver
+    name: Deploy Node 2 only — Chat Gateway / StreamWeaver / Nebula / HearMeOut
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: production

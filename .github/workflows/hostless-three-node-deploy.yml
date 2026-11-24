@@ -226,7 +226,7 @@ jobs:
           });
           if (process.env.NODE2 === "true") include.push({
             node: "node2",
-            label: "Node 2 — Chat Gateway / StreamWeaver / Nebula",
+            label: "Node 2 — Chat Gateway / StreamWeaver / Nebula / HearMeOut",
             app: "apollo-node-2",
             hostless_secret: "HOSTLESS_NODE2_TOKEN",
           });
