@@ -121,3 +121,67 @@ test("malformed task JSON returns HTTP 400", async () => {
     assert.equal(response.status,400);assert.deepEqual(await response.json(),{error:"Request body must be valid JSON"});
   } finally { await app.close(); }
 });
+
+test("Hostless cron readiness requires a persisted completed tick, not only a configured token", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_ENABLE_BROWSER","APOLLO_BULLETIN_OWNER_ACTOR_ID"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-health-test-token";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  delete process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID;
+  let persisted = { tasks: [], activity: [] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const before = await fetch(origin + "/health/ready");
+    assert.equal(before.status, 503);
+    assert.equal((await before.json()).cron.lastTickStatus, "never");
+    const denied = await fetch(origin + "/api/cron/tick", { method: "POST" });
+    assert.equal(denied.status, 401);
+    const wake = await fetch(origin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer cron-health-test-token" } });
+    assert.equal(wake.status, 202);
+    assert.deepEqual(await wake.json(), { accepted: true });
+    for (let attempt = 0; attempt < 50 && persisted.cron?.status !== "completed"; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(persisted.cron.status, "completed");
+    const after = await fetch(origin + "/health/ready");
+    assert.equal(after.status, 200);
+    const proof = await after.json();
+    assert.equal(proof.ready, true);
+    assert.equal(proof.cronExecutionConfirmed, true);
+    assert.equal(proof.cron.lastTickStatus, "completed");
+    assert.equal(proof.cron.completedTicks, 1);
+    assert.equal(proof.cron.lastTickProcessed, 0);
+    assert.equal(proof.browserSessionReady, false, "browser sign-in remains a separate owner action");
+    assert.equal("tasks" in proof, false, "public health must not expose queue contents");
+  } finally {
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
+
+test("Bulletin widgets render scheduled times in the selected timezone and expose accessible status", async () => {
+  const directory = await (await import("node:fs/promises")).mkdtemp(join((await import("node:os")).tmpdir(), "apollo-bulletin-widget-a11y-"));
+  const store = { async loadQueue() { return { tasks: [], activity: [] }; }, async saveQueue() {}, async loadBrowserState() { return null; }, async saveBrowserState() {} };
+  const app = createBulletinServer({ statePath: join(directory, "state.json"), port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/widgets/scheduler");
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /function nextRun\\(t\\)/);
+    assert.match(html, /timeZoneName:"short"/);
+    assert.match(html, /aria-live="polite"/);
+    assert.match(html, /min-height:40px/);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
