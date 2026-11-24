@@ -164,3 +164,37 @@ test("Overlay Bay retains donor editor controls and all source families", () => 
   assert.match(overlay, /Copy Public URL/);
   assert.match(overlay, /Copy Personal URL/);
 });
+
+test("SpaceMountain restores the legacy account identity in the header and dock footer", () => {
+  assert.match(base, /@\$\{escapeHtml\(username\)\}/);
+  assert.match(base, /this\.snapshot\.xp\?\.balance/);
+  assert.match(base, /class="spmt-dock-profile"/);
+  assert.match(base, /data-account-open/);
+  assert.match(base, /href="https:\/\/spmt\.live\//);
+  assert.match(base, /spmt-account-link/);
+  assert.match(base, /display:flex;flex-direction:column;min-width:0/);
+});
+
+test("Home is only the hero landing page and Commlink owns the forum surface", () => {
+  const home = base.slice(base.indexOf("  private home() {"), base.indexOf("  private shipyard()"));
+  const commlink = base.slice(base.indexOf("  private commlink()"), base.indexOf("  private forum()"));
+  assert.doesNotMatch(home, /community-pulse|data-forum-create|Latest forum posts/);
+  assert.match(home, /Open Shipyard/);
+  assert.match(home, /Open Commlink/);
+  assert.match(commlink, /\$\{this\.forum\(\)\}/);
+  assert.match(base, /private forum\(\)/);
+  assert.match(base, /data-forum-create/);
+});
+
+test("Workspace header action opens the footer and the mobile footer keeps its close control", () => {
+  assert.match(base, /data-workspace-toggle/);
+  assert.match(base, /data-workspace-close/);
+  assert.match(base, /workspaceButton\?\.setAttribute\("aria-expanded", String\(this\.workspaceOpen\)\)/);
+  assert.doesNotMatch(base, /data-workspace-maximize\],\.spmt-workspace-controls \[data-workspace-close\]/);
+});
+
+test("Personal SPMT account settings remain distinct from shared workspace settings", () => {
+  assert.match(base, /SPMT PERSONAL ACCOUNT/);
+  assert.match(base, /Open SPMT Account/);
+  assert.match(base, /Shared appearance, layout, motion, and workspace behavior live in one canonical profile/);
+});
