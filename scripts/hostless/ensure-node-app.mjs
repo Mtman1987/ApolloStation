@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isHostlessDeploymentFailure, isHostlessDeploymentSuccessful, normalizeHostlessDeploymentStatus } from "./deployment-status.mjs";
+import { waitForHostlessDeployment } from "./deployment-poll.mjs";
 
 const nodeKey = process.argv[2];
 const commit = process.argv[3] ?? process.env.GITHUB_SHA;
@@ -350,33 +351,53 @@ const deploymentId = deployment?.id ?? deployment?.deployment?.id ?? deployment?
 if (!deploymentId) fail(`Hostless accepted the deploy trigger for ${node.app} but returned no deployment id: ${JSON.stringify(deployment).slice(0, 300)}`);
 console.log(`Triggered Hostless deployment ${deploymentId} for ${node.app}.`);
 
-// Use the Hostless CLI's supported wait mode so build/release logs and the
-// final deployment status come from the same operation. A plain status poll can
-// remain at validate_hostless_file_successful and never expose the build result.
+// Prefer the CLI's structured wait when it returns promptly. If its long-poll
+// connection times out or the CLI is temporarily unavailable, verify the exact
+// deployment through the authenticated Hostless API instead of treating a lost
+// status connection as a failed build.
 const waited = spawnSync("hostless", [
-  "deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "1200", ...scope,
+  "deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "60", ...scope,
 ], {
   encoding: "utf8",
   env: process.env,
   maxBuffer: 20 * 1024 * 1024,
-  timeout: 1230 * 1000,
+  timeout: 75 * 1000,
   killSignal: "SIGTERM",
 });
 if (waited.stdout) process.stdout.write(waited.stdout);
 if (waited.stderr) process.stderr.write(waited.stderr);
-if (waited.error) fail(`Hostless deployment ${deploymentId} for ${node.app} wait failed: ${waited.error.message}`);
-if (waited.status !== 0) fail(`Hostless deployment ${deploymentId} for ${node.app} failed with exit code ${waited.status}.`);
 const deploymentEvents = (waited.stdout || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
   try { return [JSON.parse(line)]; } catch { return []; }
 });
 const finalDeployment = [...deploymentEvents].reverse().find((event) => event?.type === "deployment" && event?.deployment);
-if (!finalDeployment) fail(`Hostless deployment ${deploymentId} for ${node.app} returned no final deployment event.`);
-const finalStatus = normalizeHostlessDeploymentStatus(finalDeployment.deployment.status ?? "unknown");
+let finalStatus = normalizeHostlessDeploymentStatus(finalDeployment?.deployment?.status ?? "unknown");
+
 if (isHostlessDeploymentFailure(finalStatus)) {
-  const reason = finalDeployment.deployment.failReason ?? finalDeployment.deployment.message;
-  fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${finalStatus}${reason ? ` (reason: ${String(reason).slice(0, 160)})` : ""}.`);
+  fail(`Hostless deployment ${deploymentId} for ${node.app} ended as ${finalStatus}.`);
 }
-if (!isHostlessDeploymentSuccessful(finalStatus)) fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state (last status: ${finalStatus}).`);
+
+if (!isHostlessDeploymentSuccessful(finalStatus)) {
+  const cliFailure = waited.error?.message ?? (waited.status === 0 ? "no final deployment event" : `CLI exit ${waited.status}`);
+  console.warn(`Hostless CLI wait did not confirm ${deploymentId} for ${node.app} (${String(cliFailure).slice(0, 180)}); checking the exact deployment through the Hostless API.`);
+  try {
+    const result = await waitForHostlessDeployment({
+      api,
+      token,
+      app: node.app,
+      deploymentId: String(deploymentId),
+      timeoutMs: 20 * 60 * 1000,
+      intervalMs: 10_000,
+      onStatus: (status) => console.log(`Hostless API deployment status for ${node.app}: ${status}`),
+    });
+    finalStatus = result.status;
+  } catch (error) {
+    fail(`Hostless deployment ${deploymentId} for ${node.app} could not be verified: ${error instanceof Error ? error.message : "status polling failed"}`);
+  }
+}
+
+if (!isHostlessDeploymentSuccessful(finalStatus)) {
+  fail(`Hostless deployment ${deploymentId} for ${node.app} did not reach a success state (last status: ${finalStatus}).`);
+}
 
 console.log(`Hostless deployment ${deploymentId} for ${node.app} reached ${finalStatus}.`);
 console.log(`Hostless operation completed for ${nodeKey} (${node.app}).`);
