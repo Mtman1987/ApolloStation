@@ -187,7 +187,7 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
   assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 1);
 });
 
-test("Apollo Bulletin proxy requires an active tenant-owner session for app routes", async () => {
+test("Apollo Bulletin proxy requires the canonical platform-owner session for app routes", async () => {
   const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
   const publicHealth = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/health/ready", "http://127.0.0.1:3000", async () => { throw new Error("readiness must not call the identity service"); }, {});
   assert.equal(publicHealth.authorized, true);
@@ -205,7 +205,7 @@ test("Apollo Bulletin proxy requires an active tenant-owner session for app rout
     async (url, options) => {
       assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
       seenCookie = options.headers.cookie;
-      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" } }), { status: 200 });
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" }, platformOwner: true }), { status: 200 });
     },
     {},
   );
