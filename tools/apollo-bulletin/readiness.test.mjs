@@ -19,6 +19,10 @@ test("release readiness accepts the SPMT root state contract", () => {
   assert.equal(isReadinessResponseReady("/health/ready", { state: "degraded" }), false);
   assert.equal(isReadinessResponseReady("/health/ready", { ready: false, state: "ready" }), false);
 });
+test("readiness requires configured Hostless cron authentication when cron is enabled", () => {
+  assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, cronAuthConfigured: false }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, cronAuthConfigured: true }), { ready: true, statusCode: 200 });
+});
 test("release readiness requires the Bulletin boolean contract", () => {
   assert.equal(isReadinessResponseReady("/bulletin/health/ready", { ready: true }), true);
   assert.equal(isReadinessResponseReady("/bulletin/health/ready", { state: "ready" }), false);
