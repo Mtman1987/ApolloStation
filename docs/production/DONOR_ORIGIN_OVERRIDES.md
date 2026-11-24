@@ -17,7 +17,7 @@ nodes should set the overrides below so traffic stays inside Apollo.
 | Nebula Mosaic → StreamWeaver image API | `STREAMWEAVER_URL` | `https://apollo-node-2.hostless.app` | `https://streamweaver-new.fly.dev` |
 | HearMeOut Lounge / donor bridge | `HEARMEOUT_DONOR_ORIGIN` | Apollo HearMeOut origin when hosted | `https://hearmeout-main.fly.dev` |
 | HearMeOut prepared media | `HEARMEOUT_VOICE_BRIDGE_ORIGIN` | Apollo media worker origin when hosted | requires full binding (see prepared-media) |
-| HMO spotlight broadcast | `SPOTLIGHT_ENDPOINT` | DSH community-spotlight on Node 1 when live | `https://discord-stream-hub-new.fly.dev/api/community-spotlight` |
+| HMO spotlight broadcast | `SPOTLIGHT_ENDPOINT` | DSH community-spotlight on Node 1 when live | `https://apollo-node-1.hostless.app/api/community-spotlight` |
 
 ## Node placement
 
