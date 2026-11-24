@@ -43,3 +43,68 @@ test("browser status remains inspectable after the page closes", async () => {
   assert.equal(status.healthy, false);
   assert.equal(status.connected, false);
 });
+
+test("browser startup records that the session state was persisted to Turso", async () => {
+  const previous = process.env.HMO_TEST_BROWSER_PATH;
+  process.env.HMO_TEST_BROWSER_PATH = process.execPath;
+  let saved = 0;
+  let currentUrl = "about:blank";
+  const page = {
+    isClosed: () => false,
+    url: () => currentUrl,
+    title: async () => "ChatGPT",
+    goto: async url => { currentUrl = url; },
+    getByRole: () => ({ first: () => ({ isVisible: async () => false }) }),
+  };
+  const context = {
+    pages: () => [page],
+    browser: () => ({ isConnected: () => true }),
+    storageState: async options => { assert.equal(options.indexedDB, true); return { cookies: [], origins: [] }; },
+  };
+  const worker = new ApolloChatGptBrowserWorker({
+    profilePath: "/tmp/apollo-bulletin-browser-session-test",
+    launch: async () => context,
+    sessionStore: { async loadBrowserState() { return null; }, async saveBrowserState() { saved += 1; } },
+  });
+  try {
+    await worker.start();
+    assert.equal((await worker.status()).sessionPersistenceReady, false);
+    await worker.openLogin();
+    const status = await worker.status();
+    assert.equal(saved, 1);
+    assert.equal(status.sessionPersistenceReady, true);
+    assert.ok(Number.isFinite(status.lastSessionPersistedAt));
+  } finally {
+    await worker.close();
+    if (previous === undefined) delete process.env.HMO_TEST_BROWSER_PATH; else process.env.HMO_TEST_BROWSER_PATH = previous;
+  }
+});
+
+test("browser session persistence failure is visible and not reported ready", async () => {
+  const previous = process.env.HMO_TEST_BROWSER_PATH;
+  process.env.HMO_TEST_BROWSER_PATH = process.execPath;
+  let currentUrl = "about:blank";
+  const page = {
+    isClosed: () => false,
+    url: () => currentUrl,
+    title: async () => "ChatGPT",
+    goto: async url => { currentUrl = url; },
+    getByRole: () => ({ first: () => ({ isVisible: async () => false }) }),
+  };
+  const context = { pages: () => [page], browser: () => ({ isConnected: () => true }), storageState: async () => ({ cookies: [], origins: [] }) };
+  const worker = new ApolloChatGptBrowserWorker({
+    profilePath: "/tmp/apollo-bulletin-browser-session-failure-test",
+    launch: async () => context,
+    sessionStore: { async loadBrowserState() { return null; }, async saveBrowserState() { throw new Error("simulated Turso write failure"); } },
+  });
+  try {
+    await worker.start();
+    await assert.rejects(worker.openLogin(), /simulated Turso write failure/);
+    const status = await worker.status();
+    assert.equal(status.healthy, true);
+    assert.equal(status.sessionPersistenceReady, false);
+  } finally {
+    await worker.close();
+    if (previous === undefined) delete process.env.HMO_TEST_BROWSER_PATH; else process.env.HMO_TEST_BROWSER_PATH = previous;
+  }
+});
