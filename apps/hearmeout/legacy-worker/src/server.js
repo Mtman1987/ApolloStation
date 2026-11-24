@@ -2857,7 +2857,7 @@ async function startBrowserDJ(roomId) {
   const started = await page.evaluate(() => globalThis.__HEARMEOUT_DJ__.getStatus());
   if (!started?.isLive) {
     await page.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
     return {
       success: false,
       message: started?.status || 'DJ browser publisher did not become live.',
