@@ -1483,7 +1483,7 @@ function ensureYoutubeWatchHls(videoId, clientResolved = null) {
     }
 
     if (clientResolved?.capture === true) {
-      await captureYoutubeBroadcast({ videoId, directory: dir, indexPath, chromiumPath: CHROMIUM_PATH, chromium onEncoder: protectWatchHlsStorage });
+      await captureYoutubeBroadcast({ videoId, directory: dir, indexPath, chromiumPath: CHROMIUM_PATH, chromium, onEncoder: protectWatchHlsStorage });
       return;
     }
 
