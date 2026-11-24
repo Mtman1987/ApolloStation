@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function createSpotlightBroadcast({ chromiumPath, chromium, spotlightEndpoint = 'https://discord-stream-hub-new.fly.dev/api/community-spotlight' }) {
+function createSpotlightBroadcast({ chromiumPath, chromium, spotlightEndpoint = process.env.SPOTLIGHT_ENDPOINT || new URL('/api/community-spotlight', process.env.SPMT_ORIGIN || 'https://apollo-node-1.hostless.app').toString() }) {
   let root, display, pulse, context, page, host, encoder, startTask, activationTask, warningTimer, active = false, activated = false, failure = '', currentLogin = '';
   let init = Buffer.alloc(0), pending = Buffer.alloc(0), fragment = [], fragmentsSent = 0, lastFragmentAt = 0;
   const viewers = new Set();
