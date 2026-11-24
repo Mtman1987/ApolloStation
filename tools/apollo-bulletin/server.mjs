@@ -17,14 +17,15 @@ function bulletinWidgetHtml(kind) {
     '<script>',
     'const kind='+JSON.stringify(kind)+',api="/bulletin/api/tasks";',
     'const esc=v=>String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll(String.fromCharCode(34),"&quot;").replaceAll(String.fromCharCode(39),"&#39;");',
+    'function nextRun(t){if(!t.nextRunAt)return "manual";const schedule=t.schedule&&typeof t.schedule==="object"?t.schedule:{};const zone=["once","weekly","monthly"].includes(schedule.type)?(schedule.timeZone||"America/Chicago"):undefined;try{return new Intl.DateTimeFormat(undefined,{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",...(zone?{timeZone:zone,timeZoneName:"short"}:{})}).format(new Date(t.nextRunAt));}catch{return new Date(t.nextRunAt).toLocaleString();}}',
     'async function request(path,options){const response=await fetch(path,{cache:"no-store",headers:{"content-type":"application/json"},...options});const data=await response.json();if(!response.ok)throw Error(data.error||response.statusText);return data;}',
-    'function card(t){return "<article><b>"+esc(t.name)+"</b> · <span class=\\"status\\">"+esc(t.status)+"</span><p>"+esc(t.scheduleLabel||((typeof t.schedule==="string")?t.schedule:"Scheduled"))+" · next: "+(t.nextRunAt?esc(new Date(t.nextRunAt).toLocaleString()):"manual")+"</p><p>"+esc(t.lastEvent||"No activity yet")+"</p><div class=\\"actions\\"><button data-action=\\"run\\" data-id=\\""+esc(t.id)+"\\">Run once</button><button data-action=\\"pause\\" data-id=\\""+esc(t.id)+"\\">Pause</button><button data-action=\\"resume\\" data-id=\\""+esc(t.id)+"\\">Resume</button><button data-action=\\"stop\\" data-id=\\""+esc(t.id)+"\\">Stop</button><button data-action=\\"complete\\" data-id=\\""+esc(t.id)+"\\">Complete</button></div>"+(t.reviewUrl?"<p><a target=\\"_blank\\" rel=\\"noopener\\" href=\\""+esc(t.reviewUrl)+"\\">Open review URL</a></p>":"")+"</article>";}',
+    'function card(t){return "<article><b>"+esc(t.name)+"</b> · <span class=\\"status\\">"+esc(t.status)+"</span><p>"+esc(t.scheduleLabel||((typeof t.schedule==="string")?t.schedule:"Scheduled"))+" · next: "+(t.nextRunAt?esc(nextRun(t)):"manual")+"</p><p>"+esc(t.lastEvent||"No activity yet")+"</p><div class=\\"actions\\"><button data-action=\\"run\\" data-id=\\""+esc(t.id)+"\\">Run once</button><button data-action=\\"pause\\" data-id=\\""+esc(t.id)+"\\">Pause</button><button data-action=\\"resume\\" data-id=\\""+esc(t.id)+"\\">Resume</button><button data-action=\\"stop\\" data-id=\\""+esc(t.id)+"\\">Stop</button><button data-action=\\"complete\\" data-id=\\""+esc(t.id)+"\\">Complete</button></div>"+(t.reviewUrl?"<p><a target=\\"_blank\\" rel=\\"noopener\\" href=\\""+esc(t.reviewUrl)+"\\">Open review URL</a></p>":"")+"</article>";}',
     'async function refresh(){try{const data=await request(api),tasks=data.tasks||[],activity=data.activity||[];let selected=tasks;if(kind==="active")selected=tasks.filter(t=>["dispatching","dispatched","awaiting_review"].includes(t.status));if(kind==="reviews")selected=tasks.filter(t=>t.status==="awaiting_review");if(kind==="scheduler")selected=tasks.filter(t=>t.status==="scheduled").sort((a,b)=>(a.nextRunAt||0)-(b.nextRunAt||0));if(kind==="history")selected=tasks.filter(t=>["completed","dispatch-uncertain","failed","stopped"].includes(t.status)).sort((a,b)=>b.createdAt-a.createdAt);let html="";if(kind==="activity")html=activity.map(item=>"<article><b>"+esc(item.event)+"</b><p>"+esc(new Date(item.at).toLocaleString())+" · "+esc(item.taskId||"")+"</p></article>").join("");else html=selected.map(card).join("");document.querySelector("#content").innerHTML=html||"<div class=\\"empty\\">No items yet.</div>";document.querySelector("#updated").textContent="Updated "+new Date().toLocaleTimeString();}catch(error){document.querySelector("#content").textContent=error.message;}}',
     'document.querySelector("#content").addEventListener("click",async event=>{const button=event.target.closest("button[data-action]");if(!button)return;button.disabled=true;try{await request(api+"/"+encodeURIComponent(button.dataset.id)+"/"+button.dataset.action,{method:"POST",body:"{}"});await refresh();}catch(error){alert(error.message);button.disabled=false;}});',
     'const create=document.querySelector("#create");if(create)create.addEventListener("submit",async event=>{event.preventDefault();const formData=new FormData(create),data=Object.fromEntries(formData);data.weekdays=formData.getAll("weekdays");try{await request(api,{method:"POST",body:JSON.stringify(data)});create.reset();await refresh();}catch(error){alert(error.message);}});refresh();setInterval(refresh,5000);',
     '</script>'
   ].join("");
-  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#0b1220;color:#edf3ff;font:13px system-ui}body{padding:12px;overflow:auto}header{display:flex;justify-content:space-between;align-items:center;gap:8px}h1{font-size:15px;margin:0 0 8px}small{color:#9eacc8}article,form{border:1px solid #293956;background:#111b30;border-radius:10px;padding:10px;margin:8px 0}article p{margin:5px 0;color:#aebbd2;overflow-wrap:anywhere}button,input,textarea,select{font:inherit;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:7px;padding:7px;max-width:100%}button{cursor:pointer;background:#234879;margin:3px 4px 3px 0}input,textarea,select{width:100%;margin:4px 0}textarea{min-height:76px;resize:vertical}.schedule{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{color:#8ee6b6}.actions{display:flex;flex-wrap:wrap}.empty{padding:18px;border:1px dashed #405577;border-radius:10px;color:#9eacc8}a{color:#8bd}@media(max-width:420px){body{padding:8px}.schedule{grid-template-columns:1fr}}</style></head><body><header><h1>'+title+'</h1><small id="updated">Loading…</small></header>'+form+'<main id="content"><div class="empty">Loading Bulletin data…</div></main>'+script+'</body></html>';
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#0b1220;color:#edf3ff;font:13px system-ui}body{padding:12px;overflow:auto}header{display:flex;justify-content:space-between;align-items:center;gap:8px}h1{font-size:15px;margin:0 0 8px}small{color:#9eacc8}article,form{border:1px solid #293956;background:#111b30;border-radius:10px;padding:10px;margin:8px 0}article p{margin:5px 0;color:#aebbd2;overflow-wrap:anywhere}button,input,textarea,select{font:inherit;min-height:40px;color:inherit;background:#0a1325;border:1px solid #405577;border-radius:7px;padding:7px;max-width:100%}button{cursor:pointer;background:#234879;margin:3px 4px 3px 0}input,textarea,select{width:100%;margin:4px 0}textarea{min-height:76px;resize:vertical}.schedule{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{color:#8ee6b6}.actions{display:flex;flex-wrap:wrap}.empty{padding:18px;border:1px dashed #405577;border-radius:10px;color:#9eacc8}a{color:#8bd}@media(max-width:420px){body{padding:8px}.schedule{grid-template-columns:1fr}}</style></head><body><header><h1>'+title+'</h1><small id="updated" aria-live="polite">Loading…</small></header>'+form+'<main id="content" aria-live="polite"><div class="empty">Loading Bulletin data…</div></main>'+script+'</body></html>';
 }
 
 export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, store, now = () => Date.now() } = {}) {
@@ -58,6 +59,24 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
     }
     state.tasks ||= []; state.activity ||= []; state.browserMessages ||= [];
+    if (!state.cron || typeof state.cron !== "object" || Array.isArray(state.cron)) state.cron = {};
+    state.cron.status ||= "never";
+    state.cron.inFlight = Boolean(state.cron.inFlight);
+    state.cron.completedTicks = Number.isFinite(Number(state.cron.completedTicks)) ? Number(state.cron.completedTicks) : 0;
+    state.cron.failedTicks = Number.isFinite(Number(state.cron.failedTicks)) ? Number(state.cron.failedTicks) : 0;
+    state.cron.lastTickStartedAt ??= null;
+    state.cron.lastTickCompletedAt ??= null;
+    state.cron.lastTickFailedAt ??= null;
+    state.cron.lastTickProcessed ??= null;
+    let recoveredCron = false;
+    if (state.cron.inFlight) {
+      state.cron.inFlight = false;
+      state.cron.status = "interrupted";
+      state.cron.lastTickFailedAt = now();
+      state.cron.failedTicks += 1;
+      log("hostless-cron-tick-interrupted", null);
+      recoveredCron = true;
+    }
     let recovered = 0;
     for (const task of state.tasks) {
       if (task.status !== "dispatching") continue;
@@ -69,7 +88,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       log("dispatch-interrupted-restart-no-retry", task.id, task.lastEvent);
       recovered += 1;
     }
-    if (recovered) await save();
+    if (recovered || recoveredCron) await save();
   }
   function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, ...visible } = task; return visible; }
   function continuationPromptFor(task) { return "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; }
@@ -78,8 +97,16 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     if (busy) return { processed: 0, busy: true };
     busy = true;
     let processed = 0;
+    let tickFailure;
     try {
-      if (source === "hostless-cron") { log("hostless-cron-tick-started", null); await save(); }
+      if (source === "hostless-cron") {
+        state.cron.inFlight = true;
+        state.cron.status = "running";
+        state.cron.lastTickStartedAt = now();
+        state.cron.lastTickProcessed = null;
+        log("hostless-cron-tick-started", null);
+        await save();
+      }
       for (const task of state.tasks) {
         if (task.status !== "scheduled" || !task.nextRunAt || task.nextRunAt > now()) continue;
         // Claim and persist before touching the browser. An uncertain send is never retried.
@@ -96,7 +123,44 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         processed += 1;
         break; // One bounded task per Hostless cron tick.
       }
-    } finally { busy = false; if (source === "hostless-cron") { log("hostless-cron-tick-completed", null, String(processed)); await save(); } }
+    } catch (error) {
+      tickFailure = error;
+      throw error;
+    } finally {
+      busy = false;
+      if (source === "hostless-cron") {
+        state.cron.inFlight = false;
+        state.cron.lastTickProcessed = processed;
+        const previousCron = {
+          lastTickCompletedAt: state.cron.lastTickCompletedAt,
+          completedTicks: state.cron.completedTicks,
+          failedTicks: state.cron.failedTicks,
+        };
+        if (tickFailure) {
+          state.cron.status = "failed";
+          state.cron.lastTickFailedAt = now();
+          state.cron.failedTicks += 1;
+          log("hostless-cron-tick-failed", null, String(processed));
+        } else {
+          state.cron.status = "completed";
+          state.cron.lastTickCompletedAt = now();
+          state.cron.completedTicks += 1;
+          log("hostless-cron-tick-completed", null, String(processed));
+        }
+        try { await save(); }
+        catch (persistError) {
+          state.cron.status = "failed";
+          state.cron.inFlight = false;
+          state.cron.lastTickCompletedAt = previousCron.lastTickCompletedAt ?? null;
+          state.cron.completedTicks = previousCron.completedTicks;
+          state.cron.lastTickFailedAt = now();
+          state.cron.failedTicks = previousCron.failedTicks + 1;
+          log("hostless-cron-tick-result-persistence-failed", null);
+          console.error("[apollo-bulletin] Could not persist cron tick result:", String(persistError?.message || persistError));
+          if (!tickFailure) throw persistError;
+        }
+      }
+    }
     return { processed, busy: false };
   }
   const server = createServer(async (req, res) => {
@@ -176,7 +240,36 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/api/browser/view") return send(200, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#212121;color:#eee;font:15px system-ui}.top{padding:13px;border-bottom:1px solid #444}.wrap{max-width:720px;margin:auto;padding:18px 14px 85px}.msg{padding:13px;border-radius:12px;margin:12px 0;white-space:pre-wrap;line-height:1.5}.user{background:#303030;margin-left:12%}.assistant{background:#292929;margin-right:12%}.bar{position:fixed;bottom:0;left:0;right:0;padding:12px;background:#212121}.form{max-width:720px;margin:auto;display:flex;gap:8px;background:#303030;padding:8px;border-radius:16px}textarea{flex:1;min-height:42px;resize:vertical;background:transparent;color:white;border:0;font:inherit}button{border:0;border-radius:12px;padding:0 16px}</style><div class="top">ChatGPT <b style="color:#8ee6b6">· SIMULATION</b></div><main class="wrap" id="messages"><div class="msg assistant">Hello! This is Apollo’s simulated ChatGPT browser. Send a message to test the flow. Nothing leaves Apollo.</div></main><div class="bar"><form class="form" id="send"><textarea id="prompt" placeholder="Message ChatGPT (simulated)"></textarea><button>Send</button></form></div><script>const box=document.querySelector("#messages"),input=document.querySelector("#prompt");function add(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;box.append(d)}document.querySelector("#send").onsubmit=async e=>{e.preventDefault();const prompt=input.value.trim();if(!prompt)return;input.value="";add("user",prompt);const r=await fetch("/bulletin/api/browser/send",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt})});const d=await r.json();add("assistant",d.reply||d.error||"No reply")};</script>', "text/html; charset=utf-8");
       if (req.method === "POST" && url.pathname === "/api/browser/send") { const input=await body(); if(typeof input.prompt!=="string"||!input.prompt.trim()) return send(400,{error:"Enter a message first"}); const prompt=input.prompt.trim().slice(0,4000); const id="browser-"+randomUUID(); const reply="SIMULATED CHATGPT REPLY: Apollo received your message in the browser proof of concept: "+prompt.slice(0,1000); state.browserMessages.push({id,at:now(),prompt,reply}); state.browserMessages=state.browserMessages.slice(-100); log("browser-message-sent",id,prompt.slice(0,240)); log("browser-simulated-reply",id,reply.slice(0,240)); await save(); return send(200,{id,reply,simulated:true}); }
       if (req.method === "GET" && url.pathname === "/api/browser/log") return send(200,{activity:state.activity.slice(-100).reverse()});
-      if (req.method === "GET" && url.pathname === "/health/ready") { const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1"; const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1"; const ownerActorConfigured = Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()); const cronRequired = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON === "1"; const cronAuthConfigured = Boolean(resolveCronToken(process.env)); const browserStatus = browserWorker ? await browserWorker.status().catch(() => null) : null; const browserHealthy = Boolean(browserStatus?.healthy); const readiness = readinessStatus({ browserRequired, browserStarted: browserHealthy, persistenceRequired, persistenceAvailable: Boolean(persistence), cronRequired, cronAuthConfigured }); return send(readiness.statusCode, { ready: readiness.ready, browser: browserWorker ? (browserHealthy ? "chromium-ready" : "browser-not-ready") : "browser-not-started", browserRequired, browserHealthy, browserLoginRequired: browserStatus?.loginRequired ?? null, persistence: persistence ? "turso" : "local-fallback", persistenceRequired, cronRequired, cronAuthConfigured, ownerActorConfigured }); }
+      if (req.method === "GET" && url.pathname === "/health/ready") {
+        const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1";
+        const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1";
+        const ownerActorConfigured = Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim());
+        const cronRequired = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON === "1";
+        const cronAuthConfigured = Boolean(resolveCronToken(process.env));
+        const browserStatus = browserWorker ? await browserWorker.status().catch(() => null) : null;
+        const browserHealthy = Boolean(browserStatus?.healthy);
+        const browserSessionReady = Boolean(browserHealthy && !browserStatus?.loginRequired);
+        const cronState = state.cron || {};
+        const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
+        const cronExecutionConfirmed = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
+          lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
+        const readiness = readinessStatus({
+          browserRequired, browserStarted: browserHealthy, persistenceRequired, persistenceAvailable: Boolean(persistence),
+          cronRequired, cronAuthConfigured, cronExecutionConfirmed,
+        });
+        const cron = {
+          configured: cronAuthConfigured, hostlessMode: cronRequired, lastTickStatus: cronState.status || "never",
+          lastTickStartedAt: cronState.lastTickStartedAt ?? null, lastTickCompletedAt: cronState.lastTickCompletedAt ?? null,
+          lastTickFailedAt: cronState.lastTickFailedAt ?? null, lastTickProcessed: cronState.lastTickProcessed ?? null,
+          completedTicks: cronState.completedTicks || 0, failedTicks: cronState.failedTicks || 0, inFlight: Boolean(cronState.inFlight),
+        };
+        return send(readiness.statusCode, {
+          ready: readiness.ready, browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserHealthy ? "chromium-login-required" : "browser-not-ready") : "browser-not-started",
+          browserRequired, browserHealthy, browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
+          persistence: persistence ? "turso" : "local-fallback", persistenceRequired, ownerActorConfigured,
+          cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
+        });
+      }
       send(404,{error:"not_found"});
     } catch (error) { send(error.statusCode || 500,{error:error.message || String(error)}); }
   });
