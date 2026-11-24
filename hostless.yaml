@@ -3,7 +3,7 @@ build:
   command: "npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless"
 working_directory: /
 build_context_directory: /
-start_command: "node scripts/hostless/start-node.mjs"
+start_command: "node scripts/hostless/start-node2.mjs"
 health_check:
   type: http
   http_path: /health/ready
