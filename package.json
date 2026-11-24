@@ -56,7 +56,7 @@
     "db:migrate:streamweaver-generation:turso": "node scripts/migrate-streamweaver-generation-to-turso.mjs",
     "hostless:node1": "node scripts/hostless/start-node1.mjs",
     "hostless:node2": "node scripts/hostless/start-node2.mjs",
-    "build:hostless": "tsc -b apps/stellar-core apps/spmt-service apps/spacemountain-web apps/chat-gateway apps/streamweaver apps/discord-stream-hub apps/nebula-arcade && node scripts/build-rtc-browser.mjs"
+    "build:hostless": "tsc -b apps/stellar-core apps/spmt-service apps/spacemountain-web apps/chat-gateway apps/streamweaver apps/discord-stream-hub apps/nebula-arcade apps/hearmeout && node scripts/build-rtc-browser.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
