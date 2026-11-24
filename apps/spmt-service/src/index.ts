@@ -625,7 +625,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
             return [tenantId, "member"];
           }
         }));
-        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds, tenantRoles });
+        const platformOwner = data.getProfileByUsername(OWNER_SPMT_USERNAME)?.userId === principal.actorId;
+        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds, tenantRoles, platformOwner });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/token/introspect") {
