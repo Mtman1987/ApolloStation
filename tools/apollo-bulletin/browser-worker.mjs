@@ -57,7 +57,7 @@ export class ApolloChatGptBrowserWorker {
     try {
       if (this.page.isClosed()) return false;
       const browser = this.context.browser?.();
-      if (browser && !browser.isConnected()) return false;
+      if (!browser || typeof browser.isConnected !== "function" || !browser.isConnected()) return false;
       const host = new URL(this.page.url()).hostname.toLowerCase();
       return ["chatgpt.com", "auth.openai.com", "openai.com"].some(domain => host === domain || host.endsWith("." + domain));
     } catch {
