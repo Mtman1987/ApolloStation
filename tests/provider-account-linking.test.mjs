@@ -195,7 +195,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
         body: JSON.stringify({ username, password }),
       });
       assert.equal(complete.status, 200, await complete.text());
-      assert.match(complete.headers.get("set-cookie") ?? "", /__Host-__Host-spmt_linked_recovery_ticket=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
+      assert.match(complete.headers.get("set-cookie") ?? "", /__Host-spmt_linked_recovery_ticket=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
       const sessionCookie = cookiePair(complete.headers.get("set-cookie"));
       assert.match(sessionCookie, /^spmt_token=/);
       const check = await fetch(base + "/v1/auth/session/check", { headers: { cookie: sessionCookie } });
