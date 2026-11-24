@@ -1,5 +1,5 @@
-export function readinessStatus({ browserRequired = false, browserStarted = false, persistenceRequired = false, persistenceAvailable = false } = {}) {
-  const ready = (!browserRequired || browserStarted) && (!persistenceRequired || persistenceAvailable);
+export function readinessStatus({ browserRequired = false, browserStarted = false, persistenceRequired = false, persistenceAvailable = false, cronRequired = false, cronAuthConfigured = false } = {}) {
+  const ready = (!browserRequired || browserStarted) && (!persistenceRequired || persistenceAvailable) && (!cronRequired || cronAuthConfigured);
   return { ready, statusCode: ready ? 200 : 503 };
 }
 
