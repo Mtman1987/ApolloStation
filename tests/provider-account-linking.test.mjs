@@ -132,7 +132,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
     assert.equal(canonicalStart.origin, "https://apollo-node-1.hostless.app");
     assert.equal(canonicalStart.pathname, "/v1/auth/linked-provider-recovery/start");
     assert.equal(canonicalStart.searchParams.get("username"), username);
-    assert.equal(cookieValue(customDomainStart.headers["set-cookie"], "spmt_linked_recovery"), undefined,
+    assert.equal(cookieValue(customDomainStart.headers["set-cookie"], "__Host-spmt_linked_recovery"), undefined,
       "the custom alias must not receive host-bound OAuth state when the callback is on Node 1");
 
     const wrongStart = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=twitch&username=not-owner", "apollo-node-1.hostless.app");
@@ -144,7 +144,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       redirect: "manual",
     });
     assert.equal(new URL(wrongCallback.headers.get("location")).searchParams.get("recoveryError"), "recovery_failed");
-    assert.equal(cookieValue(wrongCallback.headers.get("set-cookie"), "spmt_linked_recovery_ticket"), undefined);
+    assert.equal(cookieValue(wrongCallback.headers.get("set-cookie"), "__Host-spmt_linked_recovery_ticket"), undefined);
 
     const stateStart = await requestWithHost(browserBase + "/v1/auth/linked-provider-recovery/start?provider=discord&username=" + encodeURIComponent(username), "apollo-node-1.hostless.app");
     const stateCookie = cookiePair(stateStart.headers["set-cookie"]);
@@ -159,8 +159,11 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       assert.equal(authorization.searchParams.get("redirect_uri"), "https://apollo-node-1.hostless.app/v1/onboarding/twitch/callback");
       const state = authorization.searchParams.get("state");
       const pendingCookie = cookiePair(start.headers["set-cookie"]);
-      assert.match(pendingCookie, /^spmt_linked_recovery=/);
-      const pendingPayload = JSON.parse(Buffer.from(decodeURIComponent(pendingCookie.split("=")[1]), "base64url").toString("utf8"));
+      assert.match(pendingCookie, /^__Host-spmt_linked_recovery=/);
+      const pendingValue = decodeURIComponent(pendingCookie.split("=")[1]);
+      const [pendingPayloadBase64, pendingSignature] = pendingValue.split(".");
+      assert.match(pendingSignature ?? "", /^[A-Za-z0-9_-]{43}$/);
+      const pendingPayload = JSON.parse(Buffer.from(pendingPayloadBase64, "base64url").toString("utf8"));
       assert.equal(pendingPayload.username, username);
       assert.equal(pendingPayload.provider, provider);
 
@@ -172,15 +175,15 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       assert.equal(new URL(callback.headers.get("location")).searchParams.get("recovery"), "verified");
       assert.equal(new URL(callback.headers.get("location")).searchParams.get("recoveryUsername"), username);
       const callbackCookies = callback.headers.get("set-cookie") ?? "";
-      assert.match(callbackCookies, /spmt_linked_recovery_ticket=/);
+      assert.match(callbackCookies, /__Host-spmt_linked_recovery_ticket=/);
       assert.doesNotMatch(callbackCookies, /spmt_token=/, "OAuth verification alone must not establish the Apollo session");
-      assert.match(callbackCookies, /spmt_linked_recovery=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
-      const ticket = cookieValue(callbackCookies, "spmt_linked_recovery_ticket");
+      assert.match(callbackCookies, /__Host-spmt_linked_recovery=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
+      const ticket = cookieValue(callbackCookies, "__Host-spmt_linked_recovery_ticket");
       assert.ok(ticket);
 
       const blockedCrossOrigin = await fetch(browserBase + "/v1/auth/linked-provider-recovery/password", {
         method: "POST",
-        headers: { origin: "https://attacker.invalid", "content-type": "application/json", cookie: "spmt_linked_recovery_ticket=" + ticket },
+        headers: { origin: "https://attacker.invalid", "content-type": "application/json", cookie: "__Host-spmt_linked_recovery_ticket=" + ticket },
         body: JSON.stringify({ username, password: "cross-origin-attempt-123" }),
       });
       assert.equal(blockedCrossOrigin.status, 403, "the browser proxy rejects cross-origin password changes");
@@ -188,11 +191,11 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       const password = "recovered-" + provider + "-password-123";
       const complete = await fetch(browserBase + "/v1/auth/linked-provider-recovery/password", {
         method: "POST",
-        headers: { origin: browserBase, "content-type": "application/json", cookie: "spmt_linked_recovery_ticket=" + ticket },
+        headers: { origin: browserBase, "content-type": "application/json", cookie: "__Host-spmt_linked_recovery_ticket=" + ticket },
         body: JSON.stringify({ username, password }),
       });
       assert.equal(complete.status, 200, await complete.text());
-      assert.match(complete.headers.get("set-cookie") ?? "", /spmt_linked_recovery_ticket=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
+      assert.match(complete.headers.get("set-cookie") ?? "", /__Host-__Host-spmt_linked_recovery_ticket=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0/);
       const sessionCookie = cookiePair(complete.headers.get("set-cookie"));
       assert.match(sessionCookie, /^spmt_token=/);
       const check = await fetch(base + "/v1/auth/session/check", { headers: { cookie: sessionCookie } });
@@ -205,7 +208,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
 
       const replay = await fetch(browserBase + "/v1/auth/linked-provider-recovery/password", {
         method: "POST",
-        headers: { origin: browserBase, "content-type": "application/json", cookie: "spmt_linked_recovery_ticket=" + ticket },
+        headers: { origin: browserBase, "content-type": "application/json", cookie: "__Host-spmt_linked_recovery_ticket=" + ticket },
         body: JSON.stringify({ username, password: "replay-" + provider + "-password-123" }),
       });
       assert.equal(replay.status, 400, "a completed recovery ticket cannot be reused");
