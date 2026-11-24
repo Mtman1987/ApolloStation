@@ -21,3 +21,7 @@ test("cron dispatcher requires an explicit accepted or busy response", async () 
     assert.throws(() => assertCronTickResponse(value), /did not confirm an accepted or busy tick/);
   }
 });
+test("cron token falls back to the existing BOSS_KEY owner credential", () => {
+  assert.equal(resolveCronToken({ BOSS_KEY: "existing-owner-key" }), "existing-owner-key");
+  assert.equal(resolveCronToken({ APOLLO_BULLETIN_CRON_TOKEN: "  ", APOLLO_BROWSER_CONTROL_PASSWORD: " ", APOLLO_PREVIEW_PASSWORD: "\n", BOSS_KEY: " existing-owner-key " }), "existing-owner-key");
+});
