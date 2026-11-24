@@ -15,9 +15,11 @@ test("readiness passes when required dependencies are present", () => {
   assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true }), { ready: true, statusCode: 200 });
 });
 test("release readiness accepts the SPMT root state contract", () => {
-  assert.equal(isReadinessResponseReady("/health/ready", { state: "ready" }), true);
-  assert.equal(isReadinessResponseReady("/health/ready", { state: "degraded" }), false);
-  assert.equal(isReadinessResponseReady("/health/ready", { ready: false, state: "ready" }), false);
+  assert.equal(isReadinessResponseReady("/health/ready", { live: true, state: "ready", storage: { ready: true } }), true);
+  assert.equal(isReadinessResponseReady("/health/ready", { live: true, state: "degraded", storage: { ready: true } }), true);
+  assert.equal(isReadinessResponseReady("/health/ready", { live: true, state: "degraded", storage: { ready: false } }), false);
+  assert.equal(isReadinessResponseReady("/health/ready", { live: true, state: "unavailable", storage: { ready: true } }), false);
+  assert.equal(isReadinessResponseReady("/health/ready", { ready: false, live: true, state: "ready" }), false);
 });
 test("readiness requires configured Hostless cron authentication when cron is enabled", () => {
   assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, cronAuthConfigured: false }), { ready: false, statusCode: 503 });
