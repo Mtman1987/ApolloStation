@@ -129,7 +129,7 @@ async function startAndCallback(f, provider, username, code) {
   const authorization = new URL(start.headers.get("location"));
   assert.equal(authorization.hostname, provider === "discord" ? "discord.com" : "id.twitch.tv");
   assert.equal(authorization.searchParams.get("redirect_uri"), `${PUBLIC_ORIGIN}/v1/onboarding/twitch/callback`);
-  const pendingCookie = cookiePair(start.headers, "spmt_linked_recovery");
+  const pendingCookie = cookiePair(start.headers, "__Host-spmt_linked_recovery");
   const state = authorization.searchParams.get("state");
   assert.ok(state && /^[A-Za-z0-9_-]{32,100}$/.test(state));
 
@@ -161,7 +161,7 @@ test("Discord and Twitch linked-provider recovery set a password and establish t
       assert.equal(destination.searchParams.get("recovery"), "verified");
       assert.equal(destination.searchParams.get("recoveryUsername"), "routeuser");
 
-      const ticketCookie = cookiePair(flow.callback.headers, "spmt_linked_recovery_ticket");
+      const ticketCookie = cookiePair(flow.callback.headers, "__Host-spmt_linked_recovery_ticket");
       const completed = await completePassword(f, ticketCookie, "routeuser");
       assert.equal(completed.status, 200);
       assert.deepEqual(await completed.json(), { ok: true });
@@ -210,7 +210,7 @@ test("unknown usernames, mismatched provider IDs, and invalid OAuth state fail c
     startUrl.searchParams.set("provider", "twitch");
     startUrl.searchParams.set("username", "routeuser");
     const start = await fetch(startUrl, { redirect: "manual" });
-    const pendingCookie = cookiePair(start.headers, "spmt_linked_recovery");
+    const pendingCookie = cookiePair(start.headers, "__Host-spmt_linked_recovery");
     const authorization = new URL(start.headers.get("location"));
     const callbackUrl = new URL("/v1/onboarding/twitch/callback", f.serviceOrigin);
     callbackUrl.searchParams.set("code", "twitch-good");
@@ -238,7 +238,7 @@ test("SpaceMountain proxy enforces same-origin password submission and forwards 
   try {
     const flow = await startAndCallback(f, "discord", "routeuser", "discord-proxy");
     assert.equal(flow.callback.status, 302);
-    const ticketCookie = cookiePair(flow.callback.headers, "spmt_linked_recovery_ticket");
+    const ticketCookie = cookiePair(flow.callback.headers, "__Host-spmt_linked_recovery_ticket");
 
     web = createSpaceMountainWebHost({
       spmtOrigin: f.serviceOrigin,
