@@ -26,8 +26,16 @@ test("browser health fails when the page or Chromium process has closed", async 
   assert.equal(await fakeWorker({ browserConnected: false }).isHealthy(), false);
 });
 
+test("a missing page blocks before send and always releases the browser busy lock", async () => {
+  const worker = new ApolloChatGptBrowserWorker({});
+  const result = await worker.sendTask({ prompt: "Do not send", conversationUrl: "https://chatgpt.com/c/pre-send-recovery" });
+  assert.equal(result.submitted, false);
+  assert.match(result.reason, /^browser-dispatch-blocked: Dedicated ChatGPT browser is not started/);
+  assert.equal(worker.busy, false);
+});
+
 test("browser status exposes health separately from ChatGPT login state", async () => {
-  for (const url of ["https://chatgpt.com/auth/login", "https://chatgpt.com/auth/signin", "https://chatgpt.com/login"]) {
+  for (const url of ["https://chatgpt.com/auth/login", "https://chatgpt.com/auth/signin", "https://chatgpt.com/login", "https://auth.openai.com/log-in", "https://auth.openai.com/sign-in"]) {
     const status = await fakeWorker({ url }).status();
     assert.equal(status.healthy, true);
     assert.equal(status.connected, true);
