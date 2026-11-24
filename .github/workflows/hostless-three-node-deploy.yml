@@ -429,15 +429,15 @@ jobs:
                   data.cron?.lastTickStatus === "completed" && Number.isFinite(lastTickAt) &&
                   lastTickAt > 0 && lastTickAt <= Date.now() && Date.now() - lastTickAt <= 180000;
                 const bulletinReady = path !== "/bulletin/health/ready" || (
-                  data.browserHealthy === true && data.persistence === "turso" &&
+                  data.browserHealthy === true && data.browserSessionPersisted === true && data.persistence === "turso" &&
                   data.cronRequired === true && data.cronAuthConfigured === true && cronExecutionFresh
                 );
                 if (response.ok && isReadinessResponseReady(path, data) && bulletinReady) {
-                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserSessionReady: data.browserSessionReady ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, cronRequired: data.cronRequired ?? undefined, cronAuthConfigured: data.cronAuthConfigured ?? undefined, cronExecutionConfirmed: data.cronExecutionConfirmed ?? undefined, cron: data.cron ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
+                  console.log(JSON.stringify({ path, status: response.status, ready: true, state: data.state ?? undefined, browser: data.browser ?? undefined, browserHealthy: data.browserHealthy ?? undefined, browserSessionPersisted: data.browserSessionPersisted ?? undefined, browserSessionReady: data.browserSessionReady ?? undefined, browserLoginRequired: data.browserLoginRequired ?? undefined, persistence: data.persistence ?? undefined, cronRequired: data.cronRequired ?? undefined, cronAuthConfigured: data.cronAuthConfigured ?? undefined, cronExecutionConfirmed: data.cronExecutionConfirmed ?? undefined, cron: data.cron ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
                   last = null;
                   break;
                 }
-                last = { status: response.status, ready: data.ready, state: data.state, browserHealthy: data.browserHealthy, persistence: data.persistence, cronAuthConfigured: data.cronAuthConfigured, cronExecutionConfirmed: data.cronExecutionConfirmed, cron: data.cron, detail: data };
+                last = { status: response.status, ready: data.ready, state: data.state, browserHealthy: data.browserHealthy, browserSessionPersisted: data.browserSessionPersisted, persistence: data.persistence, cronAuthConfigured: data.cronAuthConfigured, cronExecutionConfirmed: data.cronExecutionConfirmed, cron: data.cron, detail: data };
               } catch (error) { last = { error: String(error?.message || error) }; }
               if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, path === "/bulletin/health/ready" ? 2500 : 1000));
             }
