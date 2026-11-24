@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveNebulaServerTarget } from "../scripts/hostless/nebula-runtime-config.mjs";
+import { optionalWorkerEnabled } from "../scripts/hostless/worker-flags.mjs";
 
 const entry = new URL("../scripts/hostless/start-node.mjs", import.meta.url);
 
@@ -234,4 +235,19 @@ test("Nebula public front door prefers the discovered tenant and Twitch channel"
 
 test("Nebula public front door does not guess when no tenant or channel fallback exists", () => {
   assert.equal(resolveNebulaServerTarget({ schemaVersion: 1, tenants: [] }, "", ""), undefined);
+});
+
+
+test("Node 1 disables optional Stellar Chat when its existing worker credential is absent", () => {
+  assert.equal(optionalWorkerEnabled("1", undefined), false);
+  assert.equal(optionalWorkerEnabled("1", "   "), false);
+  assert.equal(optionalWorkerEnabled("1", "existing-worker-credential"), true);
+  assert.equal(optionalWorkerEnabled("", "existing-worker-credential"), false);
+
+  const startNode = readFileSync(new URL("../scripts/hostless/start-node.mjs", import.meta.url), "utf8");
+  assert.match(startNode, /SPMT_STELLAR_CHAT_ENABLED:\s*stellarChatEnabled\s*\?\s*"1"\s*:\s*""/);
+  assert.match(startNode, /Optional Stellar Chat disabled because STELLAR_WORKER_CREDENTIAL is not configured/);
+
+  const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
+  assert.match(release, /APOLLO_RUNTIME_NODE1_SPMT_STELLAR_CHAT_ENABLED: \$\{\{ matrix\.node == 'node1' && secrets\.STELLAR_WORKER_CREDENTIAL && '1' \|\| '' \}\}/);
 });

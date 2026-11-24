@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { mergeNebulaRuntimeConfig, resolveNebulaServerTarget } from "./nebula-runtime-config.mjs";
+import { optionalWorkerEnabled } from "./worker-flags.mjs";
 
 // Hostless does not guarantee Node environment defaults. Set production explicitly
 // before spawning child services so browser session cookies are shared across the
@@ -14,6 +15,14 @@ const role = process.env.APOLLO_NODE_ROLE;
 const root = process.cwd();
 const common = { cwd: root, env: process.env, stdio: "inherit" };
 const hostlessPort = process.env.PORT;
+
+// Stellar Chat is optional on Node 1. Ignore a stale enable flag when its
+// existing worker credential is absent; do not require or create a new secret.
+const stellarChatRequested = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
+const stellarChatEnabled = optionalWorkerEnabled(process.env.SPMT_STELLAR_CHAT_ENABLED, process.env.STELLAR_WORKER_CREDENTIAL);
+if (stellarChatRequested && !stellarChatEnabled) {
+  console.warn("[spmt-service] Optional Stellar Chat disabled because STELLAR_WORKER_CREDENTIAL is not configured.");
+}
 
 // Ensure the dedicated browser worker can install its pinned Chromium runtime on Hostless,
 // which does not preserve empty directories in the checked-out build context.
@@ -39,7 +48,7 @@ function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyCon
 
 const node1 = [
   ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STATE_PATH: process.env.APOLLO_BULLETIN_STATE_PATH ?? "/tmp/apollo-bulletin/state.json", APOLLO_BULLETIN_ENABLE_BROWSER: "1", APOLLO_BULLETIN_REQUIRE_TURSO: "1", APOLLO_BULLETIN_USE_HOSTLESS_CRON: "1", APOLLO_BULLETIN_PUBLIC_URL: process.env.APOLLO_BULLETIN_PUBLIC_URL ?? "https://apollo-node-1.hostless.app", APOLLO_BROWSER_PROFILE_PATH: process.env.APOLLO_BROWSER_PROFILE_PATH ?? "/tmp/apollo-browser-profile" }],
-  ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite" }],
+  ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite", SPMT_STELLAR_CHAT_ENABLED: stellarChatEnabled ? "1" : "" }],
 ];
 
 const dshConfigRequested = Boolean(process.env.DSH_RUNTIME_CONFIG_JSON || process.env.DSH_RUNTIME_CONFIG_PATH || process.env.SPMT_DSH_LIVE_RUNTIME_ENABLED === "1");
