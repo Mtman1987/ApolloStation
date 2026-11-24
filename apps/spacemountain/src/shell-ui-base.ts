@@ -595,6 +595,9 @@ export class SpaceMountainShellUi {
     tray.classList.toggle("expanded", this.workspaceExpanded);
     tray.classList.toggle("maximized", this.workspaceMaximized);
     tray.classList.toggle("click-through", this.workspaceClickThrough && !this.workspaceControlsOpen);
+    const workspaceButton = this.options.root.querySelector<HTMLElement>("[data-workspace-toggle]");
+    workspaceButton?.setAttribute("aria-expanded", String(this.workspaceOpen));
+    workspaceButton?.setAttribute("aria-label", this.workspaceOpen ? "Close canonical workspace footer" : "Open canonical workspace footer");
     tray.hidden = this.serviceEmbed || !this.workspaceOpen;
     // Shared service documents must never mount another copy of the dock.
     if (this.serviceEmbed) return;
@@ -712,6 +715,8 @@ export class SpaceMountainShellUi {
   }
 
   private dock() {
+    const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
+    const username = recordText(this.snapshot.session, ["username"]) ?? "";
     const core = NAV.filter((item) => item.id === "home" || item.id === "apps");
     const account = NAV.filter((item) => item.id === "workspace" || item.id === "settings");
     const apps = this.sidebarApps();
