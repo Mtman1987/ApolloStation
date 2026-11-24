@@ -163,8 +163,11 @@ test("Hostless recovery release keeps a twenty-minute wait, serializes nodes, an
   const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   const diagnostics = readFileSync(new URL("../.github/workflows/hostless-runtime-log-diagnostics.yml", import.meta.url), "utf8");
 
-  assert.ok(script.includes('"deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "1200"'));
-  assert.ok(script.includes("timeout: 1230 * 1000,"));
+  assert.ok(script.includes('"deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "60"'));
+  assert.ok(script.includes("timeout: 75 * 1000,"));
+  assert.ok(script.includes("timeoutMs: 20 * 60 * 1000,"));
+  assert.ok(script.includes("checking the exact deployment through the Hostless API"));
+  assert.ok(script.includes("waitForHostlessDeployment({"));
   assert.ok(script.includes('event?.type === "deployment"'));
   assert.ok(script.includes("isHostlessDeploymentSuccessful(finalStatus)"));
   assert.ok(!script.includes("const deadline = Date.now() + 10 * 60 * 1000;"));
