@@ -187,7 +187,7 @@ test("Hostless deploy config declares one named Bulletin dispatcher cron", async
   assert.equal((hostless.match(/^\s+- name:/gm) || []).length, 1);
 });
 
-test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes", async () => {
+test("Apollo Bulletin proxy requires an active tenant-owner session for app routes", async () => {
   const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
   const publicHealth = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/health/ready", "http://127.0.0.1:3000", async () => { throw new Error("readiness must not call the identity service"); }, {});
   assert.equal(publicHealth.authorized, true);
@@ -205,21 +205,38 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
     async (url, options) => {
       assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
       seenCookie = options.headers.cookie;
-      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" } }), { status: 200 });
     },
     {},
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "actor pin is optional until configured");
-  const wrongOwner = await authorizeBulletinRequest(
-    { headers: { cookie: "spmt_token=other-session" } },
+  assert.equal(allowed.authorized, true, "active tenant ownership is required even when the optional actor pin is unset");
+  const member = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=member-session" } },
     "/bulletin/api/tasks",
     "http://127.0.0.1:3000",
-    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user" }), { status: 200 }),
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "member-1", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "member" } }), { status: 200 }),
+    {},
+  );
+  assert.equal(member.authorized, false);
+  assert.equal(member.status, 403);
+  const missingRoles = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=legacy-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "legacy-user" }), { status: 200 }),
+    {},
+  );
+  assert.equal(missingRoles.authorized, false);
+  const wrongOwnerPin = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-owner", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" } }), { status: 200 }),
     { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
   );
-  assert.equal(wrongOwner.authorized, false);
-  assert.equal(wrongOwner.status, 403);
+  assert.equal(wrongOwnerPin.authorized, false);
+  assert.equal(wrongOwnerPin.status, 403);
 });
 
 test("Hostless cron proxy uses a bearer secret and does not need an interactive Apollo session", async () => {
