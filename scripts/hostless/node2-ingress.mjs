@@ -11,7 +11,9 @@ export function isNebulaPath(path) {
 // upstream remains responsible for authentication and mutation validation.
 export function isHearMeOutPath(path) {
   return path === '/apps/hearmeout' || path.startsWith('/apps/hearmeout/') ||
-    path === '/api/hearmeout' || path.startsWith('/api/hearmeout/') || path === '/health/hearmeout';
+    path === '/api/hearmeout' || path.startsWith('/api/hearmeout/') ||
+    path === '/api/watch' || path.startsWith('/api/watch/') ||
+    path === '/api/internal/watch' || path.startsWith('/api/internal/watch/') || path === '/health/hearmeout';
 }
 
 export function createNode2Ingress({ streamweaverPort = 3202, nebulaPort = 3100, hearMeOutPort = 3203 } = {}) {
