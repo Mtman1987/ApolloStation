@@ -40,3 +40,18 @@ test("SpaceMountain web host serves retained donor app routes instead of JSON 40
     await host.close();
   }
 });
+
+test("embedded app pages use the compact shell surface while standalone pages keep their own dock", () => {
+  for (const [path, name] of EXPECTED) {
+    const embedded = renderBoundedAppPage(path, "abc123def456", "nonce", "shell");
+    const standalone = renderBoundedAppPage(path, "abc123def456", "nonce", "standalone");
+    assert.match(embedded, /data-spmt-surface="shell"/, path);
+    assert.match(embedded, /body\[data-spmt-surface="shell"\]\{background:transparent\}/, path);
+    assert.doesNotMatch(embedded, /class="bounded-rocket-dock/, path);
+    assert.match(embedded, /class="bounded-app-root"/, path);
+    assert.match(standalone, /data-spmt-surface="standalone"/, path);
+    assert.match(standalone, /class="bounded-rocket-dock/, path);
+    assert.ok(standalone.includes(name), path);
+    assert.match(embedded, /<footer id="status"[^>]*hidden>/, path);
+  }
+});
