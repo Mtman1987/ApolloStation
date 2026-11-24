@@ -126,6 +126,8 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
   assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
   assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
+  assert.equal(checked.greenAppOrigins.hearmeout, "https://hearmeout.example.test");
+  assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.throws(() => validateIntegratedWebEnvironment({
     SPMT_RUNTIME_MODE: "production",
     SPMT_ORIGIN: "http://spmt.example.test",
