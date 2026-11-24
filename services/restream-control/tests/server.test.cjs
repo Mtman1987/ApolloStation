@@ -136,7 +136,18 @@ test('browser controller launches a persistent Playwright context and stays on R
       return context;
     },
   };
-  const control = createRestreamControl({ chromiumPath: '/usr/bin/chromium', chromium, profileDir });
+  const { EventEmitter } = require('node:events');
+  const spawnImpl = () => {
+    const display = new EventEmitter();
+    display.pid = 123;
+    display.exitCode = null;
+    display.signalCode = null;
+    display.stdio = [null, null, new EventEmitter(), new EventEmitter()];
+    display.kill = () => { display.exitCode = 0; display.emit('close'); };
+    setImmediate(() => display.stdio[3].emit('data', Buffer.from('99\\n')));
+    return display;
+  };
+  const control = createRestreamControl({ chromiumPath: '/usr/bin/chromium', chromium, profileDir, spawnImpl });
   const status = await control.status();
   assert.equal(status.state, 'offline');
   assert.equal(status.url, 'https://app.restream.io/channel');
