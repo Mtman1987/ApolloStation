@@ -275,3 +275,33 @@ test("integrated gateway proxies HearMeOut app and watch APIs to the Node 2 orig
     await new Promise(resolve => hmo.close(resolve));
   }
 });
+
+test("integrated gateway routes Nebula Arcade app and API to Node 2", async () => {
+  const received = [];
+  const nebula = createServer((request, response) => {
+    received.push(request.url);
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ app: "nebula-arcade", path: request.url }));
+  });
+  await new Promise(resolve => nebula.listen(0, "127.0.0.1", resolve));
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    nebulaArcadeOrigin: origin(nebula),
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const base = origin(web.server);
+    const app = await fetch(base + "/apps/nebula-arcade");
+    assert.equal(app.status, 200);
+    assert.equal((await app.json()).app, "nebula-arcade");
+    const api = await fetch(base + "/api/nebula-arcade/health");
+    assert.equal(api.status, 200);
+    assert.equal((await api.json()).path, "/api/nebula-arcade/health");
+    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health"]);
+  } finally {
+    await web.close();
+    await new Promise(resolve => nebula.close(resolve));
+  }
+});
