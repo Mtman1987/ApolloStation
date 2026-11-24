@@ -210,7 +210,7 @@ test("Apollo Bulletin proxy requires an active tenant-owner session for app rout
     {},
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "active tenant ownership is required even when the optional actor pin is unset");
+  assert.equal(allowed.authorized, true, "the canonical platform owner may access Bulletin without an additional actor-pin secret");
   const member = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=member-session" } },
     "/bulletin/api/tasks",
@@ -220,6 +220,15 @@ test("Apollo Bulletin proxy requires an active tenant-owner session for app rout
   );
   assert.equal(member.authorized, false);
   assert.equal(member.status, 403);
+  const otherTenantOwner = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-tenant-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-tenant-owner", tenantIds: ["tenant-2"], tenantRoles: { "tenant-2": "owner" }, platformOwner: false }), { status: 200 }),
+    {},
+  );
+  assert.equal(otherTenantOwner.authorized, false, "being an owner of a different tenant must not expose the global owner queue");
+  assert.equal(otherTenantOwner.status, 403);
   const missingRoles = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=legacy-session" } },
     "/bulletin/api/tasks",
@@ -232,7 +241,7 @@ test("Apollo Bulletin proxy requires an active tenant-owner session for app rout
     { headers: { cookie: "spmt_token=other-owner-session" } },
     "/bulletin/api/tasks",
     "http://127.0.0.1:3000",
-    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-owner", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" } }), { status: 200 }),
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-owner", tenantIds: ["tenant-1"], tenantRoles: { "tenant-1": "owner" }, platformOwner: true }), { status: 200 }),
     { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
   );
   assert.equal(wrongOwnerPin.authorized, false);
