@@ -70,7 +70,7 @@ async function listen(server) {
 function setCookieLines(headers) {
   if (typeof headers.getSetCookie === "function") return headers.getSetCookie();
   const combined = headers.get("set-cookie");
-  return combined ? combined.split(/,(?=\\s*[^;,]+=)/) : [];
+  return combined ? combined.split(/,(?=\s*[^;,]+=)/) : [];
 }
 
 function cookiePair(headers, name) {
@@ -170,7 +170,7 @@ test("Discord and Twitch linked-provider recovery set a password and establish t
       const sessionHeader = setCookieLines(completed.headers).find((value) => value.startsWith("spmt_token=")) ?? "";
       assert.match(sessionHeader, /HttpOnly/i);
       assert.match(sessionHeader, /Secure/i);
-      assert.match(sessionHeader, /Domain=\\.hostless\\.app/i);
+      assert.match(sessionHeader, /Domain=\.hostless\.app/i);
 
       const sessionCheck = await fetch(`${f.serviceOrigin}/v1/auth/session/check`, {
         headers: { cookie: sessionCookie },
