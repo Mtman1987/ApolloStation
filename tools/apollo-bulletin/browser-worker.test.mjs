@@ -27,11 +27,12 @@ test("browser health fails when the page or Chromium process has closed", async 
 });
 
 test("browser status exposes health separately from ChatGPT login state", async () => {
-  const worker = fakeWorker({ url: "https://chatgpt.com/auth/login" });
-  const status = await worker.status();
-  assert.equal(status.healthy, true);
-  assert.equal(status.connected, true);
-  assert.equal(status.loginRequired, true);
+  for (const url of ["https://chatgpt.com/auth/login", "https://chatgpt.com/auth/signin", "https://chatgpt.com/login"]) {
+    const status = await fakeWorker({ url }).status();
+    assert.equal(status.healthy, true);
+    assert.equal(status.connected, true);
+    assert.equal(status.loginRequired, true, url);
+  }
 });
 
 test("browser health fails closed when the context has no connected browser", async () => {
