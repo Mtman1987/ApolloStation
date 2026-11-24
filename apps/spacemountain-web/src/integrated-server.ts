@@ -50,9 +50,9 @@ export async function authorizeBulletinRequest(
     const tenantRoles = identity.tenantRoles && typeof identity.tenantRoles === "object" && !Array.isArray(identity.tenantRoles)
       ? Object.values(identity.tenantRoles)
       : [];
-    const ownsActiveTenant = tenantRoles.includes("owner");
-    if (identity.authenticated !== true || !ownsActiveTenant || (allowedActor && identity.actorId !== allowedActor)) {
-      return { authorized: false, status: 403, reason: "An authorized Apollo tenant-owner session is required" };
+    const platformOwner = identity.platformOwner === true;
+    if (identity.authenticated !== true || !platformOwner || (allowedActor && identity.actorId !== allowedActor)) {
+      return { authorized: false, status: 403, reason: "An authorized Apollo platform-owner session is required" };
     }
     return { authorized: true, status: 200, reason: "apollo-session" };
   } catch {
