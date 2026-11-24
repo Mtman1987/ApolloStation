@@ -16,7 +16,7 @@ import { SpmtAssistantApi } from "./assistant-api.js";
 import { StellarAssistantStore, StellarPrivateAssistant } from "@spmt/stellar-core";
 import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
@@ -468,17 +468,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
 
       if (request.method === "GET" && url.pathname === "/v1/onboarding/twitch/callback") {
-        const recoveryRaw = cookie(request, "spmt_linked_recovery");
+        const recoveryRaw = cookie(request, "__Host-spmt_linked_recovery");
         if (recoveryRaw) {
-          let recovery: { provider: "discord" | "twitch"; state: string; username: string } | undefined;
-          try {
-            const parsed = JSON.parse(Buffer.from(recoveryRaw, "base64url").toString("utf8")) as Record<string, unknown>;
-            if ((parsed.provider === "discord" || parsed.provider === "twitch")
-              && typeof parsed.state === "string" && /^[A-Za-z0-9_-]{32,100}$/.test(parsed.state)
-              && typeof parsed.username === "string" && /^[a-z0-9._-]{3,64}$/.test(parsed.username)) {
-              recovery = { provider: parsed.provider, state: parsed.state, username: parsed.username };
-            }
-          } catch { recovery = undefined; }
+          const recovery = decodeLinkedProviderRecoveryCookie(recoveryRaw, options.webhookKey);
           const code = url.searchParams.get("code") ?? "";
           const state = url.searchParams.get("state") ?? "";
           const failRecovery = (reason: string) => {
@@ -488,7 +480,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             response.writeHead(302, {
               location: target.toString(),
               "cache-control": "no-store",
-              "set-cookie": [clearSetupCookie("spmt_linked_recovery"), clearSetupCookie("spmt_linked_recovery_ticket")],
+              "set-cookie": [clearSetupCookie("__Host-spmt_linked_recovery"), clearSetupCookie("__Host-spmt_linked_recovery_ticket")],
             });
             return response.end();
           };
@@ -511,7 +503,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
             response.writeHead(302, {
               location: target.toString(),
               "cache-control": "no-store",
-              "set-cookie": [setupCookie("spmt_linked_recovery_ticket", reset.ticket, 900), clearSetupCookie("spmt_linked_recovery")],
+              "set-cookie": [setupCookie("__Host-spmt_linked_recovery_ticket", reset.ticket, 900), clearSetupCookie("__Host-spmt_linked_recovery")],
             });
             return response.end();
           } catch (error) {
@@ -771,7 +763,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         const client = accountProviderOAuthClient(options, provider);
         if (!client) return json(response, 503, { error: "provider_recovery_unavailable" });
         const state = randomBytes(24).toString("base64url");
-        const pending = Buffer.from(JSON.stringify({ provider, state, username }), "utf8").toString("base64url");
+        const pending = encodeLinkedProviderRecoveryCookie({ provider, state, username }, options.webhookKey);
         // Keep the provider's already-registered callback URI; OAuth state is bound to
         // this browser's HttpOnly cookie and the resulting short-lived reset ticket.
         const redirectUri = `${publicBaseUrl}/v1/onboarding/twitch/callback`;
@@ -784,14 +776,14 @@ export function createSpmtService(options: SpmtServiceOptions) {
         response.writeHead(302, {
           location: authorizationUrl.toString(),
           "cache-control": "no-store",
-          "set-cookie": [setupCookie("spmt_linked_recovery", pending, 900), clearSetupCookie("spmt_linked_recovery_ticket")],
+          "set-cookie": [setupCookie("__Host-spmt_linked_recovery", pending, 900), clearSetupCookie("__Host-spmt_linked_recovery_ticket")],
         });
         return response.end();
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/linked-provider-recovery/password") {
-        const ticket = cookie(request, "spmt_linked_recovery_ticket");
-        if (!ticket) return json(response, 400, { error: "recovery_failed", message: "The recovery attempt is missing or expired. Start again." }, { "set-cookie": clearSetupCookie("spmt_linked_recovery_ticket") });
+        const ticket = cookie(request, "__Host-spmt_linked_recovery_ticket");
+        if (!ticket) return json(response, 400, { error: "recovery_failed", message: "The recovery attempt is missing or expired. Start again." }, { "set-cookie": clearSetupCookie("__Host-spmt_linked_recovery_ticket") });
         try {
           const body = await readBody(request);
           const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
@@ -801,7 +793,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           if (result.profile.userId !== completed.userId) throw new Error("recovery_account_mismatch");
           const browser = auth.issueBrowserSession(result.tokens.accessToken);
           return json(response, 200, { ok: true }, {
-            "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("spmt_linked_recovery_ticket"), clearSetupCookie("spmt_linked_recovery")],
+            "set-cookie": [browserSessionCookie(browser.accessToken), clearSetupCookie("__Host-spmt_linked_recovery_ticket"), clearSetupCookie("__Host-spmt_linked_recovery")],
           });
         } catch (error) {
           const passwordMessage = error instanceof Error && error.message === "Password must be at least 12 characters"
@@ -1189,6 +1181,31 @@ function decodeProviderLinkCookie(value: string | undefined): PendingProviderLin
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<PendingProviderLinkV1>;
     if (parsed.schemaVersion !== 1 || (parsed.provider !== "twitch" && parsed.provider !== "discord") || !parsed.tenantId || !parsed.userId || !/^[A-Za-z0-9_-]{20,100}$/.test(parsed.state ?? "")) return undefined;
     return parsed as PendingProviderLinkV1;
+  } catch { return undefined; }
+}
+interface PendingLinkedProviderRecoveryV1 { provider: "discord" | "twitch"; state: string; username: string; }
+function linkedProviderRecoveryCookieKey(key: Uint8Array) {
+  return createHmac("sha256", key).update("apollo-linked-provider-recovery-cookie-v1").digest();
+}
+function encodeLinkedProviderRecoveryCookie(value: PendingLinkedProviderRecoveryV1, key: Uint8Array) {
+  const payload = Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  const signature = createHmac("sha256", linkedProviderRecoveryCookieKey(key)).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+function decodeLinkedProviderRecoveryCookie(value: string | undefined, key: Uint8Array): PendingLinkedProviderRecoveryV1 | undefined {
+  if (!value || value.length > 2_000) return undefined;
+  const parts = value.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+  const [payload, signature] = parts;
+  const expected = createHmac("sha256", linkedProviderRecoveryCookieKey(key)).update(payload).digest();
+  const actual = Buffer.from(signature, "base64url");
+  if (actual.byteLength !== expected.byteLength || !timingSafeEqual(actual, expected)) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<PendingLinkedProviderRecoveryV1>;
+    if ((parsed.provider !== "discord" && parsed.provider !== "twitch")
+      || typeof parsed.state !== "string" || !/^[A-Za-z0-9_-]{32,100}$/.test(parsed.state)
+      || typeof parsed.username !== "string" || !/^[a-z0-9._-]{3,64}$/.test(parsed.username)) return undefined;
+    return { provider: parsed.provider, state: parsed.state, username: parsed.username };
   } catch { return undefined; }
 }
 function accountProviderOAuthClient(options: SpmtServiceOptions, provider: "twitch" | "discord") {
