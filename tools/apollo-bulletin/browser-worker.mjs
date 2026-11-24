@@ -52,14 +52,29 @@ export class ApolloChatGptBrowserWorker {
     return this.status();
   }
 
+  async isHealthy() {
+    if (!this.context || !this.page) return false;
+    try {
+      if (this.page.isClosed()) return false;
+      const browser = this.context.browser?.();
+      if (browser && !browser.isConnected()) return false;
+      const host = new URL(this.page.url()).hostname.toLowerCase();
+      return ["chatgpt.com", "auth.openai.com", "openai.com"].some(domain => host === domain || host.endsWith("." + domain));
+    } catch {
+      return false;
+    }
+  }
+
   async status() {
     const page = this.#requirePage();
     const url = page.url();
     const title = await page.title().catch(() => "");
     const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
       await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+    const healthy = await this.isHealthy();
     return {
-      connected: /^https:\/\/(?:chatgpt\.com|auth\.openai\.com|openai\.com)(?:\/|$)/i.test(url),
+      connected: healthy,
+      healthy,
       loginRequired,
       url,
       title,
