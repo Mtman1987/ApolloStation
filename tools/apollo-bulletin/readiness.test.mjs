@@ -4,6 +4,16 @@ import { readinessStatus } from "./readiness.mjs";
 
 test("readiness is false when required browser has not started", () => {
   assert.deepEqual(readinessStatus({ browserRequired: true, browserStarted: false, persistenceRequired: false, persistenceAvailable: false }), { ready: false, statusCode: 503 });
+
+import { isReadinessResponseReady } from "./readiness.mjs";
+test("release readiness accepts the SPMT root state contract", () => {
+  assert.equal(isReadinessResponseReady("/health/ready", { state: "ready" }), true);
+  assert.equal(isReadinessResponseReady("/health/ready", { state: "degraded" }), false);
+});
+test("release readiness requires the Bulletin boolean contract", () => {
+  assert.equal(isReadinessResponseReady("/bulletin/health/ready", { ready: true }), true);
+  assert.equal(isReadinessResponseReady("/bulletin/health/ready", { state: "ready" }), false);
+});
 });
 test("readiness ignores optional browser and persistence fallback", () => {
   assert.deepEqual(readinessStatus({ browserRequired: false, browserStarted: false, persistenceRequired: false, persistenceAvailable: false }), { ready: true, statusCode: 200 });
