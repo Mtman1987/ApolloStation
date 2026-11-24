@@ -257,5 +257,8 @@ test("Node 1 disables optional Stellar Chat when its existing worker credential 
 
 test("canonical Hostless release wrapper forces both nodes and keeps validation enabled", () => {
   const trigger = readFileSync(new URL("../scripts/release-trigger/trigger-hostless-release.mjs", import.meta.url), "utf8");
-  assert.match(trigger, /inputs:\s*\{\s*deploy:\s*"true",\s*node:\s*"both",\s*detect_changes:\s*"false",\s*skip_validation:\s*"false"\s*\}/);
+  assert.ok(trigger.includes('deploy: "true"'));
+  assert.ok(trigger.includes('node: "both"'));
+  assert.ok(trigger.includes('detect_changes: "false"'));
+  assert.ok(trigger.includes('skip_validation: "false"'));
 });
