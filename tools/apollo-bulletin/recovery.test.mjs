@@ -176,7 +176,7 @@ test("Bulletin widgets render scheduled times in the selected timezone and expos
     const response = await fetch("http://127.0.0.1:" + address.port + "/widgets/scheduler");
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /function nextRun\\(t\\)/);
+    assert.match(html, /function nextRun\(t\)/);
     assert.match(html, /timeZoneName:"short"/);
     assert.match(html, /aria-live="polite"/);
     assert.match(html, /min-height:40px/);
