@@ -42,7 +42,7 @@ export function createNode2Ingress({ streamweaverPort = 3202, nebulaPort = 3100,
     const upstream = netConnect(hearMeOutPort, '127.0.0.1', () => {
       const headers = Object.entries(req.headers).map(([key, value]) =>
         value === undefined ? '' : key + ': ' + (Array.isArray(value) ? value.join(', ') : value)).filter(Boolean);
-      upstream.write(req.method + ' ' + req.url + ' HTTP/' + req.httpVersion + '\\r\\n' + headers.join('\\r\\n') + '\\r\\n\\r\\n');
+      upstream.write(req.method + ' ' + req.url + ' HTTP/' + req.httpVersion + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
       if (head.length) upstream.write(head);
       client.pipe(upstream).pipe(client);
     });
