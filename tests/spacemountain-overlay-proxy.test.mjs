@@ -121,13 +121,13 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
     NEBULA_ARCADE_ORIGIN: "https://nebula.example.test",
     STREAMWEAVER_WEB_ORIGIN: "https://streamweaver.example.test",
     DSH_WEB_ORIGIN: "https://discord.example.test",
+    HEARMEOUT_WEB_ORIGIN: "https://hearmeout.example.test",
   });
   assert.equal(checked.spmtOrigin, "http://127.0.0.1:3000");
   assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
   assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
   assert.equal(checked.greenAppOrigins.hearmeout, "https://hearmeout.example.test");
-  assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.throws(() => validateIntegratedWebEnvironment({
     SPMT_RUNTIME_MODE: "production",
     SPMT_ORIGIN: "http://spmt.example.test",
