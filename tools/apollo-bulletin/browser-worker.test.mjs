@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { ApolloChatGptBrowserWorker } from "./browser-worker.mjs";
 
 function fakeWorker({ url = "https://chatgpt.com/", pageClosed = false, browserConnected = true } = {}) {
-  const worker = new ApolloChatGptBrowserWorker();
-  worker.context = { browser: () => ({ isConnected: () => browserConnected }) };
+  const worker = new ApolloChatGptBrowserWorker({});
+  worker.context = { browser: () => browserConnected ? ({ isConnected: () => true }) : null };
   worker.page = {
     isClosed: () => pageClosed,
     url: () => url,
@@ -32,4 +32,14 @@ test("browser status exposes health separately from ChatGPT login state", async 
   assert.equal(status.healthy, true);
   assert.equal(status.connected, true);
   assert.equal(status.loginRequired, true);
+});
+
+test("browser health fails closed when the context has no connected browser", async () => {
+  assert.equal(await fakeWorker({ browserConnected: false }).isHealthy(), false);
+});
+test("browser status remains inspectable after the page closes", async () => {
+  const worker = fakeWorker({ pageClosed: true });
+  const status = await worker.status();
+  assert.equal(status.healthy, false);
+  assert.equal(status.connected, false);
 });
