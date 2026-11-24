@@ -43,7 +43,7 @@ export async function waitForHostlessDeployment(options) {
     throw new TypeError("Hostless deployment polling timeout and interval must be non-negative numbers.");
   }
 
-  const endpoint = `${api.replace(/\\/+$/, "")}/apps/${encodeURIComponent(app)}/deployments/${encodeURIComponent(deploymentId)}`;
+  const endpoint = `${api.replace(/\/+$/, "")}/apps/${encodeURIComponent(app)}/deployments/${encodeURIComponent(deploymentId)}`;
   const deadline = now() + timeoutMs;
   let lastStatus = "unknown";
   let lastError = "";
