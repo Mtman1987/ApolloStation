@@ -268,6 +268,14 @@ test("Hostless cron proxy uses a bearer secret and does not need an interactive 
   );
   assert.equal(denied.authorized, false);
   assert.equal(denied.status, 401);
+  const bossKeyAllowed = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer existing-owner-key" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    { BOSS_KEY: "existing-owner-key" },
+  );
+  assert.equal(bossKeyAllowed.authorized, true, "the existing BOSS_KEY fallback must work at the integrated gateway");
   const previewAllowed = await authorizeBulletinRequest(
     { headers: { authorization: "Bearer preview-only-token" } },
     "/bulletin/api/cron/tick",
@@ -291,6 +299,8 @@ test("Node 1 disables its private polling loop when Hostless cron owns schedulin
   const startNode = await readFile(new URL("../scripts/hostless/start-node.mjs", import.meta.url), "utf8");
   assert.match(startNode, /APOLLO_BULLETIN_USE_HOSTLESS_CRON:\s*"1"/);
   assert.match(startNode, /APOLLO_BULLETIN_REQUIRE_TURSO:\s*"1"/);
+  assert.match(startNode, /APOLLO_BULLETIN_CRON_TOKEN, process\.env\.APOLLO_BROWSER_CONTROL_PASSWORD, process\.env\.APOLLO_PREVIEW_PASSWORD, process\.env\.BOSS_KEY/);
+  assert.match(startNode, /APOLLO_BROWSER_CONTROL_PASSWORD, process\.env\.APOLLO_PREVIEW_PASSWORD, process\.env\.BOSS_KEY/);
 });
 
 test("Bulletin Stop is terminal and Hostless mode rejects sub-minute task schedules", async () => {
@@ -439,6 +449,8 @@ test("Hostless cron dispatcher uses the same token fallback order as gateway aut
   assert.equal(resolveCronToken({ APOLLO_BULLETIN_CRON_TOKEN: "cron", APOLLO_BROWSER_CONTROL_PASSWORD: "browser", APOLLO_PREVIEW_PASSWORD: "preview" }), "cron");
   assert.equal(resolveCronToken({ APOLLO_BROWSER_CONTROL_PASSWORD: "browser", APOLLO_PREVIEW_PASSWORD: "preview" }), "browser");
   assert.equal(resolveCronToken({ APOLLO_PREVIEW_PASSWORD: "preview" }), "preview");
+  assert.equal(resolveCronToken({ BOSS_KEY: "existing-owner-key" }), "existing-owner-key");
+  assert.equal(resolveCronToken({ APOLLO_BULLETIN_CRON_TOKEN: " ", APOLLO_BROWSER_CONTROL_PASSWORD: " ", APOLLO_PREVIEW_PASSWORD: " ", BOSS_KEY: "existing-owner-key" }), "existing-owner-key");
   assert.equal(resolveCronToken({}), "");
 });
 
