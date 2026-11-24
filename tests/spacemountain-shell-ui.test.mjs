@@ -182,6 +182,8 @@ test("Home is only the hero landing page and Commlink owns the forum surface", (
   assert.match(home, /Open Shipyard/);
   assert.match(home, /Open Commlink/);
   assert.match(commlink, /\$\{this\.forum\(\)\}/);
+  assert.match(commlink, /data-commlink-forum-toggle/);
+  assert.match(commlink, /data-commlink-forum-drawer/);
   assert.match(base, /private forum\(\)/);
   assert.match(base, /data-forum-create/);
 });
