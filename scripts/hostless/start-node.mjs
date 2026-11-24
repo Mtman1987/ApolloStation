@@ -170,6 +170,22 @@ if (nebulaConfigRequested) {
   process.env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH = nebulaConfig.configPath;
   nebulaConfigForServer = nebulaConfig;
 }
+// HearMeOut remains a separate room/voice authority. Start it only when its
+// existing database path is explicitly configured; never create an ephemeral
+// /tmp database and imply that room state is persistent.
+const hearMeOutDatabasePath = process.env.HEARMEOUT_ROOM_DATABASE_PATH?.trim();
+if (hearMeOutDatabasePath) {
+  node2.push(["apps/hearmeout/dist/web-server.js", {
+    PORT: process.env.HEARMEOUT_WEB_PORT ?? "3203",
+    HOST: "127.0.0.1",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    HEARMEOUT_ROOM_DATABASE_PATH: hearMeOutDatabasePath,
+  }]);
+  console.info("[hearmeout] Room and voice web runtime configured on Node 2.");
+} else {
+  console.warn("[hearmeout] Web runtime deferred: HEARMEOUT_ROOM_DATABASE_PATH must point to its configured persistent database.");
+}
+
 node2.push(
   ["apps/chat-gateway/dist/service-start.js", {}],
   ["apps/streamweaver/dist/web-server.js", { PORT: process.env.STREAMWEAVER_WEB_PORT ?? "3202", HOST: "127.0.0.1" }],

@@ -6,8 +6,8 @@ const { tmpdir } = require('node:os');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint = 'https://discord-stream-hub-new.fly.dev/api/community-spotlight' }) {
-  let root, display, pulse, browser, page, host, encoder, startTask, activationTask, warningTimer, active = false, activated = false, failure = '', currentLogin = '';
+function createSpotlightBroadcast({ chromiumPath, chromium, spotlightEndpoint = process.env.SPOTLIGHT_ENDPOINT || new URL('/api/community-spotlight', process.env.SPMT_ORIGIN || 'https://apollo-node-1.hostless.app').toString() }) {
+  let root, display, pulse, context, page, host, encoder, startTask, activationTask, warningTimer, active = false, activated = false, failure = '', currentLogin = '';
   let init = Buffer.alloc(0), pending = Buffer.alloc(0), fragment = [], fragmentsSent = 0, lastFragmentAt = 0;
   const viewers = new Set();
   const children = [];
@@ -79,14 +79,14 @@ function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint =
       await new Promise(resolve => host.listen(0, '127.0.0.1', resolve));
 
       await mkdir(profileDir, { recursive: true });
-      browser = await puppeteer.launch({
-        executablePath: chromiumPath, headless: false, defaultViewport: null,
-        userDataDir: profileDir, env: environment,
+      context = await chromium.launchPersistentContext(profileDir, {
+        executablePath: chromiumPath, headless: false, viewport: null,
+        env: environment,
         ignoreDefaultArgs: ['--mute-audio', '--enable-automation'],
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-infobars', '--kiosk', '--window-position=0,0', '--window-size=1280,720', '--force-device-scale-factor=1', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
       });
-      browser.on('disconnected', () => { active = false; failure ||= 'The Spotlight browser disconnected'; });
-      page = (await browser.pages())[0] || await browser.newPage();
+      context.on('close', () => { active = false; failure ||= 'The Spotlight browser disconnected'; });
+      page = context.pages()[0] || await context.newPage();
       await page.goto('http://localhost:' + host.address().port + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
       // The persistent source can be healthy before Twitch's embed reports READY.
       // Do not tear down Xvfb/PulseAudio/Chromium just because the Twitch script,
@@ -198,7 +198,7 @@ function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint =
     for (const response of viewers) response.end();
     viewers.clear();
     await stopProcess(encoder); encoder = undefined;
-    await browser?.close().catch(() => {}); browser = undefined; page = undefined;
+    await context?.close().catch(() => {}); context = undefined; page = undefined;
     await Promise.all(children.splice(0).map(stopProcess));
     if (host) { host.closeAllConnections(); await new Promise(resolve => host.close(resolve)); host = undefined; }
     if (removeRoot && root) await rm(root, { recursive: true, force: true });
