@@ -1,7 +1,7 @@
 import { resolveCronToken, assertCronTickResponse } from "./cron-auth.mjs";
 
 const token = resolveCronToken(process.env);
-if (!token) throw new Error("Set APOLLO_BULLETIN_CRON_TOKEN, APOLLO_BROWSER_CONTROL_PASSWORD, or APOLLO_PREVIEW_PASSWORD for the Hostless cron dispatcher");
+if (!token) throw new Error("Set APOLLO_BULLETIN_CRON_TOKEN, APOLLO_BROWSER_CONTROL_PASSWORD, APOLLO_PREVIEW_PASSWORD, or BOSS_KEY for the Hostless cron dispatcher");
 
 const origin = new URL(process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app");
 if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
