@@ -27,7 +27,7 @@ export async function authorizeBulletinRequest(
 ): Promise<{ authorized: boolean; status: number; reason: string }> {
   if (pathname === "/bulletin/health/ready" && (request.method ?? "GET") === "GET") return { authorized: true, status: 200, reason: "public-readiness" };
   if (pathname === "/bulletin/api/cron/tick") {
-    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD;
+    const expected = (environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD || "").trim();
     if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
     const authorization = request.headers.authorization || "";
     const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
