@@ -6,6 +6,18 @@ import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
 
+export function installLocalBrowserPackage(root, spawn = spawnSync) {
+  mkdirSync(root, { recursive: true });
+  const install = spawn("npm", ["ci", "--ignore-scripts"], {
+    cwd: root,
+    stdio: "inherit",
+    timeout: 120_000,
+    killSignal: "SIGTERM",
+  });
+  if (install.error) throw new Error("Local browser package installation failed: " + install.error.message);
+  if (install.status !== 0) throw new Error("Local browser package installation failed with exit code " + String(install.status ?? "unknown"));
+}
+
 export async function localBrowserPath() {
   if (process.env.HMO_TEST_BROWSER_PATH) {
     if (!existsSync(process.env.HMO_TEST_BROWSER_PATH)) throw Error('HMO_TEST_BROWSER_PATH does not exist');
@@ -14,14 +26,12 @@ export async function localBrowserPath() {
   if (existsSync(chromium.executablePath())) return chromium.executablePath();
   if (process.platform !== 'linux' || process.arch !== 'x64') throw Error('Install your native browser with npx playwright install chromium, or set HMO_TEST_BROWSER_PATH');
   const root=fileURLToPath(new URL('./local-browser/',import.meta.url));
-  // Hostless images may omit the empty directory from the build context.
-  // npm --prefix cannot create a missing prefix parent, so ensure it exists first.
-  mkdirSync(root,{recursive:true});
   const runtime=join(root,'runtime');
   const binary=join(runtime,'chromium');
   if (existsSync(join(runtime,'ready')) && existsSync(binary)) return binary;
-  const install=spawnSync('npm',['ci','--ignore-scripts','--prefix',root],{stdio:'inherit'});
-  if(install.status!==0)throw Error('Local browser package installation failed');
+  // Use cwd instead of npm --prefix: Hostless build contexts can omit empty
+  // directories, and npm's prefix path handling has failed to create node_modules.
+  installLocalBrowserPackage(root);
   const bin=join(root,'node_modules/@sparticuz/chromium/bin');
   mkdirSync(runtime,{recursive:true});
   await pipeline(createReadStream(join(bin,'chromium.br')),createBrotliDecompress(),createWriteStream(binary));

@@ -46,8 +46,12 @@ function writeVersionedRuntimeConfig({ json, path, fallbackPath, label, emptyCon
   return { configPath, config };
 }
 
+const firstConfigured = (...values) => values.find(value => typeof value === "string" && value.trim())?.trim();
+const bulletinCronToken = firstConfigured(process.env.APOLLO_BULLETIN_CRON_TOKEN, process.env.APOLLO_BROWSER_CONTROL_PASSWORD, process.env.APOLLO_PREVIEW_PASSWORD, process.env.BOSS_KEY);
+const browserControlPassword = firstConfigured(process.env.APOLLO_BROWSER_CONTROL_PASSWORD, process.env.APOLLO_PREVIEW_PASSWORD, process.env.BOSS_KEY);
+
 const node1 = [
-  ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STATE_PATH: process.env.APOLLO_BULLETIN_STATE_PATH ?? "/tmp/apollo-bulletin/state.json", APOLLO_BULLETIN_ENABLE_BROWSER: "1", APOLLO_BULLETIN_REQUIRE_TURSO: "1", APOLLO_BULLETIN_USE_HOSTLESS_CRON: "1", APOLLO_BULLETIN_PUBLIC_URL: process.env.APOLLO_BULLETIN_PUBLIC_URL ?? "https://apollo-node-1.hostless.app", APOLLO_BROWSER_PROFILE_PATH: process.env.APOLLO_BROWSER_PROFILE_PATH ?? "/tmp/apollo-browser-profile" }],
+  ["tools/apollo-bulletin/server.mjs", { APOLLO_BULLETIN_PORT: "3210", APOLLO_BULLETIN_STATE_PATH: process.env.APOLLO_BULLETIN_STATE_PATH ?? "/tmp/apollo-bulletin/state.json", APOLLO_BULLETIN_ENABLE_BROWSER: "1", APOLLO_BULLETIN_REQUIRE_TURSO: "1", APOLLO_BULLETIN_USE_HOSTLESS_CRON: "1", ...(bulletinCronToken ? { APOLLO_BULLETIN_CRON_TOKEN: bulletinCronToken } : {}), ...(browserControlPassword ? { APOLLO_BROWSER_CONTROL_PASSWORD: browserControlPassword } : {}), APOLLO_BULLETIN_PUBLIC_URL: process.env.APOLLO_BULLETIN_PUBLIC_URL ?? "https://apollo-node-1.hostless.app", APOLLO_BROWSER_PROFILE_PATH: process.env.APOLLO_BROWSER_PROFILE_PATH ?? "/tmp/apollo-browser-profile" }],
   ["apps/spmt-service/dist/provider-identity-start.js", { PORT: "3000", DATABASE_PATH: process.env.DATABASE_PATH ?? "/tmp/apollo-spmt.sqlite", SPMT_STELLAR_CHAT_ENABLED: stellarChatEnabled ? "1" : "" }],
 ];
 

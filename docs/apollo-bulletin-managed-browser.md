@@ -1,6 +1,6 @@
 # Apollo Bulletin hosted ChatGPT browser
 
-Apollo Bulletin uses its existing Node 1 Playwright/Chromium worker. It never attaches to, shares, or takes control of the Lounge browser. The owner uses the Apollo console from a phone; no desktop extension is required.
+Apollo Bulletin uses its existing Node 1 Playwright/Chromium worker. It never attaches to, shares, or takes control of the Lounge browser. The legacy Lounge browser in `spmt-live` is the Fly-bound Xbox/Restream Studio controller, accepts only its fixed Xbox/Restream modes, and is not a ChatGPT adapter; reusing it would risk the live Restream/Lounge session and would violate the no-Fly deployment boundary. The isolated Node 1 Chromium worker is the Hostless replacement for Bulletin's ChatGPT work, not a second Lounge controller. The owner uses the Apollo console from a phone; no desktop extension is required.
 
 ## Persistence
 
@@ -10,7 +10,7 @@ Node 1 requires:
 - `TURSO_DATABASE_URL` or `SHARED_TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN` or `NODE1_TURSO_AUTH_TOKEN`
 
-Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. The cron command calls the owner-protected `/bulletin/api/cron/tick` endpoint using `APOLLO_BULLETIN_CRON_TOKEN` or `APOLLO_BROWSER_CONTROL_PASSWORD`. `APOLLO_BULLETIN_OWNER_ACTOR_ID` is an optional owner pin. When set, the proxy rejects other Apollo actor IDs; when unset, any authenticated Apollo session can access task APIs. Configure the pin before onboarding additional users. Readiness reports only whether the pin is configured, not its value. Weekly/monthly and `datetime-local` one-time schedules use the explicit IANA timezone (default `America/Chicago`) instead of the Hostless runtime timezone. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`.
+Node 1 sets `APOLLO_BULLETIN_REQUIRE_TURSO=1` and fails closed if those settings are missing. Its readiness endpoint requires all of the following: the connected browser is healthy, its storage state has been successfully written to Turso, queue persistence is Turso-backed, cron authentication is configured, and a completed Hostless cron tick has been persisted within the last three minutes. It reports only credential presence and safe cron counters/timestamps, never secret values or task contents. The cron command calls `/bulletin/api/cron/tick` using `APOLLO_BULLETIN_CRON_TOKEN`, falling back to the existing `APOLLO_BROWSER_CONTROL_PASSWORD`, `APOLLO_PREVIEW_PASSWORD`, and finally `BOSS_KEY`. `APOLLO_BULLETIN_OWNER_ACTOR_ID` is an optional additional actor pin. Task and browser-console routes always require the canonical SPMT platform-owner identity from the authenticated session check; an ordinary authenticated user or an owner of another tenant is not sufficient. Weekly/monthly and `datetime-local` one-time schedules use the explicit IANA timezone (default `America/Chicago`) instead of the Hostless runtime timezone. The temporary Chromium working directory can be recreated after a restart because the browser storage state is restored from Turso. The pinned Chromium runtime is provisioned by `scripts/setup-local-browser.mjs`, which installs from its own package directory rather than relying on an npm prefix.
 
 ## Owner sign-in from a phone
 
@@ -33,6 +33,8 @@ The worker does not choose or switch custom GPTs, models, or connected apps. It 
 - A visible Send control must become enabled after the worker fills an empty composer. It clicks at most once per cycle.
 - It waits for a new assistant response and idle composer state before recording a receipt.
 - A timeout or ambiguous send is marked uncertain and is never automatically retried.
+- A task that reaches owner review can be explicitly resumed after inspection; it continues with a continuation prompt and a fresh cycle budget. An uncertain send remains non-resumable.
+- Browser readiness requires a live Chromium page on a ChatGPT/OpenAI origin and a successful browser-state checkpoint to Turso. Readiness does not imply the owner is signed in—`browserLoginRequired` and `browserSessionReady` expose that separate state. The owner signs in through the phone-accessible console; the session checkpoint is written after every successful browser interaction.
 - Browser controls remain owner-protected and are routed through the existing Apollo Bulletin proxy.
 - The worker does not access or control Lounge's browser.
 

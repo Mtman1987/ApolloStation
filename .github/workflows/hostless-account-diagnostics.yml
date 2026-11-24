@@ -21,16 +21,20 @@ jobs:
       matrix:
         include:
           - node: Node 1
+            app: apollo-node-1
             secret: HOSTLESS_NODE1_TOKEN
           - node: Node 2
+            app: apollo-node-2
             secret: HOSTLESS_NODE2_TOKEN
     steps:
       - name: Inspect billing entitlement and app inventory (read only)
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
           NODE_LABEL: ${{ matrix.node }}
+          APP: ${{ matrix.app }}
         run: |
           node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from "node:fs";
           const base = "https://api.hostless.cloud/v1";
           const token = process.env.HOSTLESS_TOKEN;
           if (!token) { console.log(process.env.NODE_LABEL + ": token missing"); process.exit(1); }
@@ -38,7 +42,8 @@ jobs:
             "/billing/cycles",
             "/billing/breakdown?startDate=2026-11-01&endDate=2026-11-30",
             "/billing/payment-config",
-            "/apps"
+            "/apps",
+            "/apps/" + encodeURIComponent(process.env.APP) + "/environment-variables"
           ];
           const safe = (value, depth = 0) => {
             if (depth > 7 || value == null) return value;
@@ -63,12 +68,39 @@ jobs:
               const raw = await response.text();
               let body;
               try { body = raw ? JSON.parse(raw) : {}; } catch { body = { nonJsonResponse: true }; }
+              if (path.endsWith("/environment-variables")) {
+                const rows = Array.isArray(body) ? body
+                  : Array.isArray(body?.variables) ? body.variables
+                  : Array.isArray(body?.environmentVariables) ? body.environmentVariables
+                  : Array.isArray(body?.items) ? body.items
+                  : Array.isArray(body?.data?.variables) ? body.data.variables
+                  : Array.isArray(body?.data?.environmentVariables) ? body.data.environmentVariables
+                  : Array.isArray(body?.data?.items) ? body.data.items
+                  : Array.isArray(body?.data) ? body.data : null;
+                const names = rows ? [...new Set(rows.map(item => typeof item?.name === "string" ? item.name : typeof item?.key === "string" ? item.key : "").filter(Boolean))].sort() : [];
+                mkdirSync("hostless-inventory", { recursive: true });
+                const inventory = { checkedAt: new Date().toISOString(), node: process.env.NODE_LABEL, app: process.env.APP, httpStatus: response.status, count: names.length, names };
+                writeFileSync("hostless-inventory/" + process.env.APP + "-environment-variable-names.json", JSON.stringify(inventory, null, 2) + "\n");
+                writeFileSync("hostless-inventory/" + process.env.APP + "-environment-variable-names.txt", names.join("\n") + "\n");
+                console.log(JSON.stringify({ endpoint: path.split("?")[0], httpStatus: response.status, count: names.length, names }));
+                if (!response.ok || !rows || names.length === 0) process.exitCode = 1;
+                continue;
+              }
               console.log(JSON.stringify({ endpoint: path.split("?")[0], httpStatus: response.status, result: safe(body) }));
             } catch (error) {
+              if (path.endsWith("/environment-variables")) process.exitCode = 1;
               console.log(JSON.stringify({ endpoint: path.split("?")[0], networkError: String(error).slice(0, 180) }));
             }
           }
           NODE
+      - name: Upload name-only Hostless environment inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostless-environment-names-${{ matrix.app }}-${{ github.run_id }}
+          path: hostless-inventory/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Publish node result pointer to Apollo diagnostics issue
         if: always()
         uses: actions/github-script@v7
