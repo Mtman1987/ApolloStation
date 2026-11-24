@@ -854,7 +854,7 @@ async function extractVideoInfo(videoId, forceRefresh = false) {
     ],
   });
 
-  const page = await browser.newPage();
+  const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 720 });
   let capturedUrl = null;
   let capturedContentType = null;
@@ -945,7 +945,7 @@ async function extractVideoInfo(videoId, forceRefresh = false) {
     setCachedExtractedInfo(videoId, info, 'video');
     return info;
   } finally {
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
     cleanupExtractorUserDataDir(userDataDir);
   }
 }
@@ -2857,7 +2857,7 @@ async function startBrowserDJ(roomId) {
   const started = await page.evaluate(() => globalThis.__HEARMEOUT_DJ__.getStatus());
   if (!started?.isLive) {
     await page.close().catch(() => {});
-    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
     return {
       success: false,
       message: started?.status || 'DJ browser publisher did not become live.',
