@@ -15,18 +15,18 @@ const service = (store = new MemoryUsageLedgerStore()) => new MonetizationServic
 test("canonical billing manifest keeps approved affordable prices and launch caps in one file", () => {
   const plans = manifest().plans;
   assert.deepEqual(plans.map((plan) => [plan.planId, plan.monthlyPriceUsd]), [["free", 0], ["creator", 5], ["pro", 12], ["agency", 29]]);
-  assert.equal(plans.find((plan) => plan.planId === "free").limits["ai-chat-requests"], 25);
+  assert.equal(plans.find((plan) => plan.planId === "free").limits["ai-chat-requests"], Number.MAX_SAFE_INTEGER);
   assert.equal(plans.find((plan) => plan.planId === "pro").limits["ai-coding-requests"], 500);
   assert.equal(plans.find((plan) => plan.planId === "creator").limits["image-generations"], 25);
   assert.equal(plans.find((plan) => plan.planId === "agency").limits["xbox-session-minutes"], 2100);
 });
 
-test("preflight blocks work before a hard cap and consumption is replay safe", () => {
+test("paid-plan preflight blocks work before a hard cap and consumption is replay safe", () => {
   const usage = service();
-  const base = { tenantId: "tenant-a", userId: "user-a", planId: "free", resource: "ai-chat-requests", executionTarget: "hosted", occurredAt: at };
-  const first = usage.consume({ ...base, quantity: 25, idempotencyKey: "ai-1" });
+  const base = { tenantId: "tenant-a", userId: "user-a", planId: "creator", resource: "ai-chat-requests", executionTarget: "hosted", occurredAt: at };
+  const first = usage.consume({ ...base, quantity: 250, idempotencyKey: "ai-1" });
   assert.equal(first.warning, 100);
-  assert.equal(usage.consume({ ...base, quantity: 25, idempotencyKey: "ai-1" }).used, 25);
+  assert.equal(usage.consume({ ...base, quantity: 250, idempotencyKey: "ai-1" }).used, 250);
   assert.equal(usage.preflight({ ...base, quantity: 1 }).allowed, false);
   assert.throws(() => usage.consume({ ...base, quantity: 1, idempotencyKey: "ai-2" }), UsageLimitError);
 });
