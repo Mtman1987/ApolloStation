@@ -4,3 +4,11 @@ export function resolveCronToken(env = process.env) {
   }
   return "";
 }
+
+export function assertCronTickResponse(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value.accepted === true && value.busy !== true) return { accepted: true };
+    if (value.accepted === false && value.busy === true) return { accepted: false, busy: true };
+  }
+  throw new Error("Apollo Bulletin cron endpoint did not confirm an accepted or busy tick");
+}
