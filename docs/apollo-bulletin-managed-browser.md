@@ -33,6 +33,8 @@ The worker does not choose or switch custom GPTs, models, or connected apps. It 
 - A visible Send control must become enabled after the worker fills an empty composer. It clicks at most once per cycle.
 - It waits for a new assistant response and idle composer state before recording a receipt.
 - A timeout or ambiguous send is marked uncertain and is never automatically retried.
+- A task that reaches owner review can be explicitly resumed after inspection; it continues with a continuation prompt and a fresh cycle budget. An uncertain send remains non-resumable.
+- Browser readiness requires a live Chromium page on a ChatGPT/OpenAI origin; readiness does not imply the owner is signed in—check the browser console's login status.
 - Browser controls remain owner-protected and are routed through the existing Apollo Bulletin proxy.
 - The worker does not access or control Lounge's browser.
 
