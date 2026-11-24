@@ -185,3 +185,42 @@ test("Bulletin widgets render scheduled times in the selected timezone and expos
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("submitted dispatch without a verified reply receipt is uncertain and never continued", async () => {
+  const priorCron = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
+  const priorBrowser = process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  const priorRequireTurso = process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  let persisted = null;
+  let dispatchCalls = 0;
+  const store = {
+    async loadQueue() { return persisted; },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store, dispatch: async () => { dispatchCalls += 1; return { submitted: true, reason: "missing receipt" }; } });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Missing receipt", prompt: "Do not duplicate this work", destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/missing-receipt", scheduleType: "manual" }) });
+    assert.equal(created.status, 201);
+    const { task } = await created.json();
+    const run = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    assert.equal(run.status, 200);
+    await run.text();
+    for (let attempt = 0; attempt < 50 && persisted?.tasks?.[0]?.status !== "dispatch-uncertain"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(persisted.tasks[0].status, "dispatch-uncertain");
+    assert.equal(persisted.tasks[0].nextRunAt, null);
+    assert.ok(persisted.activity.some(item => item.event === "dispatch-receipt-missing-no-retry"));
+    const retry = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    assert.equal(retry.status, 409);
+    assert.equal(dispatchCalls, 1);
+  } finally {
+    await app.close();
+    if (priorCron === undefined) delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON; else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = priorCron;
+    if (priorBrowser === undefined) delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER; else process.env.APOLLO_BULLETIN_ENABLE_BROWSER = priorBrowser;
+    if (priorRequireTurso === undefined) delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO; else process.env.APOLLO_BULLETIN_REQUIRE_TURSO = priorRequireTurso;
+  }
+});
