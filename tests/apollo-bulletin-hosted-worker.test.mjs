@@ -267,6 +267,14 @@ test("Hostless cron proxy uses a bearer secret and does not need an interactive 
     { APOLLO_PREVIEW_PASSWORD: "preview-only-token" },
   );
   assert.equal(previewAllowed.authorized, true);
+  const whitespaceDedicatedFallback = await authorizeBulletinRequest(
+    { headers: { authorization: "Bearer browser-control-token" } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    { APOLLO_BULLETIN_CRON_TOKEN: "  ", APOLLO_BROWSER_CONTROL_PASSWORD: " browser-control-token " },
+  );
+  assert.equal(whitespaceDedicatedFallback.authorized, true, "blank dedicated values must not mask an existing fallback credential");
 });
 
 test("Node 1 disables its private polling loop when Hostless cron owns scheduling", async () => {
