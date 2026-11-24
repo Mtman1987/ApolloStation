@@ -804,14 +804,14 @@ export class SpaceMountainShellUi {
     const nativePosts = this.snapshot.forumPosts ?? [];
     const nativeOrigins = new Set(nativePosts.map((post) => { const origin = recordObject(post, "origin") ?? {}; return [recordText(origin, ["provider"]), recordText(origin, ["channelId"]), recordText(origin, ["messageId"])].join(":"); }));
     const deletedOrigins = new Set(this.snapshot.events.filter((event) => event.type === "dsh.forum.post-mutated.v1" && recordText(recordObject(event, "payload"), ["operation"]) === "delete").map((event) => { const payload = recordObject(event, "payload") ?? {}; return ["discord", recordText(payload, ["sourceChannelId"]), recordText(payload, ["sourceMessageId"])].join(":"); }));
-    const forwardedPosts = this.snapshot.events.filter((event) => { if (event.type !== "dsh.forum.post-forwarded.v1") return false; const payload = recordObject(event, "payload") ?? {}; const key = ["discord", recordText(payload, ["sourceChannelId"]), recordText(payload, ["sourceMessageId"])].join(":"); return !nativeOrigins.has(key) && !deletedOrigins.has(key); }).map((event) => { const payload = recordObject(event, "payload") ?? {}; return { forwarded: true, title: recordText(payload, ["title"]) ?? "Discord forum post", body: recordText(payload, ["content"]) ?? "", origin: { authorName: recordText(payload, ["authorName"]) ?? "Discord member" }, sourceChannelName: recordText(payload, ["sourceChannelName"]) ?? "Discord Forum", postedAt: recordText(payload, ["postedAt"]) ?? recordText(event, ["createdAt", "created_at"]) }; });
-    const posts = [...nativePosts, ...forwardedPosts].slice(0, 20);
+    const forwardedPosts: Array<Record<string, unknown>> = this.snapshot.events.filter((event) => { if (event.type !== "dsh.forum.post-forwarded.v1") return false; const payload = recordObject(event, "payload") ?? {}; const key = ["discord", recordText(payload, ["sourceChannelId"]), recordText(payload, ["sourceMessageId"])].join(":"); return !nativeOrigins.has(key) && !deletedOrigins.has(key); }).map((event): Record<string, unknown> => { const payload = recordObject(event, "payload") ?? {}; return { forwarded: true, title: recordText(payload, ["title"]) ?? "Discord forum post", body: recordText(payload, ["content"]) ?? "", origin: { authorName: recordText(payload, ["authorName"]) ?? "Discord member" }, sourceChannelName: recordText(payload, ["sourceChannelName"]) ?? "Discord Forum", postedAt: recordText(payload, ["postedAt"]) ?? recordText(event, ["createdAt", "created_at"]) }; });
+    const posts: Array<Record<string, unknown>> = [...nativePosts, ...forwardedPosts].slice(0, 20);
     const cards = posts.map((post) => {
       const title = recordText(post, ["title"]) ?? "Community topic";
       const body = recordText(post, ["body", "content"]) ?? "";
-      const id = recordBoolean(post, "forwarded") ? undefined : recordText(post, ["id"]);
+      const id = recordBoolean(post, "forwarded", false) ? undefined : recordText(post, ["id"]);
       const own = Boolean(id && recordText(post, ["authorUserId", "author_user_id"]) === this.snapshot.userId);
-      const replies = Array.isArray(post.replies) ? post.replies : [];
+      const replies: Array<Record<string, unknown>> = Array.isArray(post.replies) ? post.replies as Array<Record<string, unknown>> : [];
       const replyCards = replies.map((reply) => {
         const replyId = recordText(reply, ["id"]);
         const ownReply = recordText(reply, ["authorUserId", "author_user_id"]) === this.snapshot.userId;
