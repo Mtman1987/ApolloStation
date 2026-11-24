@@ -42,11 +42,11 @@ function allowedRestreamHost(value) {
   }
 }
 
-function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
+function createRestreamControl({ chromiumPath, chromium, profileDir, spawnImpl = spawn }) {
   if (typeof profileDir !== 'string' || !isAbsolute(profileDir)) throw Error('RESTREAM_PROFILE_DIR must be an explicit absolute persistent-volume path');
   const controlUrl = process.env.RESTREAM_CONTROL_URL || 'https://app.restream.io/channel';
   let display;
-  let browser;
+  let context;
   let page;
   let launchTask;
   let startTask;
@@ -63,18 +63,18 @@ function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
   }
 
   async function ensureBrowser() {
-    if (browser?.connected && page && !page.isClosed()) return page;
+    if (context && page && !page.isClosed()) return page;
     if (launchTask) return launchTask;
     launchTask = (async () => {
       lastError = '';
-      await browser?.close().catch(() => {});
-      browser = undefined;
+      await context?.close().catch(() => {});
+      context = undefined;
       page = undefined;
       await stopProcess(display);
       display = undefined;
 
       await mkdir(profileDir, { recursive: true });
-      display = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-ac'], {
+      display = spawnImpl('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-ac'], {
         stdio: ['ignore', 'ignore', 'pipe', 'pipe'],
       });
       const displayNumber = await new Promise((resolve, reject) => {
@@ -91,11 +91,10 @@ function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
       });
 
       const env = { ...process.env, DISPLAY: ':' + displayNumber };
-      browser = await puppeteer.launch({
+      context = await chromium.launchPersistentContext(profileDir, {
         executablePath: chromiumPath,
         headless: false,
-        defaultViewport: null,
-        userDataDir: profileDir,
+        viewport: null,
         env,
         ignoreDefaultArgs: ['--enable-automation'],
         args: [
@@ -110,12 +109,12 @@ function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
           '--disable-renderer-backgrounding',
         ],
       });
-      browser.on('disconnected', () => {
+      context.on('close', () => {
         lastError ||= 'Restream control browser disconnected';
         page = undefined;
       });
-      page = (await browser.pages())[0] || await browser.newPage();
-      await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+      page = context.pages()[0] || await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 900 });
       if (!allowedRestreamHost(page.url())) {
         await page.goto(controlUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
       }
@@ -306,8 +305,8 @@ function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
   }
 
   async function close() {
-    await browser?.close().catch(() => {});
-    browser = undefined;
+    await context?.close().catch(() => {});
+    context = undefined;
     page = undefined;
     await stopProcess(display);
     display = undefined;

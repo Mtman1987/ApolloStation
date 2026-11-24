@@ -22,4 +22,4 @@ jobs:
       - name: Run worker regression tests
         run: npm ci --prefix apps/hearmeout/legacy-worker && npm test --prefix apps/hearmeout/legacy-worker
         env:
-          PUPPETEER_SKIP_DOWNLOAD: "1"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"

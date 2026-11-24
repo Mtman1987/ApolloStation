@@ -97,7 +97,7 @@ jobs:
         if: matrix.shard == 4 && steps.worker-deps-cache.outputs.cache-hit != 'true'
         run: npm ci --prefix apps/hearmeout/legacy-worker
         env:
-          PUPPETEER_SKIP_DOWNLOAD: "1"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       - name: Run HearMeOut worker regression tests in shard 4
         if: matrix.shard == 4
         run: npm test --prefix apps/hearmeout/legacy-worker

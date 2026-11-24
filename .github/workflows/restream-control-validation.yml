@@ -38,7 +38,7 @@ jobs:
         working-directory: services/restream-control
         run: npm install --omit=dev --no-audit --no-fund
         env:
-          PUPPETEER_SKIP_DOWNLOAD: "true"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "true"
       - name: Run Restream API and safety tests
         working-directory: services/restream-control
         run: npm test

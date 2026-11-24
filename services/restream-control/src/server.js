@@ -5,7 +5,7 @@ const { createServer: createHttpsServer } = require('node:https');
 const { timingSafeEqual } = require('node:crypto');
 const { mkdir, open, readFile, stat, unlink } = require('node:fs/promises');
 const { isAbsolute, join } = require('node:path');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 const { createRestreamControl } = require('./restream-control');
 
 function secretsMatch(actual, expected) {
@@ -114,8 +114,8 @@ async function start() {
   const tls = { cert: await require('node:fs/promises').readFile(certFile), key: await require('node:fs/promises').readFile(keyFile) };
   const releaseLock = await acquireProfileLock(profileDir);
   const control = createRestreamControl({
-    chromiumPath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-    puppeteer,
+    chromiumPath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || '/usr/bin/chromium',
+    chromium,
     profileDir,
   });
   const app = createRestreamService({

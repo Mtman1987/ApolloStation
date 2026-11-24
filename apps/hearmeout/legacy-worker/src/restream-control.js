@@ -41,11 +41,11 @@ function allowedRestreamHost(value) {
   }
 }
 
-function createRestreamControl({ chromiumPath, puppeteer }) {
+function createRestreamControl({ chromiumPath, chromium }) {
   const profileDir = process.env.RESTREAM_PROFILE_DIR || (process.env.FLY_APP_NAME ? '/data/restream-chromium' : join(tmpdir(), 'hmo-restream-chromium'));
   const controlUrl = process.env.RESTREAM_CONTROL_URL || 'https://app.restream.io/channel';
   let display;
-  let browser;
+  let context;
   let page;
   let launchTask;
   let startTask;
@@ -62,12 +62,12 @@ function createRestreamControl({ chromiumPath, puppeteer }) {
   }
 
   async function ensureBrowser() {
-    if (browser?.connected && page && !page.isClosed()) return page;
+    if (context && page && !page.isClosed()) return page;
     if (launchTask) return launchTask;
     launchTask = (async () => {
       lastError = '';
-      await browser?.close().catch(() => {});
-      browser = undefined;
+      await context?.close().catch(() => {});
+      context = undefined;
       page = undefined;
       await stopProcess(display);
       display = undefined;
@@ -90,11 +90,10 @@ function createRestreamControl({ chromiumPath, puppeteer }) {
       });
 
       const env = { ...process.env, DISPLAY: ':' + displayNumber };
-      browser = await puppeteer.launch({
+      context = await chromium.launchPersistentContext(profileDir, {
         executablePath: chromiumPath,
         headless: false,
-        defaultViewport: null,
-        userDataDir: profileDir,
+        viewport: null,
         env,
         ignoreDefaultArgs: ['--enable-automation'],
         args: [
@@ -109,12 +108,12 @@ function createRestreamControl({ chromiumPath, puppeteer }) {
           '--disable-renderer-backgrounding',
         ],
       });
-      browser.on('disconnected', () => {
+      context.on('close', () => {
         lastError ||= 'Restream control browser disconnected';
         page = undefined;
       });
-      page = (await browser.pages())[0] || await browser.newPage();
-      await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+      page = context.pages()[0] || await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 900 });
       if (!allowedRestreamHost(page.url())) {
         await page.goto(controlUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
       }
@@ -305,8 +304,8 @@ function createRestreamControl({ chromiumPath, puppeteer }) {
   }
 
   async function close() {
-    await browser?.close().catch(() => {});
-    browser = undefined;
+    await context?.close().catch(() => {});
+    context = undefined;
     page = undefined;
     await stopProcess(display);
     display = undefined;

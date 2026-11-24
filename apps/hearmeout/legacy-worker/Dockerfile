@@ -17,8 +17,8 @@ RUN git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdl
     && npm ci \
     && npx tsc
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true
+ENV PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium
 ENV YTDLP_BGUTIL_SERVER_HOME=/opt/bgutil-ytdlp-pot-provider/server
 
 WORKDIR /app

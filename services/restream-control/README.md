@@ -2,7 +2,7 @@
 
 **Package:** @spmt/restream-control  
 **Location:** services/restream-control  
-**Runtime:** isolated Node.js/Express/Puppeteer service.  
+**Runtime:** isolated Node.js/Express/Playwright service.  
 **Intended placement:** private Apollo Node 2 service boundary. It is not a Node 3 service and is not currently launched by scripts/hostless/start-node.mjs.
 
 ## 1. Responsibility
@@ -42,7 +42,7 @@ Required:
 - RESTREAM_PROFILE_DIR — absolute path on a mounted persistent volume.
 - RESTREAM_PROFILE_VOLUME_MARKER — marker file required at startup after the mount is verified.
 - RESTREAM_TLS_CERT_FILE and RESTREAM_TLS_KEY_FILE — private-CA certificate/key mounted read-only.
-- PUPPETEER_EXECUTABLE_PATH — Chromium executable path.
+- PLAYWRIGHT_EXECUTABLE_PATH — Chromium executable path.
 - RESTREAM_AUTOMATION_ENABLED — must remain false until owner-approved rehearsal and explicit release.
 
 Optional:
@@ -87,7 +87,7 @@ Package-local commands:
     npm start --workspace @spmt/restream-control
     npm test --workspace @spmt/restream-control
 
-The package uses Express and Puppeteer. Chromium and Xvfb are runtime dependencies in the container image. Keep them isolated from the global SpaceMountain shell and Chat Gateway web bundle.
+The package uses Express and Playwright. Chromium and Xvfb are runtime dependencies in the container image. Keep them isolated from the global SpaceMountain shell and Chat Gateway web bundle.
 
 ## 8. Performance and lifecycle
 

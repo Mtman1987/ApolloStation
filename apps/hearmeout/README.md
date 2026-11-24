@@ -64,7 +64,7 @@ apps/hearmeout/legacy-worker is a separate Node package with its own dependencie
 
 The adapter exposes bounded authenticated worker routes and intentionally does not receive provider refresh tokens. It can be removed only after the voice bridge and persona audio worker are fully native to Apollo, the same room/queue authority is preserved, and live bidirectional audio acceptance passes.
 
-The legacy worker has a heavier dependency set (Discord voice/Opus, native RTC/WebRTC, Puppeteer, ffmpeg-related media, and YouTube tooling). Keep it out of the web request path. A future extraction into a separately managed Apollo-owned media/voice worker is preferable to bundling it into the shell.
+The legacy worker has a heavier dependency set (Discord voice/Opus, native RTC/WebRTC, Playwright, ffmpeg-related media, and YouTube tooling). Keep it out of the web request path. A future extraction into a separately managed Apollo-owned media/voice worker is preferable to bundling it into the shell.
 
 ## 6. Known retired donor-origin dependency
 
