@@ -5,10 +5,10 @@ import { once } from "node:events";
 import { createNode2Ingress, isHearMeOutPath } from "../scripts/hostless/node2-ingress.mjs";
 
 test("HearMeOut ingress matcher is limited to its app, API, and health paths", () => {
-  for (const path of ["/apps/hearmeout", "/apps/hearmeout/room/abc", "/api/hearmeout/rooms", "/api/hearmeout/rtc", "/health/hearmeout"]) {
+  for (const path of ["/apps/hearmeout", "/apps/hearmeout/room/abc", "/api/hearmeout/rooms", "/api/hearmeout/rtc", "/api/watch/search", "/api/internal/watch/search", "/health/hearmeout"]) {
     assert.equal(isHearMeOutPath(path), true, path);
   }
-  for (const path of ["/", "/api/streamweaver", "/api/nebula-arcade", "/health/ready", "/hearmeout"]) {
+  for (const path of ["/", "/api/streamweaver", "/api/nebula-arcade", "/api/internal/lounge/media", "/health/ready", "/hearmeout"]) {
     assert.equal(isHearMeOutPath(path), false, path);
   }
 });
