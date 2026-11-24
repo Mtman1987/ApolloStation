@@ -27,41 +27,6 @@ test("restart converts persisted dispatching tasks to uncertain and never auto-r
     async saveBrowserState() {},
   };
   const app = createBulletinServer({ port: 0, store, dispatch: async () => { dispatchCalls++; return { submitted: true, receipt: { reply: "sent" } }; } });
-
-test("reviewed tasks resume with a continuation instead of replaying the original prompt", async () => {
-  const priorCron=process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON,priorBrowser=process.env.APOLLO_BULLETIN_ENABLE_BROWSER,priorRequireTurso=process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
-  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON="1";delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
-  let persisted=null;const sentPrompts=[];
-  const store={async loadQueue(){return persisted;},async saveQueue(value){persisted=structuredClone(value);},async loadBrowserState(){return null;},async saveBrowserState(){}};
-  const app=createBulletinServer({port:0,store,dispatch:async task=>{sentPrompts.push(task.prompt);return{submitted:true,receipt:{reply:sentPrompts.length===1?"Owner review required":task.completionMarker}};}});
-  try {
-    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
-    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Reviewed continuation",prompt:"Inspect and repair the service",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/review-resume",scheduleType:"manual",maxCycles:1})});
-    assert.equal(created.status,201);const {task}=await created.json();
-    const first=await fetch(origin+"/api/tasks/"+task.id+"/run",{method:"POST"});assert.equal(first.status,200);await first.text();
-    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="awaiting_review";i++)await new Promise(resolve=>setTimeout(resolve,20));
-    assert.equal(persisted.tasks[0].status,"awaiting_review");assert.match(persisted.tasks[0].prompt,/Continue the existing task in this exact conversation/);
-    const resumed=await fetch(origin+"/api/tasks/"+task.id+"/resume",{method:"POST"});assert.equal(resumed.status,200);await resumed.text();
-    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="completed";i++)await new Promise(resolve=>setTimeout(resolve,20));
-    assert.equal(persisted.tasks[0].status,"completed");assert.equal(sentPrompts.length,2);
-    assert.match(sentPrompts[1],/^Continue the existing task in this exact conversation/);assert.equal(persisted.tasks[0].totalCycles,1);
-  } finally {
-    await app.close();
-    if(priorCron===undefined)delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON=priorCron;
-    if(priorBrowser===undefined)delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;else process.env.APOLLO_BULLETIN_ENABLE_BROWSER=priorBrowser;
-    if(priorRequireTurso===undefined)delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;else process.env.APOLLO_BULLETIN_REQUIRE_TURSO=priorRequireTurso;
-  }
-});
-
-test("malformed task JSON returns HTTP 400", async () => {
-  const store={async loadQueue(){return {tasks:[],activity:[]};},async saveQueue(){},async loadBrowserState(){return null;},async saveBrowserState(){}};
-  const app=createBulletinServer({port:0,store});
-  try {
-    const address=await app.listen();
-    const response=await fetch("http://127.0.0.1:"+address.port+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:"{"});
-    assert.equal(response.status,400);assert.deepEqual(await response.json(),{error:"Request body must be valid JSON"});
-  } finally { await app.close(); }
-});
   try {
     const address = await app.listen(), origin = "http://127.0.0.1:" + address.port;
     const data = await (await fetch(origin + "/api/tasks")).json();
@@ -119,4 +84,40 @@ test("failed dispatch-intent persistence pauses before any external send", async
     assert.ok(persisted.activity.some(item=>item.event==="dispatch-claim-persistence-failed"));
     assert.equal(dispatchCalls,0);
   } finally { await app.close(); if(priorCron===undefined)delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON=priorCron; }
+});
+
+
+test("reviewed tasks resume with a continuation instead of replaying the original prompt", async () => {
+  const priorCron=process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON,priorBrowser=process.env.APOLLO_BULLETIN_ENABLE_BROWSER,priorRequireTurso=process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON="1";delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  let persisted=null;const sentPrompts=[];
+  const store={async loadQueue(){return persisted;},async saveQueue(value){persisted=structuredClone(value);},async loadBrowserState(){return null;},async saveBrowserState(){}};
+  const app=createBulletinServer({port:0,store,dispatch:async task=>{sentPrompts.push(task.prompt);return{submitted:true,receipt:{reply:sentPrompts.length===1?"Owner review required":task.completionMarker}};}});
+  try {
+    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
+    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Reviewed continuation",prompt:"Inspect and repair the service",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/review-resume",scheduleType:"manual",maxCycles:1})});
+    assert.equal(created.status,201);const {task}=await created.json();
+    const first=await fetch(origin+"/api/tasks/"+task.id+"/run",{method:"POST"});assert.equal(first.status,200);await first.text();
+    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="awaiting_review";i++)await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(persisted.tasks[0].status,"awaiting_review");assert.match(persisted.tasks[0].prompt,/Continue the existing task in this exact conversation/);
+    const resumed=await fetch(origin+"/api/tasks/"+task.id+"/resume",{method:"POST"});assert.equal(resumed.status,200);await resumed.text();
+    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="completed";i++)await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(persisted.tasks[0].status,"completed");assert.equal(sentPrompts.length,2);
+    assert.match(sentPrompts[1],/^Continue the existing task in this exact conversation/);assert.equal(persisted.tasks[0].totalCycles,2);
+  } finally {
+    await app.close();
+    if(priorCron===undefined)delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON=priorCron;
+    if(priorBrowser===undefined)delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;else process.env.APOLLO_BULLETIN_ENABLE_BROWSER=priorBrowser;
+    if(priorRequireTurso===undefined)delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;else process.env.APOLLO_BULLETIN_REQUIRE_TURSO=priorRequireTurso;
+  }
+});
+
+test("malformed task JSON returns HTTP 400", async () => {
+  const store={async loadQueue(){return {tasks:[],activity:[]};},async saveQueue(){},async loadBrowserState(){return null;},async saveBrowserState(){}};
+  const app=createBulletinServer({port:0,store});
+  try {
+    const address=await app.listen();
+    const response=await fetch("http://127.0.0.1:"+address.port+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:"{"});
+    assert.equal(response.status,400);assert.deepEqual(await response.json(),{error:"Request body must be valid JSON"});
+  } finally { await app.close(); }
 });
