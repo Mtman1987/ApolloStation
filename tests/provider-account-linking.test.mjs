@@ -160,14 +160,29 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       const state = authorization.searchParams.get("state");
       const pendingCookie = cookiePair(start.headers["set-cookie"]);
       assert.match(pendingCookie, /^__Host-spmt_linked_recovery=/);
+      const pendingCookieLine = String(start.headers["set-cookie"] ?? "")
+        .split(/,(?=\\s*[^;,]+=)/)
+        .find(line => line.startsWith("__Host-spmt_linked_recovery=")) ?? "";
+      assert.ok(pendingCookieLine.includes("; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=900"));
+      assert.doesNotMatch(pendingCookieLine, /Domain=/i, "__Host recovery state must be host-only");
       const pendingValue = decodeURIComponent(pendingCookie.split("=")[1]);
       const [pendingPayloadBase64, pendingSignature] = pendingValue.split(".");
       assert.match(pendingSignature ?? "", /^[A-Za-z0-9_-]{43}$/);
       const pendingPayload = JSON.parse(Buffer.from(pendingPayloadBase64, "base64url").toString("utf8"));
       assert.equal(pendingPayload.username, username);
       assert.equal(pendingPayload.provider, provider);
+      const callbackUrl = browserBase + "/v1/onboarding/twitch/callback?state=" + encodeURIComponent(state) + "&code=" + provider + "-valid-code";
+      const [pendingName] = pendingCookie.split("=", 2);
+      const changedSignature = pendingSignature.slice(0, -1) + (pendingSignature.endsWith("A") ? "B" : "A");
+      const beforeTamper = calls.length;
+      const tampered = await fetch(callbackUrl, {
+        headers: { cookie: pendingName + "=" + encodeURIComponent(pendingPayloadBase64 + "." + changedSignature) },
+        redirect: "manual",
+      });
+      assert.equal(new URL(tampered.headers.get("location")).searchParams.get("recoveryError"), "invalid_state");
+      assert.equal(calls.length, beforeTamper, "tampered recovery cookies must be rejected before OAuth exchange");
 
-      const callback = await fetch(browserBase + "/v1/onboarding/twitch/callback?state=" + encodeURIComponent(state) + "&code=" + provider + "-valid-code", {
+      const callback = await fetch(callbackUrl, {
         headers: { cookie: pendingCookie },
         redirect: "manual",
       });
