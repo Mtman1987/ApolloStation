@@ -128,3 +128,29 @@ test("browser session persistence failure is visible and not reported ready", as
     if (previous === undefined) delete process.env.HMO_TEST_BROWSER_PATH; else process.env.HMO_TEST_BROWSER_PATH = previous;
   }
 });
+test("browser startup restores the stored ChatGPT session state from Turso", async () => {
+  const previous = process.env.HMO_TEST_BROWSER_PATH;
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-browser-session-restore-"));
+  process.env.HMO_TEST_BROWSER_PATH = process.execPath;
+  const storedState = { cookies: [{ name: "test-session-cookie", value: "test-only", domain: "chatgpt.com", path: "/" }], origins: [] };
+  let launchOptions;
+  const page = { isClosed: () => false, url: () => "https://chatgpt.com/", title: async () => "ChatGPT", getByRole: () => ({ first: () => ({ isVisible: async () => false }) }) };
+  const context = { pages: () => [page], browser: () => ({ isConnected: () => true }), close: async () => {} };
+  const worker = new ApolloChatGptBrowserWorker({
+    profilePath: join(directory, "profile"),
+    launch: async (_path, options) => { launchOptions = options; return context; },
+    sessionStore: { async loadBrowserState() { return storedState; }, async saveBrowserState() {} },
+  });
+  try {
+    await worker.start();
+    assert.deepEqual(launchOptions.storageState, storedState);
+    assert.equal((await worker.status()).healthy, true);
+  } finally {
+    await worker.close();
+    await rm(directory, { recursive: true, force: true });
+    if (previous === undefined) delete process.env.HMO_TEST_BROWSER_PATH; else process.env.HMO_TEST_BROWSER_PATH = previous;
+  }
+});
