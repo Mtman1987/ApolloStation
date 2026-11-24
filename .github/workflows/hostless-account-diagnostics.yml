@@ -21,16 +21,20 @@ jobs:
       matrix:
         include:
           - node: Node 1
+            app: apollo-node-1
             secret: HOSTLESS_NODE1_TOKEN
           - node: Node 2
+            app: apollo-node-2
             secret: HOSTLESS_NODE2_TOKEN
     steps:
       - name: Inspect billing entitlement and app inventory (read only)
         env:
           HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
           NODE_LABEL: ${{ matrix.node }}
+          APP: ${{ matrix.app }}
         run: |
           node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from "node:fs";
           const base = "https://api.hostless.cloud/v1";
           const token = process.env.HOSTLESS_TOKEN;
           if (!token) { console.log(process.env.NODE_LABEL + ": token missing"); process.exit(1); }
@@ -79,11 +83,12 @@ jobs:
                 writeFileSync("hostless-inventory/" + process.env.APP + "-environment-variable-names.json", JSON.stringify(inventory, null, 2) + "\n");
                 writeFileSync("hostless-inventory/" + process.env.APP + "-environment-variable-names.txt", names.join("\n") + "\n");
                 console.log(JSON.stringify({ endpoint: path.split("?")[0], httpStatus: response.status, count: names.length, names }));
-                if (!response.ok || !rows) process.exitCode = 1;
+                if (!response.ok || !rows || names.length === 0) process.exitCode = 1;
                 continue;
               }
               console.log(JSON.stringify({ endpoint: path.split("?")[0], httpStatus: response.status, result: safe(body) }));
             } catch (error) {
+              if (path.endsWith("/environment-variables")) process.exitCode = 1;
               console.log(JSON.stringify({ endpoint: path.split("?")[0], networkError: String(error).slice(0, 180) }));
             }
           }
