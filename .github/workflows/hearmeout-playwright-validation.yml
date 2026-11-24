@@ -1,0 +1,40 @@
+name: HearMeOut Playwright worker validation
+
+on:
+  pull_request:
+    paths:
+      - "apps/hearmeout/legacy-worker/**"
+      - ".github/workflows/hearmeout-playwright-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/hearmeout/legacy-worker/**"
+      - ".github/workflows/hearmeout-playwright-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/hearmeout/legacy-worker/package-lock.json
+      - name: Install locked worker dependencies
+        run: npm ci --prefix apps/hearmeout/legacy-worker
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Check migrated browser worker syntax
+        run: |
+          node --check apps/hearmeout/legacy-worker/src/server.js
+          node --check apps/hearmeout/legacy-worker/src/youtube-broadcast-capture.js
+          node --check apps/hearmeout/legacy-worker/src/lounge-broadcast.js
+          node --check apps/hearmeout/legacy-worker/src/spotlight-broadcast.js
+          node --check apps/hearmeout/legacy-worker/src/restream-control.js
+      - name: Run HearMeOut worker regression tests
+        run: npm test --prefix apps/hearmeout/legacy-worker
