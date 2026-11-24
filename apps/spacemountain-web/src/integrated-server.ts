@@ -9,7 +9,7 @@ import { validateIntegratedWebEnvironment } from "./server.js";
 
 const SPMT_OVERLAY=/^\/v1\/overlay(?:\/|$)/;
 const SPMT_API=/^\/v1(?:\/|$)/;
-const NEBULA_RUNTIME=/^(?:\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula-game-mix\.js$|\/overlay\/game-mix\/)/;
+const NEBULA_RUNTIME=/^(?:\/apps\/nebula-arcade(?:\/|$)|\/api\/nebula-arcade(?:\/|$)|\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula(?:-game-mix\.js|\/|$)|\/overlay\/game-mix\/)/;
 const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
 type GreenAppId=typeof GREEN_APP_IDS[number];
 
