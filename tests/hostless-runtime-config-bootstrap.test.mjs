@@ -101,7 +101,8 @@ test("Hostless bootstrap derives Nebula config for every enabled tenant and prov
 test("Node 2 empty Nebula registry exports separate GitHub environment lines", () => {
   const workflow = readFileSync(new URL("../.github/workflows/hostless-node2-fast-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\n/);
-  assert.match(workflow, /NEBULA_ARCADE_RUNTIME_CONFIG_JSON=\\$\\{JSON\\.stringify\\(config\\)\\}\\nNEBULA_ARCADE_RUNTIME_CONFIG_PATH=/);
+  assert.match(workflow, /NEBULA_ARCADE_RUNTIME_CONFIG_JSON=\$\{JSON\.stringify\(config\)\}/);
+  assert.match(workflow, /NEBULA_ARCADE_RUNTIME_CONFIG_PATH=\/tmp\/apollo-nebula-runtime\.json/);
   assert.doesNotMatch(workflow, /APOLLO_NODE2_NEBULA_ENABLED=1\\\\nNEBULA_ARCADE_RUNTIME_CONFIG_JSON=/);
 });
 
@@ -251,4 +252,10 @@ test("Node 1 disables optional Stellar Chat when its existing worker credential 
 
   const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(release, /APOLLO_RUNTIME_NODE1_SPMT_STELLAR_CHAT_ENABLED: \$\{\{ matrix\.node == 'node1' && secrets\.STELLAR_WORKER_CREDENTIAL && '1' \|\| '' \}\}/);
+});
+
+
+test("canonical Hostless release wrapper forces both nodes and keeps validation enabled", () => {
+  const trigger = readFileSync(new URL("../scripts/release-trigger/trigger-hostless-release.mjs", import.meta.url), "utf8");
+  assert.match(trigger, /inputs:\s*\{\s*deploy:\s*"true",\s*node:\s*"both",\s*detect_changes:\s*"false",\s*skip_validation:\s*"false"\s*\}/);
 });

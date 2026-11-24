@@ -33,7 +33,12 @@ const response = await fetch(endpoint, {
   },
   body: JSON.stringify({
     ref: "main",
-    inputs: { deploy: "true" },
+    inputs: {
+      deploy: "true",
+      node: "both",
+      detect_changes: "false",
+      skip_validation: "false",
+    },
   }),
 });
 
@@ -46,5 +51,5 @@ if (response.status !== 204) {
 
 console.log("GitHub accepted a fresh Hostless release dispatch.");
 console.log(`Workflow: ${workflow}`);
-console.log("Requested: full validation, then Node 1 and Node 2 Hostless deployment.");
+console.log("Requested: full validation, forced Node 1 and Node 2 Hostless deployment.");
 console.log(`Monitor: https://github.com/${repo}/actions/workflows/${workflow}`);
