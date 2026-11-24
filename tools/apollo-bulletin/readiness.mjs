@@ -5,6 +5,10 @@ export function readinessStatus({ browserRequired = false, browserStarted = fals
 
 export function isReadinessResponseReady(path, payload) {
   if (!payload || typeof payload !== "object") return false;
-  if (path === "/health/ready") return typeof payload.ready === "boolean" ? payload.ready : payload.state === "ready";
+  if (path === "/health/ready") {
+    if (typeof payload.ready === "boolean") return payload.ready;
+    if (payload.live !== true || !["ready", "degraded"].includes(payload.state)) return false;
+    return payload.storage?.ready !== false;
+  }
   return payload.ready === true;
 }
