@@ -248,13 +248,15 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const cronAuthConfigured = Boolean(resolveCronToken(process.env));
         const browserStatus = browserWorker ? await browserWorker.status().catch(() => null) : null;
         const browserHealthy = Boolean(browserStatus?.healthy);
-        const browserSessionReady = Boolean(browserHealthy && !browserStatus?.loginRequired);
+        const browserSessionPersisted = Boolean(browserStatus?.sessionPersistenceReady);
+        const browserInfrastructureReady = browserHealthy && browserSessionPersisted;
+        const browserSessionReady = Boolean(browserInfrastructureReady && !browserStatus?.loginRequired);
         const cronState = state.cron || {};
         const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
         const cronExecutionConfirmed = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
           lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
         const readiness = readinessStatus({
-          browserRequired, browserStarted: browserHealthy, persistenceRequired, persistenceAvailable: Boolean(persistence),
+          browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable: Boolean(persistence),
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
         });
         const cron = {
@@ -264,8 +266,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           completedTicks: cronState.completedTicks || 0, failedTicks: cronState.failedTicks || 0, inFlight: Boolean(cronState.inFlight),
         };
         return send(readiness.statusCode, {
-          ready: readiness.ready, browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserHealthy ? "chromium-login-required" : "browser-not-ready") : "browser-not-started",
-          browserRequired, browserHealthy, browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
+          ready: readiness.ready, browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserInfrastructureReady && browserStatus?.loginRequired ? "chromium-login-required" : browserHealthy && !browserSessionPersisted ? "chromium-session-persistence-not-ready" : "browser-not-ready") : "browser-not-started",
+          browserRequired, browserHealthy, browserSessionPersisted, browserSessionPersistedAt: browserStatus?.lastSessionPersistedAt ?? null,
+          browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
           persistence: persistence ? "turso" : "local-fallback", persistenceRequired, ownerActorConfigured,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
         });
