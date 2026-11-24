@@ -83,6 +83,9 @@ node1.push(
     PORT: process.env.PORT ?? "8080",
     SPMT_ORIGIN: "http://127.0.0.1:3000",
     DSH_WEB_ORIGIN: process.env.DSH_WEB_ORIGIN ?? "http://127.0.0.1:3201",
+    NEBULA_ARCADE_ORIGIN: process.env.NEBULA_ARCADE_ORIGIN || process.env.APOLLO_NODE2_ORIGIN || "https://apollo-node-2.hostless.app",
+    STREAMWEAVER_WEB_ORIGIN: process.env.STREAMWEAVER_WEB_ORIGIN || process.env.APOLLO_NODE2_ORIGIN || "https://apollo-node-2.hostless.app",
+    HEARMEOUT_WEB_ORIGIN: process.env.HEARMEOUT_WEB_ORIGIN || process.env.APOLLO_NODE2_ORIGIN || "https://apollo-node-2.hostless.app",
   }],
 );
 
@@ -174,16 +177,17 @@ if (nebulaConfigRequested) {
 // existing database path is explicitly configured; never create an ephemeral
 // /tmp database and imply that room state is persistent.
 const hearMeOutDatabasePath = process.env.HEARMEOUT_ROOM_DATABASE_PATH?.trim();
-if (hearMeOutDatabasePath) {
+const hearMeOutSpmtOrigin = process.env.SPMT_ORIGIN?.trim();
+if (hearMeOutDatabasePath && hearMeOutSpmtOrigin) {
   node2.push(["apps/hearmeout/dist/web-server.js", {
     PORT: process.env.HEARMEOUT_WEB_PORT ?? "3203",
     HOST: "127.0.0.1",
-    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    SPMT_ORIGIN: hearMeOutSpmtOrigin,
     HEARMEOUT_ROOM_DATABASE_PATH: hearMeOutDatabasePath,
   }]);
   console.info("[hearmeout] Room and voice web runtime configured on Node 2.");
 } else {
-  console.warn("[hearmeout] Web runtime deferred: HEARMEOUT_ROOM_DATABASE_PATH must point to its configured persistent database.");
+  console.warn("[hearmeout] Web runtime deferred: both HEARMEOUT_ROOM_DATABASE_PATH (persistent storage) and SPMT_ORIGIN (Node 1 authority) are required.");
 }
 
 node2.push(
