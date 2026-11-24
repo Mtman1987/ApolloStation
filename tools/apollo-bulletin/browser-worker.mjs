@@ -66,22 +66,20 @@ export class ApolloChatGptBrowserWorker {
   }
 
   async status() {
-    const page = this.#requirePage();
-    const url = page.url();
-    const title = await page.title().catch(() => "");
-    const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
-      await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
     const healthy = await this.isHealthy();
-    return {
-      connected: healthy,
-      healthy,
-      loginRequired,
-      url,
-      title,
-      busy: this.busy,
-      lastReceipt: this.lastReceipt,
-      profilePath: this.profilePath,
-    };
+    const page = this.page;
+    if (!page || page.isClosed()) {
+      return { connected: false, healthy: false, loginRequired: null, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
+    try {
+      const url = page.url();
+      const title = await page.title().catch(() => "");
+      const loginRequired = /\\/auth\\/(login|signin)|\\/login/i.test(url) ||
+        await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      return { connected: healthy, healthy, loginRequired, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    } catch {
+      return { connected: false, healthy: false, loginRequired: null, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
   }
 
   async navigate(targetUrl) {
