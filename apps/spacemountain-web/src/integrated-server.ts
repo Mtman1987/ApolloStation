@@ -47,8 +47,12 @@ export async function authorizeBulletinRequest(
     if (!response.ok) return { authorized: false, status: response.status === 401 || response.status === 403 ? 401 : 503, reason: "Apollo session could not be verified" };
     const identity = await response.json().catch(() => ({})) as Record<string, unknown>;
     const allowedActor = environment.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim();
-    if (identity.authenticated !== true || (allowedActor && identity.actorId !== allowedActor)) {
-      return { authorized: false, status: 403, reason: "An authorized Apollo owner session is required" };
+    const tenantRoles = identity.tenantRoles && typeof identity.tenantRoles === "object" && !Array.isArray(identity.tenantRoles)
+      ? Object.values(identity.tenantRoles)
+      : [];
+    const ownsActiveTenant = tenantRoles.includes("owner");
+    if (identity.authenticated !== true || !ownsActiveTenant || (allowedActor && identity.actorId !== allowedActor)) {
+      return { authorized: false, status: 403, reason: "An authorized Apollo tenant-owner session is required" };
     }
     return { authorized: true, status: 200, reason: "apollo-session" };
   } catch {
