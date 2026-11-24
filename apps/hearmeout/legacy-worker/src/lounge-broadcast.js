@@ -6,8 +6,8 @@ const { tmpdir } = require('node:os');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function createLoungeBroadcast({ chromiumPath, puppeteer, sourceUrl }) {
-  let root, display, pulse, browser, page, encoder, startTask, active = false, failure = '', lastFragmentAt = 0;
+function createLoungeBroadcast({ chromiumPath, chromium, sourceUrl }) {
+  let root, display, pulse, context, page, encoder, startTask, active = false, failure = '', lastFragmentAt = 0;
   let init = Buffer.alloc(0), pending = Buffer.alloc(0), fragment = [], fragmentsSent = 0;
   const viewers = new Set();
   const children = [];
@@ -70,11 +70,10 @@ function createLoungeBroadcast({ chromiumPath, puppeteer, sourceUrl }) {
       }
 
       await mkdir(profileDir, { recursive: true });
-      browser = await puppeteer.launch({
+      context = await chromium.launchPersistentContext(profileDir, {
         executablePath: chromiumPath,
         headless: false,
-        defaultViewport: null,
-        userDataDir: profileDir,
+        viewport: null,
         env: environment,
         ignoreDefaultArgs: ['--mute-audio', '--enable-automation'],
         args: [
@@ -92,12 +91,12 @@ function createLoungeBroadcast({ chromiumPath, puppeteer, sourceUrl }) {
           '--disable-renderer-backgrounding',
         ],
       });
-      browser.on('disconnected', () => { active = false; failure ||= 'The Lounge browser disconnected'; });
-      page = (await browser.pages())[0] || await browser.newPage();
+      context.on('close', () => { active = false; failure ||= 'The Lounge browser disconnected'; });
+      page = context.pages()[0] || await context.newPage();
       // Match the page viewport to the Xvfb frame. Chromium otherwise keeps an
       // 800x600 content viewport inside this 854x480 capture, exposing white
       // desktop on the right and cropping the centered video vertically.
-      await page.setViewport({ width: 854, height: 480, deviceScaleFactor: 1 });
+      await page.setViewportSize({ width: 854, height: 480 });
       await page.goto(sourceUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await delay(1200);
       await page.mouse.click(427, 240).catch(() => {});
@@ -171,7 +170,7 @@ function createLoungeBroadcast({ chromiumPath, puppeteer, sourceUrl }) {
     for (const response of viewers) response.end();
     viewers.clear();
     await stopProcess(encoder); encoder = undefined;
-    await browser?.close().catch(() => {}); browser = undefined; page = undefined;
+    await context?.close().catch(() => {}); context = undefined; page = undefined;
     await Promise.all(children.splice(0).map(stopProcess));
     if (removeRoot && root) await rm(root, { recursive: true, force: true });
     root = undefined; display = undefined; pulse = undefined;
