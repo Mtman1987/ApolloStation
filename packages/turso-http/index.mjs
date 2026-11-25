@@ -62,7 +62,14 @@ export class TursoHttpAdapter {
     const wireRequests = close ? [...requests, { type: "close" }] : requests;
     const response = await this.fetchImpl(this.endpoint, {
       method: "POST",
-      headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json" },
+      // Fresh connection per request: Turso's edge closes the socket after
+      // large responses, and undici's pool hands the dead socket to the
+      // next call, which then hangs ~60s before failing with "fetch
+      // failed". `Connection: close` keeps the socket out of the pool, so
+      // every request dials fresh (verified: distinct remote ports per
+      // request). Without this, the boot hydrate stalls ~1 min per page
+      // and never finishes before Hostless restarts the container.
+      headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json", connection: "close" },
       body: JSON.stringify({ baton, requests: wireRequests }),
     });
     if (!response.ok) {
