@@ -69,10 +69,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: apollo-hostless-release-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   # Mandatory release gate: no commit-message or dispatch input can skip typecheck.
   validate:
