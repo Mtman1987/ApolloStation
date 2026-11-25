@@ -55,6 +55,7 @@ jobs:
             if (Array.isArray(value?.data)) return value.data;
             return [];
           };
+          const credential = await get("/api-keys/current");
           const projects = await get("/projects");
           const sites = await get("/sites");
           const safeSite = (site) => ({
@@ -72,6 +73,7 @@ jobs:
           });
           const result = {
             account: process.env.LABEL,
+            credential: {httpStatus:credential.status,kind:credential.body.kind ?? null,name:credential.body.name ?? null,prefix:credential.body.prefix ?? null,scopes:credential.body.scopes ?? [],projects:credential.body.projects ?? []},
             projects: {
               httpStatus: projects.status,
               items: rows(projects.body, ["projects","items"]).map(p => ({
