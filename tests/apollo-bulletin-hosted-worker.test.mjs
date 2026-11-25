@@ -205,12 +205,30 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
     async (url, options) => {
       assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
       seenCookie = options.headers.cookie;
-      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", platformOwner: true }), { status: 200 });
     },
     {},
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "actor pin is optional until configured");
+  assert.equal(allowed.authorized, true, "the canonical platform owner may access Bulletin without an additional actor-pin secret");
+  const member = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=member-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "member-1", platformOwner: false }), { status: 200 }),
+    {},
+  );
+  assert.equal(member.authorized, false);
+  assert.equal(member.status, 403);
+  const otherTenantOwner = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-tenant-owner-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "tenant-owner", tenantRoles: { "tenant-2": "owner" }, platformOwner: false }), { status: 200 }),
+    {},
+  );
+  assert.equal(otherTenantOwner.authorized, false, "ownership of another tenant does not grant access to the global Bulletin queue");
+
   const wrongOwner = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=other-session" } },
     "/bulletin/api/tasks",
