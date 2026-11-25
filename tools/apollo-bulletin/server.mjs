@@ -82,7 +82,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     for (const task of state.tasks) {
       if (!task.reviewMarker) {
         task.reviewMarker = "APOLLO_BULLETIN_REVIEW_" + randomUUID().replaceAll("-", "").slice(0, 16);
-        const reviewInstruction = "\\n\\nAPOLLO BULLETIN REVIEW HANDOFF: If blocked or owner review is needed, include this exact marker alone on its own line: " + task.reviewMarker + ". Stop without claiming completion.";
+        const reviewInstruction = "\n\nAPOLLO BULLETIN REVIEW HANDOFF: If blocked or owner review is needed, include this exact marker alone on its own line: " + task.reviewMarker + ". Stop without claiming completion.";
         if (typeof task.basePrompt === "string" && !task.basePrompt.includes(task.reviewMarker)) task.basePrompt += reviewInstruction;
         if (typeof task.prompt === "string" && !task.prompt.includes(task.reviewMarker)) task.prompt += reviewInstruction;
         log("review-marker-migrated", task.id);
