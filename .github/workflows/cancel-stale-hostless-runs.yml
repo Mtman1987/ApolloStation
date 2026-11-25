@@ -33,7 +33,15 @@ jobs:
               ['queued', 'in_progress'].includes(run.status)
             );
             for (const run of stale) {
-              await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
-              core.notice('Cancelled superseded Hostless release run ' + run.id + ' at ' + run.head_sha);
+              try {
+                await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+                core.notice('Cancelled superseded Hostless release run ' + run.id + ' at ' + run.head_sha);
+              } catch (error) {
+                if (error.status === 409 || String(error.message).includes('not in progress')) {
+                  core.notice('Run ' + run.id + ' finished before cancellation; leaving its final state unchanged.');
+                  continue;
+                }
+                throw error;
+              }
             }
             core.notice('Preserved validated release commit ' + keepSha + '; cancelled ' + stale.length + ' older or superseded run(s).');
