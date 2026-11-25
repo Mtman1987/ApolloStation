@@ -1,0 +1,80 @@
+name: Turso read-only recon
+
+# Read-only diagnostics for the Apollo persistence recovery. The recon
+# script refuses to send anything but SELECT / PRAGMA statements to Turso.
+# Dispatch manually; there are no inputs and no free-text SQL.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: turso-recon
+  cancel-in-progress: false
+
+jobs:
+  recon:
+    name: Read-only Turso recon (SELECT/PRAGMA only)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+      NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Turso configuration is present (names only)
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "::error::Turso database URL is not configured"; exit 1; }
+          test -n "$NODE1_TURSO_AUTH_TOKEN" || { echo "::error::NODE1_TURSO_AUTH_TOKEN missing"; exit 1; }
+          test -n "$NODE2_TURSO_AUTH_TOKEN" || { echo "::error::NODE2_TURSO_AUTH_TOKEN missing"; exit 1; }
+          node --check scripts/turso-recon.mjs
+      - name: Run read-only recon
+        run: node scripts/turso-recon.mjs
+      - name: Upload recon report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turso-recon-report
+          path: |
+            turso-recon-report.json
+            turso-recon-digest.md
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish recon digest to Apollo diagnostics issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const title = 'Turso read-only recon diagnostics';
+            let digest = 'Recon digest file was not produced; see the run log.';
+            try { digest = fs.readFileSync('turso-recon-digest.md', 'utf8'); } catch {}
+            if (digest.length > 60000) digest = digest.slice(0, 60000) + '\n\n[digest truncated; full JSON is in the run artifact]';
+            const body = [
+              'Read-only Turso recon executed (SELECT/PRAGMA only).',
+              '',
+              '- Run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Commit: ' + context.sha,
+              '',
+              digest
+            ].join('\n');
+            const found = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 });
+            const existing = found.data.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
