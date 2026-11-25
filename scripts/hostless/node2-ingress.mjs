@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 export function isNebulaPath(path) {
   if (path === '/api/quackverse/art/canon') return true;
-  return /^\/(?:apps\/nebula-arcade(?:\/|$)|api\/nebula-arcade(?:\/|$)|v1\/nebula(?:-arcade)?(?:\/|$)|assets\/nebula(?:\/|-[^/]+)(?:\/|\.|$)|overlay(?:\/|$)|mosaic(?:-overlay)?$|health\/nebula-arcade$)/.test(path);
+  return /^\/(?:apps\/nebula-arcade(?:\/|$)|api\/nebula-arcade(?:\/|$)|v1\/nebula(?:-arcade)?(?:\/|$)|assets\/nebula(?:-[^/]+|\/.*|$)|overlay(?:\/|$)|mosaic(?:-overlay)?$|health\/nebula-arcade$)/.test(path);
 }
 
 // Route to real app processes, retaining cookies and bearer credentials. Each

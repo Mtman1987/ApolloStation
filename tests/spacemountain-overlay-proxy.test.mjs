@@ -300,7 +300,10 @@ test("integrated gateway routes Nebula Arcade app and API to Node 2", async () =
     const api = await fetch(base + "/api/nebula-arcade/health");
     assert.equal(api.status, 200);
     assert.equal((await api.json()).path, "/api/nebula-arcade/health");
-    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health"]);
+    const asset = await fetch(base + "/assets/nebula-game-mix.js");
+    assert.equal(asset.status, 200);
+    assert.equal((await asset.json()).path, "/assets/nebula-game-mix.js");
+    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health", "/assets/nebula-game-mix.js"]);
   } finally {
     await web.close();
     await new Promise(resolve => nebula.close(resolve));

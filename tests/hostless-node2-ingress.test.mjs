@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import { once } from "node:events";
 import WebSocket, { WebSocketServer } from "ws";
-import { createNode2Ingress, isHearMeOutPath } from "../scripts/hostless/node2-ingress.mjs";
+import { createNode2Ingress, isHearMeOutPath, isNebulaPath } from "../scripts/hostless/node2-ingress.mjs";
+
+test("Nebula ingress matcher includes app, API, and browser assets", () => {
+  for (const path of ["/apps/nebula-arcade", "/api/nebula-arcade/health", "/v1/nebula/game-actions", "/assets/nebula-game-mix.js", "/assets/nebula/logo.svg"]) assert.equal(isNebulaPath(path), true, path);
+  assert.equal(isNebulaPath("/assets/streamweaver/logo.svg"), false);
+});
 
 test("HearMeOut ingress matcher is limited to its app, API, and health paths", () => {
   for (const path of ["/apps/hearmeout", "/apps/hearmeout/room/abc", "/api/hearmeout/rooms", "/api/hearmeout/rtc", "/api/watch/search", "/api/internal/watch/search", "/health/hearmeout"]) {
