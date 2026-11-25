@@ -27,7 +27,7 @@ export async function authorizeBulletinRequest(
 ): Promise<{ authorized: boolean; status: number; reason: string }> {
   if (pathname === "/bulletin/health/ready" && (request.method ?? "GET") === "GET") return { authorized: true, status: 200, reason: "public-readiness" };
   if (pathname === "/bulletin/api/cron/tick") {
-    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD;
+    const expected = [environment.APOLLO_BULLETIN_CRON_TOKEN, environment.APOLLO_BROWSER_CONTROL_PASSWORD, environment.APOLLO_PREVIEW_PASSWORD].find(value => typeof value === "string" && value.trim())?.trim() || "";
     if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
     const authorization = request.headers.authorization || "";
     const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
@@ -47,8 +47,8 @@ export async function authorizeBulletinRequest(
     if (!response.ok) return { authorized: false, status: response.status === 401 || response.status === 403 ? 401 : 503, reason: "Apollo session could not be verified" };
     const identity = await response.json().catch(() => ({})) as Record<string, unknown>;
     const allowedActor = environment.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim();
-    if (identity.authenticated !== true || (allowedActor && identity.actorId !== allowedActor)) {
-      return { authorized: false, status: 403, reason: "An authorized Apollo owner session is required" };
+    if (identity.authenticated !== true || identity.platformOwner !== true || (allowedActor && identity.actorId !== allowedActor)) {
+      return { authorized: false, status: 403, reason: "An authorized Apollo platform-owner session is required" };
     }
     return { authorized: true, status: 200, reason: "apollo-session" };
   } catch {
