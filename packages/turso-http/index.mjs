@@ -51,34 +51,56 @@ function decodeStatementResult(item) {
  * that stream. Network/commit errors are surfaced, never automatically replayed.
  */
 export class TursoHttpAdapter {
-  constructor({ url, authToken, fetchImpl = fetch }) {
+  constructor({ url, authToken, fetchImpl = fetch, requestTimeoutMs = 30_000 }) {
     if (!url || !authToken) throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required");
+    if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) throw new Error("Turso requestTimeoutMs must be a positive number");
     this.endpoint = normalizeTursoUrl(url);
     this.authToken = authToken;
     this.fetchImpl = fetchImpl;
+    this.requestTimeoutMs = requestTimeoutMs;
   }
 
   async request(requests, baton = null, close = true) {
     const wireRequests = close ? [...requests, { type: "close" }] : requests;
-    const response = await this.fetchImpl(this.endpoint, {
-      method: "POST",
-      // Fresh connection per request: Turso's edge closes the socket after
-      // large responses, and undici's pool hands the dead socket to the
-      // next call, which then hangs ~60s before failing with "fetch
-      // failed". `Connection: close` keeps the socket out of the pool, so
-      // every request dials fresh (verified: distinct remote ports per
-      // request). Without this, the boot hydrate stalls ~1 min per page
-      // and never finishes before Hostless restarts the container.
-      headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json", connection: "close" },
-      body: JSON.stringify({ baton, requests: wireRequests }),
-    });
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500);
-      throw new Error(`Turso HTTP ${response.status}: ${detail}`);
+    // Bound every request: a fetch that never resolves used to hang the
+    // caller forever (the boot hydrate paged through ~120 requests with no
+    // timeout, so one wedged connection silenced the whole boot — no error,
+    // no log, no listen). Abort after requestTimeoutMs; callers with retry
+    // (the hydrate's per-page retry) then retry the page in place, and the
+    // timeout is named in the error so the failure is diagnosable.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    try {
+      const response = await this.fetchImpl(this.endpoint, {
+        method: "POST",
+        // Fresh connection per request: Turso's edge closes the socket after
+        // large responses, and undici's pool hands the dead socket to the
+        // next call, which then hangs ~60s before failing with "fetch
+        // failed". `Connection: close` keeps the socket out of the pool, so
+        // every request dials fresh (verified: distinct remote ports per
+        // request). Without this, the boot hydrate stalls ~1 min per page
+        // and never finishes before Hostless restarts the container.
+        headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json", connection: "close" },
+        body: JSON.stringify({ baton, requests: wireRequests }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 500);
+        throw new Error(`Turso HTTP ${response.status}: ${detail}`);
+      }
+      const payload = await response.json();
+      if (!Array.isArray(payload.results)) throw new Error("Turso returned a malformed pipeline response");
+      return { baton: payload.baton ?? null, results: payload.results };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        const timeoutError = new Error(`Turso request timed out after ${this.requestTimeoutMs}ms`);
+        timeoutError.cause = error;
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-    const payload = await response.json();
-    if (!Array.isArray(payload.results)) throw new Error("Turso returned a malformed pipeline response");
-    return { baton: payload.baton ?? null, results: payload.results };
   }
 
   async pipeline(statements) {
