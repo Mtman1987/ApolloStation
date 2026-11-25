@@ -89,13 +89,14 @@ test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { 
   const origin = "http://127.0.0.1:" + ingress.address().port;
   const client = new WebSocket(origin.replace("http:", "ws:") + "/api/hearmeout/rtc?roomId=room-a", { headers: { origin } });
   client.on("error", () => {});
+  const messagePromise = once(client, "message");
   const waitFor = (promise, label) => {
     let timer;
     return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), 3000); })]).finally(() => clearTimeout(timer));
   };
   try {
     await waitFor(once(client, "open"), "RTC WebSocket handshake timed out");
-    const [message] = await waitFor(once(client, "message"), "RTC WebSocket payload timed out");
+    const [message] = await waitFor(messagePromise, "RTC WebSocket payload timed out");
     assert.equal(message.toString(), "rtc-through");
   } finally {
     client.terminate();
