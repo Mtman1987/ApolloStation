@@ -100,11 +100,19 @@ async function syncTable(local: DatabaseSync, remote: TursoHttpAdapter, table: M
     .filter((pair) => remoteColumns.has(pair.remote));
   if (!pairs.length) return { local: 0, written: 0, error: `remote table ${table.remote} has none of the expected columns` };
   const columnList = pairs.map((pair) => ident(pair.remote)).join(", ");
-  const rows = local.prepare(`SELECT ${table.columns.map(ident).join(", ")} FROM ${ident(table.local)}`).all() as Array<Record<string, unknown>>;
-  let written = 0;
-  for (let i = 0; i < rows.length; i += ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE) {
+  // Page the local read instead of materializing the whole table: the
+  // identity tables are small, but the XP ledger holds ~180k promoted
+  // seed-era rows, and loading every row (plus the per-statement argument
+  // copies) into memory killed the first post-promotion deployment during
+  // its initial sync. One pipeline round of rows is held at a time.
+  const PAGE_SIZE = ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE;
+  let localCount = 0, written = 0;
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const rows = local.prepare(`SELECT ${table.columns.map(ident).join(", ")} FROM ${ident(table.local)} ORDER BY rowid LIMIT ${PAGE_SIZE} OFFSET ${offset}`).all() as Array<Record<string, unknown>>;
+    if (!rows.length) break;
+    localCount += rows.length;
     const statements: Array<{ sql: string; args: TursoValue[] }> = [];
-    for (let j = i; j < Math.min(i + ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE, rows.length); j += ROWS_PER_STATEMENT) {
+    for (let j = 0; j < rows.length; j += ROWS_PER_STATEMENT) {
       const chunk = rows.slice(j, Math.min(j + ROWS_PER_STATEMENT, rows.length));
       const placeholders = chunk.map(() => `(${pairs.map(() => "?").join(", ")})`).join(", ");
       statements.push({
@@ -112,12 +120,11 @@ async function syncTable(local: DatabaseSync, remote: TursoHttpAdapter, table: M
         args: chunk.flatMap((row) => pairs.map((pair) => toTursoValue(row[pair.local]))),
       });
     }
-    if (statements.length) {
-      await remote.pipeline(statements);
-      written += Math.min(ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE, rows.length - i);
-    }
+    await remote.pipeline(statements);
+    written += rows.length;
+    if (rows.length < PAGE_SIZE) break;
   }
-  return { local: rows.length, written };
+  return { local: localCount, written };
 }
 
 export async function syncSpmtToTurso(options: { databasePath: string; fetchImpl?: typeof fetch }): Promise<TursoSyncReport> {
