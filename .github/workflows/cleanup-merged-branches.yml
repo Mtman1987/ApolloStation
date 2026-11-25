@@ -104,6 +104,10 @@ jobs:
 
           # Recovery branches explicitly retained in the November 19 owner-reviewed audit.
           protected_branches=(
+            "safety/main-pre-hybrid-2026-11-24"
+            "hybrid/node1"
+            "hybrid/node2"
+            "hybrid/combined-apps"
             "feat/nebula-game-runtime-turso-store"
             "feature/turso-live-runtime-smoke"
             "feat/stellar-kokoro-self-hosted-tts"
