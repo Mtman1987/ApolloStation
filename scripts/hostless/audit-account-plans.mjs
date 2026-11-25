@@ -46,10 +46,16 @@ function collectAllowance(value, out = []) {
   return out;
 }
 async function get(token, path, label, optional = false) {
-  const response = await fetch(api + path, {
-    headers: { Authorization: token, Accept: "application/json" },
-    signal: AbortSignal.timeout(12000),
-  });
+  let response;
+  try {
+    response = await fetch(api + path, {
+      headers: { Authorization: token, Accept: "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    if (optional) return { available: false, status: null, reason: label + " request failed: " + String(error?.message ?? error).slice(0, 160) };
+    throw error;
+  }
   const raw = await response.text();
   let data = {};
   try { data = raw ? JSON.parse(raw) : {}; } catch { data = { message: raw.slice(0, 300) }; }
