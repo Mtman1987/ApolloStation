@@ -195,6 +195,10 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: `missing columns: ${missingColumns.join(", ")}` };
       continue;
     }
+    // Capture the optional method while the outer `if (options.authority.appendXp)`
+    // guard still narrows it: the page callback is a separate closure, so the
+    // guard's narrowing does not reach inside it.
+    const appendXp = options.authority.appendXp;
     let inserted = 0, skipped = 0;
     const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, (row) => {
       const id = String(row[0] ?? "");
@@ -215,7 +219,7 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
         event = { id, tenantId: String(row[1] ?? ""), userId: String(row[2] ?? ""), delta: Number(row[3] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[4] ?? id), createdAt: now() };
       }
       if (!event.tenantId || !event.userId) { skipped++; return; }
-      try { options.authority.appendXp(event); inserted++; } catch { skipped++; }
+      try { appendXp(event); inserted++; } catch { skipped++; }
     });
     report.tables[table] = { remote, inserted, skipped };
     break;
