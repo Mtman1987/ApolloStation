@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createBulletinServer } from "./server.mjs";
 
 test("restart converts persisted dispatching tasks to uncertain and never auto-resends", async () => {
@@ -332,6 +333,7 @@ test("legacy tasks receive a private review marker during queue recovery", async
     assert.equal("reviewMarker" in data.tasks[0], false);
     assert.match(persisted.tasks[0].reviewMarker, /^APOLLO_BULLETIN_REVIEW_/);
     assert.ok(persisted.tasks[0].prompt.includes(persisted.tasks[0].reviewMarker));
+    assert.ok(persisted.tasks[0].prompt.includes("\n\nAPOLLO BULLETIN REVIEW HANDOFF:"));
     assert.ok(persisted.activity.some(item => item.event === "review-marker-migrated" && item.taskId === "legacy-review-task"));
   } finally {
     await app.close();
