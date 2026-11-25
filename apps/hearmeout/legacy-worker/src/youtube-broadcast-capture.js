@@ -70,16 +70,16 @@ async function captureYoutubeBroadcast({ videoId, directory, indexPath, chromium
     context.on('close', () => { if (!shuttingDown) encoderFailure ||= 'The shared YouTube player disconnected'; });
     const page = context.pages()[0] || await context.newPage();
     await page.goto('http://127.0.0.1:' + host.address().port + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForFunction(() => window.hmoCapture?.ready || window.hmoCapture?.error, { timeout: 30000 }).catch(() => { throw Error('YouTube did not load in the shared source player'); });
+    await page.waitForFunction(() => window.hmoCapture?.ready || window.hmoCapture?.error, null, { timeout: 30000 }).catch(() => { throw Error('YouTube did not load in the shared source player'); });
     let state = await page.evaluate(() => window.hmoCapture);
     if (state.error) throw Error('YouTube refused the shared source player (player error ' + state.error + ')');
     await page.evaluate(() => window.hmoPlayer.playVideo());
-    await page.waitForFunction(() => window.hmoCapture?.playing || window.hmoCapture?.error, { timeout: 30000 }).catch(() => { throw Error('YouTube did not permit playback in the shared source player'); });
+    await page.waitForFunction(() => window.hmoCapture?.playing || window.hmoCapture?.error, null, { timeout: 30000 }).catch(() => { throw Error('YouTube did not permit playback in the shared source player'); });
     state = await page.evaluate(() => window.hmoCapture);
     if (state.error) throw Error('YouTube refused the shared source player (player error ' + state.error + ')');
     // Confirm actual playback before recording, then return to the beginning.
     await page.evaluate(() => { window.hmoPlayer.pauseVideo(); window.hmoPlayer.seekTo(0, true); });
-    await page.waitForFunction(() => window.hmoPlayer.getPlayerState() === 2, { timeout: 5000 });
+    await page.waitForFunction(() => window.hmoPlayer.getPlayerState() === 2, null, { timeout: 5000 });
     await page.evaluate(() => { window.hmoCapture.ended = false; });
     encoder = child('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
       '-thread_queue_size', '512', '-f', 'x11grab', '-draw_mouse', '0', '-video_size', '1280x720', '-framerate', '24', '-i', ':' + displayNumber + '.0',

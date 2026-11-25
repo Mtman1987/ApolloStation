@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { createSpaceMountainWebHost, validateIntegratedWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
 import { createIntegratedSpaceMountainWebHost, stripHopByHopHeaders } from "../apps/spacemountain-web/dist/integrated-server.js";
+import { validateHearMeOutRtcOrigin } from "../apps/spacemountain-web/dist/rtc-upgrade-proxy.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
 function origin(server) { return `http://127.0.0.1:${server.address().port}`; }
@@ -304,4 +305,12 @@ test("integrated gateway routes Nebula Arcade app and API to Node 2", async () =
     await web.close();
     await new Promise(resolve => nebula.close(resolve));
   }
+});
+
+test("HearMeOut RTC proxy accepts HTTPS peer origins and only loopback HTTP", () => {
+  assert.equal(validateHearMeOutRtcOrigin("https://apollo-node-2.hostless.app").origin, "https://apollo-node-2.hostless.app");
+  assert.equal(validateHearMeOutRtcOrigin("http://127.0.0.1:3203").origin, "http://127.0.0.1:3203");
+  assert.throws(() => validateHearMeOutRtcOrigin("http://hearmeout.example.test"), /must be HTTPS or loopback HTTP/);
+  assert.throws(() => validateHearMeOutRtcOrigin("https://user:pass@hearmeout.example.test"), /must be HTTPS or loopback HTTP/);
+  assert.throws(() => validateHearMeOutRtcOrigin("https://hearmeout.example.test/api"), /must be HTTPS or loopback HTTP/);
 });
