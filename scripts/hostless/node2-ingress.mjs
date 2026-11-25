@@ -49,7 +49,9 @@ export function createNode2Ingress({ streamweaverPort = 3202, nebulaPort = 3100,
       client.pipe(upstream).pipe(client);
     });
     upstream.on('error', () => client.destroy());
+    upstream.on('close', () => client.destroy());
     client.on('error', () => upstream.destroy());
+    client.on('close', () => upstream.destroy());
   });
   return server;
 }
