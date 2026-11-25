@@ -42,7 +42,7 @@ jobs:
       - name: Verify live Node 1 readiness and bridge-login route
         run: |
           node --input-type=module <<'NODE'
-          const origin = "https://spacemountain.live";
+          const origin = "https://apollo-node-1.hostless.app";
           const health = await fetch(origin + "/health/ready", {
             headers: { accept: "application/json" },
             signal: AbortSignal.timeout(15000),
