@@ -811,7 +811,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         let body: Record<string, string>;
         try { body = await readFormBody(request); }
         catch { return json(response, 400, { error: "invalid_form" }); }
-        const username = String(body.username ?? "").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        const username = String(body.username ?? "").trim().toLowerCase().replace(/@spmt\.live$/, "");
         const password = body.password ?? "";
         if (!username || !password || username.length > 80 || password.length > 1024) {
           const target = new URL("/", origin);
