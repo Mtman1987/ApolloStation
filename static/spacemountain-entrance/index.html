@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08090d">
+  <meta name="referrer" content="no-referrer">
+  <title>SpaceMountain.live — Sign in</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:#07080c;color:#f4f5f8}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100svh;display:grid;place-items:center;padding:24px 16px;background:linear-gradient(135deg,rgba(4,6,12,.88),rgba(4,6,12,.96)),url("https://apollo-node-1.hostless.app/assets/product/theme-solar-flare-background.webp") center/cover fixed,#07080c}
+    main{width:min(100%,470px);padding:32px 30px 28px;border:1px solid rgba(242,164,37,.25);border-radius:24px;background:rgba(11,12,17,.94);box-shadow:0 28px 90px #000b;backdrop-filter:blur(16px)}
+    .brand{display:flex;justify-content:center;margin:0 auto 18px}
+    .brand img{width:min(100%,310px);height:112px;object-fit:contain;filter:drop-shadow(0 8px 24px #000)}
+    h1{font-size:25px;text-align:center;margin:0 0 8px;letter-spacing:-.5px}
+    .sub{color:#aeb4c3;text-align:center;font-size:13px;line-height:1.55;margin:0 0 26px}
+    .error{display:none;padding:12px 14px;margin:0 0 16px;border:1px solid #a85c38;border-radius:12px;background:#321b17;color:#ffd5c0;font-size:13px}
+    label{display:block;margin:16px 0 7px;font-size:13px;font-weight:650;color:#dce0e9}
+    input{width:100%;height:49px;border-radius:11px;border:1px solid #333743;background:#05060a;color:#fff;padding:0 14px;font:inherit;outline:none}
+    input:focus{border-color:#e8a32a;box-shadow:0 0 0 3px #e8a32a24}
+    button{width:100%;height:52px;margin-top:22px;border:0;border-radius:12px;background:linear-gradient(105deg,#ffbf28,#f46b12);color:#17120a;font-size:16px;font-weight:800;cursor:pointer}
+    button:focus-visible,a:focus-visible{outline:3px solid #ffd36d;outline-offset:3px}
+    .links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px;font-size:13px}
+    a{color:#f6c15b;text-decoration:none}
+    a:hover{text-decoration:underline}
+    .foot{margin:24px 0 0;padding-top:18px;border-top:1px solid #282b34;text-align:center;color:#7f8798;font-size:11px;line-height:1.55}
+    @media(max-width:420px){main{padding:27px 21px 23px}.brand img{height:92px}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="https://apollo-node-1.hostless.app/assets/product/themes/solar-flare-spmt.png" alt="SPMT"></div>
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to SpaceMountain and continue to your Apollo home.</p>
+    <p id="login-error" class="error" role="alert">Those sign-in details could not be verified. Check your username and password and try again.</p>
+    <form action="https://apollo-node-1.hostless.app/v1/auth/browser-login" method="post" accept-charset="UTF-8">
+      <label for="username">Apollo username</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <div class="links">
+      <a href="https://apollo-node-1.hostless.app/">Create an account or recover access</a>
+    </div>
+    <p class="foot">Your account is authenticated by Apollo. After sign-in, you will be redirected to the SpaceMountain home on Node 1.</p>
+  </main>
+  <script>
+    if (new URLSearchParams(location.search).get("loginError") === "1") {
+      document.getElementById("login-error").style.display = "block";
+      document.getElementById("username").focus();
+    }
+  </script>
+</body>
+</html>
