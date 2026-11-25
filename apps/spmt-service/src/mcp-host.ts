@@ -38,7 +38,7 @@ export function mountMcpRoutes(service: ReturnType<typeof createSpmtService>) {
         };
         const correlation = correlationId(request);
         if (correlation) context.correlationId = correlation;
-        writeJson(response, 200, mcp.handle(body as McpRequestV1, context));
+        writeJson(response, 200, mcp.handle(body as unknown as McpRequestV1, context));
         return;
       }
       for (const listener of originalListeners) {
