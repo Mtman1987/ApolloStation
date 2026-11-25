@@ -51,11 +51,29 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // the big reads so only one page is in flight at a time; the caller still
 // sees every row, in rowid order, and the per-table totals are unchanged.
 const HYDRATE_PAGE_SIZE = 2000;
+const HYDRATE_PAGE_ATTEMPTS = 3;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
 async function forEachHydratePage(db: TursoHttpAdapter, select: string, onRow: (row: HydrateRow) => void): Promise<number> {
   let offset = 0, total = 0;
   for (;;) {
-    const page = await db.execute(`${select} ORDER BY rowid LIMIT ${HYDRATE_PAGE_SIZE} OFFSET ${offset}`, [], true);
+    // One failed page fetch used to abort the whole boot hydrate: the paged
+    // reads make ~120 sequential requests, and a single stale keep-alive
+    // connection (undici surfaces it as "fetch failed") killed two boots
+    // after they had already fetched most of the ledger. Retry each page in
+    // place; rows already fetched are never repeated.
+    let page: Awaited<ReturnType<TursoHttpAdapter["execute"]>> | undefined;
+    for (let attempt = 1; attempt <= HYDRATE_PAGE_ATTEMPTS; attempt++) {
+      try {
+        page = await db.execute(`${select} ORDER BY rowid LIMIT ${HYDRATE_PAGE_SIZE} OFFSET ${offset}`, [], true);
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt === HYDRATE_PAGE_ATTEMPTS) throw error;
+        console.warn(`[spmt] turso hydrate page retry offset=${offset} attempt=${attempt} error=${message}`);
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    if (!page) throw new Error("turso hydrate page fetch returned no result");
     total += page.rows.length;
     for (const row of page.rows) onRow(row);
     if (page.rows.length < HYDRATE_PAGE_SIZE) break;
