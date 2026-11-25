@@ -10,6 +10,7 @@ export interface AppearanceV1 {
   theme: WorkspaceThemeV1;
   accent?: string;
   accentSecondary?: string;
+  accentSaturation?: number;
   backgroundUrl?: string;
   glowIntensity?: number;
   starDensity?: number;
@@ -18,18 +19,31 @@ export interface AppearanceV1 {
   nebulaIntensity?: number;
   parallaxDepth?: number;
   borderStrength?: number;
+  borderGlow?: boolean;
+  hoverGlow?: boolean;
+  cornerRadius?: "sm" | "md" | "lg" | "full";
   chatTransparency?: number;
   density?: "compact" | "comfortable" | "spacious";
   sidebarCollapsed?: boolean;
-  sidebarStyle?: "glass" | "solid" | "minimal";
+  sidebarStyle?: "glass" | "solid" | "minimal" | "docked" | "floating" | "hidden";
   sidebarPosition?: "left" | "right";
-  topbarStyle?: "glass" | "solid" | "minimal";
+  topbarStyle?: "glass" | "solid" | "minimal" | "transparent";
   tabStyle?: "pills" | "underline" | "cards";
-  tabPosition?: "top" | "bottom";
+  tabPosition?: "top" | "bottom" | "left" | "right";
   showAvatars?: boolean;
   smoothTransitions?: boolean;
   pushToTalk?: boolean;
-  animation?: { speed: number; particles: boolean; shootingStars: boolean };
+  pushToTalkKey?: string;
+  micButtonStyle?: "filled" | "outline" | "minimal";
+  voiceWaveStyle?: "bars" | "wave" | "pulse";
+  accessibility?: {
+    highContrast: boolean;
+    colorVisionMode: "default" | "deuteranopia" | "protanopia" | "tritanopia";
+    textScale: "sm" | "md" | "lg";
+    reduceMotion: boolean;
+    focusHighlight: boolean;
+  };
+  animation?: { enabled?: boolean; speed: number; particles: boolean; shootingStars: boolean };
 }
 export interface CommlinkChatSpaceV1 {
   id: string;
@@ -655,19 +669,34 @@ function validateAppearance(value: AppearanceV1) {
     try { url = new URL(value.backgroundUrl); } catch { throw new AuthorityValidationError("Workspace background URL is invalid"); }
     if (url.protocol !== "https:" || url.username || url.password) throw new AuthorityValidationError("Workspace background URL must be credential-free HTTPS");
   }
-  for (const [name, setting] of Object.entries({ glowIntensity: value.glowIntensity, starDensity: value.starDensity, glassOpacity: value.glassOpacity, blurStrength: value.blurStrength, nebulaIntensity: value.nebulaIntensity, parallaxDepth: value.parallaxDepth, borderStrength: value.borderStrength, chatTransparency: value.chatTransparency })) {
-    if (setting !== undefined && (!Number.isFinite(setting) || setting < 0 || setting > 100)) throw new AuthorityValidationError(`Workspace ${name} must be from 0 through 100`);
+  for (const [name, setting] of Object.entries({ accentSaturation: value.accentSaturation, glowIntensity: value.glowIntensity, starDensity: value.starDensity, glassOpacity: value.glassOpacity, blurStrength: value.blurStrength, nebulaIntensity: value.nebulaIntensity, parallaxDepth: value.parallaxDepth, borderStrength: value.borderStrength, chatTransparency: value.chatTransparency })) {
+    const maximum = name === "accentSaturation" ? 150 : 100;
+    if (setting !== undefined && (!Number.isFinite(setting) || setting < 0 || setting > maximum)) throw new AuthorityValidationError(`Workspace ${name} must be from 0 through ${maximum}`);
   }
   if (value.density !== undefined && !["compact", "comfortable", "spacious"].includes(value.density)) throw new AuthorityValidationError("Workspace density is invalid");
-  if (value.sidebarStyle !== undefined && !["glass", "solid", "minimal"].includes(value.sidebarStyle)) throw new AuthorityValidationError("Workspace sidebar style is invalid");
+  if (value.sidebarStyle !== undefined && !["glass", "solid", "minimal", "docked", "floating", "hidden"].includes(value.sidebarStyle)) throw new AuthorityValidationError("Workspace sidebar style is invalid");
   if (value.sidebarPosition !== undefined && !["left", "right"].includes(value.sidebarPosition)) throw new AuthorityValidationError("Workspace sidebar position is invalid");
-  if (value.topbarStyle !== undefined && !["glass", "solid", "minimal"].includes(value.topbarStyle)) throw new AuthorityValidationError("Workspace topbar style is invalid");
+  if (value.topbarStyle !== undefined && !["glass", "solid", "minimal", "transparent"].includes(value.topbarStyle)) throw new AuthorityValidationError("Workspace topbar style is invalid");
   if (value.tabStyle !== undefined && !["pills", "underline", "cards"].includes(value.tabStyle)) throw new AuthorityValidationError("Workspace tab style is invalid");
-  if (value.tabPosition !== undefined && !["top", "bottom"].includes(value.tabPosition)) throw new AuthorityValidationError("Workspace tab position is invalid");
+  if (value.tabPosition !== undefined && !["top", "bottom", "left", "right"].includes(value.tabPosition)) throw new AuthorityValidationError("Workspace tab position is invalid");
+  if (value.cornerRadius !== undefined && !["sm", "md", "lg", "full"].includes(value.cornerRadius)) throw new AuthorityValidationError("Workspace corner radius is invalid");
+  for (const [name, setting] of Object.entries({ borderGlow: value.borderGlow, hoverGlow: value.hoverGlow })) {
+    if (setting !== undefined && typeof setting !== "boolean") throw new AuthorityValidationError(`Workspace ${name} must be boolean`);
+  }
+  if (value.pushToTalkKey !== undefined) requireWorkspaceValue(value.pushToTalkKey, "push-to-talk key", 32);
+  if (value.micButtonStyle !== undefined && !["filled", "outline", "minimal"].includes(value.micButtonStyle)) throw new AuthorityValidationError("Workspace mic button style is invalid");
+  if (value.voiceWaveStyle !== undefined && !["bars", "wave", "pulse"].includes(value.voiceWaveStyle)) throw new AuthorityValidationError("Workspace voice wave style is invalid");
+  if (value.accessibility !== undefined) {
+    const accessibility = value.accessibility;
+    if (typeof accessibility.highContrast !== "boolean" || typeof accessibility.reduceMotion !== "boolean" || typeof accessibility.focusHighlight !== "boolean") throw new AuthorityValidationError("Workspace accessibility toggles must be boolean");
+    if (!["default", "deuteranopia", "protanopia", "tritanopia"].includes(accessibility.colorVisionMode)) throw new AuthorityValidationError("Workspace color vision mode is invalid");
+    if (!["sm", "md", "lg"].includes(accessibility.textScale)) throw new AuthorityValidationError("Workspace text scale is invalid");
+  }
   for (const [name, setting] of Object.entries({ sidebarCollapsed: value.sidebarCollapsed, showAvatars: value.showAvatars, smoothTransitions: value.smoothTransitions, pushToTalk: value.pushToTalk })) {
     if (setting !== undefined && typeof setting !== "boolean") throw new AuthorityValidationError(`Workspace ${name} must be boolean`);
   }
   if (value.animation !== undefined) {
+    if (value.animation.enabled !== undefined && typeof value.animation.enabled !== "boolean") throw new AuthorityValidationError("Workspace animation enabled must be boolean");
     if (!Number.isFinite(value.animation.speed) || value.animation.speed < 0 || value.animation.speed > 100) throw new AuthorityValidationError("Workspace animation speed must be from 0 through 100");
     if (typeof value.animation.particles !== "boolean" || typeof value.animation.shootingStars !== "boolean") throw new AuthorityValidationError("Workspace animation toggles must be boolean");
   }

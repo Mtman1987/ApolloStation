@@ -208,19 +208,39 @@ export const PRODUCT_UI_CSS = `
 }
 .spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--spmt-background,#050710); }
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
-.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
-.spmt-product-backdrop-tint { background: linear-gradient(128deg,var(--spmt-accent) 0%,var(--spmt-accent-secondary) 54%,var(--spmt-accent-tertiary) 100%); opacity: .66; mix-blend-mode: color; }
+.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(calc(1.015 + var(--spmt-parallax-depth,.35) * .04)); }
+.spmt-product-backdrop-tint { background: linear-gradient(128deg,var(--spmt-accent) 0%,var(--spmt-accent-secondary) 54%,var(--spmt-accent-tertiary) 100%); opacity: calc(.12 + var(--spmt-nebula-intensity,.55) * .54); filter:saturate(var(--spmt-accent-saturation-factor,1)); mix-blend-mode: color; }
 .spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 34%,transparent),transparent 42%),radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--spmt-accent-secondary) 22%,transparent),transparent 34%),radial-gradient(circle at 72% 82%,color-mix(in srgb,var(--spmt-accent-tertiary) 15%,transparent),transparent 36%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
 .spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
-.spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
-.spmt-star-layer i:nth-child(2) { width: 2px; height: 2px; box-shadow: ${PRODUCT_STAR_FIELDS[1]!.shadow}; animation: spmt-stars-up 150s linear infinite; }
-.spmt-star-layer i:nth-child(3) { width: 3px; height: 3px; box-shadow: ${PRODUCT_STAR_FIELDS[2]!.shadow}; animation: spmt-stars-up 100s linear infinite; }
+.spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up calc(200s / var(--spmt-animation-speed,1)) linear infinite; }
+.spmt-star-layer i:nth-child(2) { width: 2px; height: 2px; box-shadow: ${PRODUCT_STAR_FIELDS[1]!.shadow}; animation: spmt-stars-up calc(150s / var(--spmt-animation-speed,1)) linear infinite; }
+.spmt-star-layer i:nth-child(3) { width: 3px; height: 3px; box-shadow: ${PRODUCT_STAR_FIELDS[2]!.shadow}; animation: spmt-stars-up calc(100s / var(--spmt-animation-speed,1)) linear infinite; }
 @keyframes spmt-stars-up { from { transform: translateY(0); } to { transform: translateY(-2000px); } }
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
+.spmt-product-surface button:hover,.spmt-product-surface a:hover { box-shadow:0 0 calc(var(--spmt-hover-glow,1) * var(--spmt-glow,.78) * 24px) color-mix(in srgb,var(--spmt-accent) 28%,transparent); }
+.spmt-product-surface[data-spmt-hover-glow="false"] button:hover,.spmt-product-surface[data-spmt-hover-glow="false"] a:hover { box-shadow:none; }
+.spmt-product-surface[data-spmt-particles="false"] .spmt-star-layer { display:none; }
+.spmt-product-surface [data-spmt-chat-surface] { background-color:rgb(var(--spmt-surface-rgb,24 19 31) / calc(1 - var(--spmt-chat-transparency,.2))); }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-focus,var(--spmt-accent-secondary)); outline-offset: 3px; }
-.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
+.spmt-product-surface[data-spmt-focus-highlight="false"] :focus-visible { outline:none; }
+.spmt-product-surface[data-spmt-high-contrast="true"] { --spmt-ink:#fff; --spmt-muted:#e5e7eb; --spmt-border:rgba(255,255,255,.72); }
+.spmt-product-surface[data-spmt-reduce-motion="true"] *, .spmt-product-surface[data-spmt-animations="false"] * { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+.spmt-product-surface[data-spmt-text-scale="sm"] { font-size:90%; }
+.spmt-product-surface[data-spmt-text-scale="lg"] { font-size:112.5%; }
+.spmt-product-surface[data-spmt-sidebar-collapsed="true"] [data-spmt-sidebar-label] { display:none; }
+.spmt-product-surface[data-spmt-sidebar="hidden"] [data-spmt-sidebar] { display:none !important; }
+.spmt-product-surface[data-spmt-sidebar="floating"] [data-spmt-sidebar] { border-radius:var(--spmt-radius,1rem); margin:8px; box-shadow:var(--spmt-shadow); }
+.spmt-product-surface[data-spmt-sidebar-position="right"] [data-spmt-sidebar] { order:2; }
+.spmt-product-surface[data-spmt-topbar="transparent"] [data-spmt-topbar-surface] { background:transparent !important; backdrop-filter:none !important; border-color:transparent !important; }
+.spmt-product-surface[data-spmt-topbar="solid"] [data-spmt-topbar-surface] { background:var(--spmt-surface-strong) !important; backdrop-filter:none !important; }
+.spmt-product-surface[data-spmt-tab-position="bottom"] [data-spmt-tabs] { order:3; }
+.spmt-product-surface[data-spmt-show-avatars="false"] [data-spmt-avatar] { display:none !important; }
+.spmt-product-surface[data-spmt-density="compact"] { --spmt-density-scale:.88; }
+.spmt-product-surface[data-spmt-density="spacious"] { --spmt-density-scale:1.12; }
+.spmt-product-surface[data-spmt-border-glow="false"] .spmt-product-glass { box-shadow:none; }
+.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); border-color:color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-strength,.35) * 100%),var(--spmt-border)); box-shadow:0 0 calc(var(--spmt-glow,.78) * 28px) color-mix(in srgb,var(--spmt-accent) calc(var(--spmt-border-glow,1) * 18%),transparent); backdrop-filter: blur(var(--spmt-blur,24px)) saturate(calc(100% + var(--spmt-glow,0) * 45%)); border-radius:var(--spmt-radius,1rem); transition-duration:calc(160ms * var(--spmt-motion-scale,1)); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
 .spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24),0 0 34px color-mix(in srgb,var(--spmt-accent-secondary) 7%,transparent); }
@@ -468,3 +488,105 @@ export function portalLayer(kind: PortalKindV1) {
 }
 
 export * from "./community-calendar.js";
+
+
+/** Full canonical workspace appearance contract consumed by shell and app surfaces. */
+export type WorkspaceAppearanceInputV1 = {
+  theme?: unknown; themeId?: unknown; accent?: unknown; accentColor?: unknown; accentSecondary?: unknown;
+  backgroundUrl?: unknown; glowIntensity?: unknown; starDensity?: unknown; glassOpacity?: unknown; blurStrength?: unknown;
+  nebulaIntensity?: unknown; parallaxDepth?: unknown; borderStrength?: unknown; borderGlow?: unknown; hoverGlow?: unknown;
+  accentSaturation?: unknown; chatTransparency?: unknown; density?: unknown; uiDensity?: unknown;
+  sidebarCollapsed?: unknown; sidebarStyle?: unknown; sidebarPosition?: unknown; topbarStyle?: unknown;
+  tabStyle?: unknown; tabPosition?: unknown; cornerRadius?: unknown; showAvatars?: unknown;
+  smoothTransitions?: unknown; pushToTalk?: unknown; pushToTalkKey?: unknown; micButtonStyle?: unknown; voiceWaveStyle?: unknown;
+  highContrast?: unknown; colorVisionMode?: unknown; textScale?: unknown; reduceMotion?: unknown; focusHighlight?: unknown;
+  uiAnimations?: unknown; animationSpeed?: unknown; particleEffects?: unknown; shootingStars?: unknown;
+  animation?: { enabled?: unknown; speed?: unknown; particles?: unknown; shootingStars?: unknown };
+  accessibility?: { highContrast?: unknown; colorVisionMode?: unknown; textScale?: unknown; reduceMotion?: unknown; focusHighlight?: unknown };
+};
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+function percentage(value: unknown, fallback: number) {
+  return boundedNumber(value, fallback, 0, 100);
+}
+function bool(value: unknown, fallback: boolean) { return typeof value === "boolean" ? value : fallback; }
+function safeChoice(value: unknown, allowed: readonly string[], fallback: string) {
+  return typeof value === "string" && allowed.includes(value) ? value : fallback;
+}
+
+/**
+ * Applies the account-backed appearance model to a live app/shell root.
+ * Unknown fields are ignored for rendering but remain untouched in the saved profile.
+ */
+export function applyWorkspaceAppearance(root: HTMLElement, input: WorkspaceAppearanceInputV1) {
+  const themeId = typeof input.themeId === "string" ? input.themeId : typeof input.theme === "string" ? input.theme : "solar-flare";
+  const accent = typeof input.accentColor === "string" ? input.accentColor : typeof input.accent === "string" ? input.accent : undefined;
+  const secondary = typeof input.accentSecondary === "string" ? input.accentSecondary : undefined;
+  const theme = resolveProductTheme(themeId, accent, secondary);
+  const animation = input.animation ?? {};
+  const set = (name: string, value: string | number) => root.style.setProperty(name, String(value));
+  const data = (name: string, value: string | boolean) => { root.dataset[name] = String(value); };
+
+  set("--spmt-accent", theme.accent);
+  set("--spmt-accent-secondary", theme.accentSecondary);
+  set("--spmt-accent-tertiary", theme.accentTertiary);
+  set("--spmt-accent-saturation", boundedNumber(input.accentSaturation, 100, 0, 150));
+  set("--spmt-accent-saturation-factor", boundedNumber(input.accentSaturation, 100, 0, 150) / 100);
+  set("--spmt-glow", percentage(input.glowIntensity, 78) / 100);
+  set("--spmt-stars", percentage(input.starDensity, 70) / 100);
+  set("--spmt-glass-opacity", percentage(input.glassOpacity, 76) / 100);
+  set("--spmt-blur", boundedNumber(input.blurStrength, 18, 0, 64) + "px");
+  set("--spmt-nebula-intensity", percentage(input.nebulaIntensity, 55) / 100);
+  set("--spmt-parallax-depth", percentage(input.parallaxDepth, 35) / 100);
+  set("--spmt-border-strength", percentage(input.borderStrength, 35) / 100);
+  set("--spmt-border-glow", bool(input.borderGlow, true) ? 1 : 0);
+  set("--spmt-hover-glow", bool(input.hoverGlow, true) ? 1 : 0);
+  set("--spmt-chat-transparency", percentage(input.chatTransparency, 20) / 100);
+  set("--spmt-radius", ({ sm: "0.5rem", md: "0.75rem", lg: "1rem", full: "9999px" } as const)[safeChoice(input.cornerRadius, ["sm", "md", "lg", "full"], "lg") as "sm" | "md" | "lg" | "full"]);
+  set("--spmt-animation-speed", boundedNumber(animation.speed ?? input.animationSpeed, 100, 25, 250) / 100);
+  const density = safeChoice(input.density ?? input.uiDensity, ["compact", "comfortable", "spacious"], "comfortable");
+  set("--spmt-density-scale", density === "compact" ? .88 : density === "spacious" ? 1.12 : 1);
+  set("--spmt-sidebar-position", safeChoice(input.sidebarPosition, ["left", "right"], "left"));
+  set("--spmt-tab-position", safeChoice(input.tabPosition, ["top", "bottom", "left", "right"], "top"));
+  set("--spmt-color-vision-mode", safeChoice(input.accessibility?.colorVisionMode ?? input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
+  data("spmtTheme", themeId);
+  data("spmtDensity", safeChoice(input.density ?? input.uiDensity, ["compact", "comfortable", "spacious"], "comfortable"));
+  data("spmtSidebar", safeChoice(input.sidebarStyle, ["docked", "floating", "hidden", "glass", "solid", "minimal"], "docked"));
+  data("spmtSidebarCollapsed", bool(input.sidebarCollapsed, false));
+  data("spmtTopbar", safeChoice(input.topbarStyle, ["transparent", "glass", "solid", "minimal"], "glass"));
+  data("spmtTabStyle", safeChoice(input.tabStyle, ["pills", "underline", "cards"], "pills"));
+  data("spmtBorderGlow", bool(input.borderGlow, true));
+  data("spmtHoverGlow", bool(input.hoverGlow, true));
+  data("spmtShowAvatars", bool(input.showAvatars, true));
+  data("spmtSmoothTransitions", bool(input.smoothTransitions, true));
+  data("spmtAnimations", bool(animation.enabled ?? input.uiAnimations, true));
+  data("spmtParticles", bool(animation.particles ?? input.particleEffects, true));
+  data("spmtShootingStars", bool(animation.shootingStars ?? input.shootingStars, true));
+  const accessibility = input.accessibility ?? {};
+  const reduceMotion = bool(accessibility.reduceMotion ?? input.reduceMotion, false);
+  data("spmtReduceMotion", reduceMotion);
+  data("spmtHighContrast", bool(accessibility.highContrast ?? input.highContrast, false));
+  data("spmtFocusHighlight", bool(accessibility.focusHighlight ?? input.focusHighlight, true));
+  data("spmtColorVision", safeChoice(accessibility.colorVisionMode ?? input.colorVisionMode, ["default", "deuteranopia", "protanopia", "tritanopia"], "default"));
+  data("spmtTextScale", safeChoice(accessibility.textScale ?? input.textScale, ["sm", "md", "lg"], "md"));
+  data("spmtPushToTalk", bool(input.pushToTalk, false));
+  data("spmtMicButton", safeChoice(input.micButtonStyle, ["filled", "outline", "minimal"], "filled"));
+  data("spmtVoiceWave", safeChoice(input.voiceWaveStyle, ["bars", "wave", "pulse"], "bars"));
+  root.style.colorScheme = "dark";
+  if (reduceMotion || !bool(animation.enabled ?? input.uiAnimations, true) || !bool(input.smoothTransitions, true)) {
+    set("--spmt-motion-scale", 0);
+  } else {
+    set("--spmt-motion-scale", 1);
+  }
+  return theme;
+}
+
+/** Notify a same-origin embedded app that canonical appearance changed. */
+export function relayWorkspaceAppearance(target: Window, targetOrigin: string, appearance: WorkspaceAppearanceInputV1, revision?: number) {
+  const origin = new URL(targetOrigin);
+  if (origin.origin !== targetOrigin || origin.origin === "null") throw new Error("A concrete target origin is required for appearance relay");
+  target.postMessage({ type: "SPACEMOUNTAIN_THEME", version: 2, revision, appearance }, origin.origin);
+}

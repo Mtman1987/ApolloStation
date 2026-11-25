@@ -1,5 +1,6 @@
 import type { SpaceMountainShellSnapshotV1 } from "@spmt/spacemountain";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
+import { applyWorkspaceAppearance, relayWorkspaceAppearance, type WorkspaceAppearanceInputV1 } from "@spmt/ui";
 import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts";
 import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
 import { SpaceMountainShellUi } from "@spmt/spacemountain/ui";
@@ -196,9 +197,33 @@ async function watchWorkspace() {
     const tenantId = currentPrincipal.tenantIds[0]!;
     const [workspace, outputs] = await Promise.all([spmt.getWorkspaceProfile(tenantId), spmt.getTenantOverlayOutputs(tenantId)]);
     shellUi?.updateWorkspace(workspace, outputs as SpaceMountainShellSnapshotV1["tenantOutputs"]);
+    const appearance = workspace.appearance && typeof workspace.appearance === "object"
+      ? workspace.appearance as WorkspaceAppearanceInputV1
+      : undefined;
+    if (appearance) {
+      applyWorkspaceAppearance(shellRoot, appearance);
+      for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe")) {
+        if (!frame.contentWindow || !frame.src) continue;
+        try {
+          const targetOrigin = new URL(frame.src, window.location.href).origin;
+          if (targetOrigin === window.location.origin) relayWorkspaceAppearance(frame.contentWindow, targetOrigin, appearance, typeof workspace.revision === "number" ? workspace.revision : undefined);
+        } catch { /* Ignore malformed or non-routable iframe URLs. */ }
+      }
+    }
   } catch { /* Keep the last authorized state through brief network failures. */ }
   finally { watchingWorkspace = false; }
 }
+
+window.addEventListener("message", (event) => {
+  const message = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : undefined;
+  if (message?.type !== "spmt.surface.updated" || !["settings", "worktray", "profile"].includes(String(message.surface))) return;
+  const sourceIsMountedFrame = Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe")).some((frame) => {
+    if (frame.contentWindow !== event.source || !frame.src) return false;
+    try { return new URL(frame.src, window.location.href).origin === event.origin; }
+    catch { return false; }
+  });
+  if (sourceIsMountedFrame) void watchWorkspace();
+});
 window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCompletion(event as CustomEvent));
 
 void boot();
@@ -335,6 +360,7 @@ async function loadShell() {
     registryFingerprint = registrySignature(snapshot.apps);
     registeredAppIds = new Set(snapshot.apps.map((app) => app.appId));
     currentPrincipal = principal;
+    void watchWorkspace();
     void retryEggCompletions();
     authView.hidden = true;
     shellView.hidden = false;
