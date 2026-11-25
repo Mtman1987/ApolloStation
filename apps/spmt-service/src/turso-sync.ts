@@ -86,21 +86,30 @@ function toTursoValue(value: unknown): TursoValue {
   return String(value);
 }
 
-async function syncTable(local: DatabaseSync, remote: TursoHttpAdapter, table: MirrorTable): Promise<{ local: number; written: number }> {
+async function syncTable(local: DatabaseSync, remote: TursoHttpAdapter, table: MirrorTable): Promise<{ local: number; written: number; error?: string }> {
   const present = local.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table.local);
   if (!present) return { local: 0, written: 0 };
   await remote.execute(table.ddl);
-  const columnList = table.columns.map(ident).join(", ");
-  const rows = local.prepare(`SELECT ${columnList} FROM ${ident(table.local)}`).all() as Array<Record<string, unknown>>;
+  // The Turso copies of some tables were created by the seed import with the
+  // recovered export's column names (users keyed by user_id, not id). Insert
+  // through the columns the remote table actually has, with that one alias.
+  const pragma = await remote.execute(`PRAGMA table_info(${ident(table.remote)})`, [], true);
+  const remoteColumns = new Set(pragma.rows.map((row) => String(row[1] ?? "")));
+  const pairs = table.columns
+    .map((column) => ({ local: column, remote: column === "id" && !remoteColumns.has("id") && remoteColumns.has("user_id") ? "user_id" : column }))
+    .filter((pair) => remoteColumns.has(pair.remote));
+  if (!pairs.length) return { local: 0, written: 0, error: `remote table ${table.remote} has none of the expected columns` };
+  const columnList = pairs.map((pair) => ident(pair.remote)).join(", ");
+  const rows = local.prepare(`SELECT ${table.columns.map(ident).join(", ")} FROM ${ident(table.local)}`).all() as Array<Record<string, unknown>>;
   let written = 0;
   for (let i = 0; i < rows.length; i += ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE) {
     const statements: Array<{ sql: string; args: TursoValue[] }> = [];
     for (let j = i; j < Math.min(i + ROWS_PER_STATEMENT * STATEMENTS_PER_PIPELINE, rows.length); j += ROWS_PER_STATEMENT) {
       const chunk = rows.slice(j, Math.min(j + ROWS_PER_STATEMENT, rows.length));
-      const placeholders = chunk.map(() => `(${table.columns.map(() => "?").join(", ")})`).join(", ");
+      const placeholders = chunk.map(() => `(${pairs.map(() => "?").join(", ")})`).join(", ");
       statements.push({
         sql: `INSERT OR REPLACE INTO ${ident(table.remote)} (${columnList}) VALUES ${placeholders}`,
-        args: chunk.flatMap((row) => table.columns.map((column) => toTursoValue(row[column]))),
+        args: chunk.flatMap((row) => pairs.map((pair) => toTursoValue(row[pair.local]))),
       });
     }
     if (statements.length) {
