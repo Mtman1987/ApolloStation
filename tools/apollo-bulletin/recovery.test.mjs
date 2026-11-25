@@ -92,7 +92,7 @@ test("reviewed tasks resume with a continuation instead of replaying the origina
   process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON="1";delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
   let persisted=null;const sentPrompts=[];
   const store={async loadQueue(){return persisted;},async saveQueue(value){persisted=structuredClone(value);},async loadBrowserState(){return null;},async saveBrowserState(){}};
-  const app=createBulletinServer({port:0,store,dispatch:async task=>{sentPrompts.push(task.prompt);return{submitted:true,receipt:{reply:sentPrompts.length===1?"Owner review required":task.completionMarker}};}});
+  const app=createBulletinServer({port:0,store,dispatch:async task=>{sentPrompts.push(task.prompt);return{submitted:true,receipt:{reply:sentPrompts.length===1?task.reviewMarker:task.completionMarker}};}});
   try {
     const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
     const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Reviewed continuation",prompt:"Inspect and repair the service",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/review-resume",scheduleType:"manual",maxCycles:1})});
@@ -286,5 +286,28 @@ test("a running cron tick retains readiness only while its previous completed pr
   } finally {
     await app.close();
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
+
+test("an assistant echoing the review URL does not falsely request owner review", async () => {
+  const priorCron=process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON,priorBrowser=process.env.APOLLO_BULLETIN_ENABLE_BROWSER,priorRequireTurso=process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON="1";delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  let persisted=null;
+  const store={async loadQueue(){return persisted;},async saveQueue(value){persisted=structuredClone(value);},async loadBrowserState(){return null;},async saveBrowserState(){}};
+  const app=createBulletinServer({port:0,store,dispatch:async task=>({submitted:true,receipt:{reply:"For your reference, the review link is "+task.reviewUrl}})});
+  try {
+    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
+    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Review link echo",prompt:"Inspect this task",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/review-link-echo",scheduleType:"manual",maxCycles:2})});
+    assert.equal(created.status,201);const {task}=await created.json();
+    assert.equal("reviewMarker" in task,false,"internal review marker must not be exposed in the public task object");
+    const run=await fetch(origin+"/api/tasks/"+task.id+"/run",{method:"POST"});assert.equal(run.status,200);await run.text();
+    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="scheduled";i++)await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(persisted.tasks[0].status,"scheduled");
+    assert.doesNotMatch(persisted.tasks[0].lastEvent,/owner review/i);
+  } finally {
+    await app.close();
+    if(priorCron===undefined)delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON=priorCron;
+    if(priorBrowser===undefined)delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;else process.env.APOLLO_BULLETIN_ENABLE_BROWSER=priorBrowser;
+    if(priorRequireTurso===undefined)delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;else process.env.APOLLO_BULLETIN_REQUIRE_TURSO=priorRequireTurso;
   }
 });
