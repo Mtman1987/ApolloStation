@@ -1,0 +1,142 @@
+name: Hostless account plans audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: Read-only Hostless account plans audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out audit script
+        uses: actions/checkout@v4
+
+      - name: Run account plans audit (read only)
+        env:
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          HOSTLESS_NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+        run: |
+          set +e
+          mkdir -p hostless-diagnostics
+          node scripts/hostless/audit-account-plans.mjs > hostless-diagnostics/account-plans.json 2> hostless-diagnostics/account-plans-stderr.log
+          echo "audit exit code: $?" > hostless-diagnostics/account-plans-exit.txt
+
+      - name: Probe payment configuration and per-app cron registration (read only)
+        if: always()
+        env:
+          HOSTLESS_NODE1_TOKEN: ${{ secrets.HOSTLESS_NODE1_TOKEN }}
+          HOSTLESS_NODE2_TOKEN: ${{ secrets.HOSTLESS_NODE2_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const base = "https://api.hostless.cloud/v1";
+          const accounts = [
+            ["node1", process.env.HOSTLESS_NODE1_TOKEN, "apollo-node-1"],
+            ["node2", process.env.HOSTLESS_NODE2_TOKEN, "apollo-node-2"],
+          ];
+          const get = async (token, path) => {
+            const res = await fetch(base + path, {
+              headers: { Authorization: token, Accept: "application/json" },
+              signal: AbortSignal.timeout(12000),
+            });
+            const raw = await res.text();
+            let body = {};
+            try { body = raw ? JSON.parse(raw) : {}; } catch { body = { nonJson: true }; }
+            return { status: res.status, body };
+          };
+          // Presence-only scan: report key paths and value types, never values,
+          // so no card or payment details can reach the published summary.
+          const scan = (value, path = "", depth = 0, out = []) => {
+            if (depth > 3 || value === null || typeof value !== "object") return out;
+            for (const [k, v] of Object.entries(value)) {
+              const p = path ? path + "." + k : k;
+              if (/payment|card|billingmethod/i.test(k)) {
+                out.push({
+                  path: p,
+                  type: v === null ? "null" : Array.isArray(v) ? "array" : typeof v,
+                  present: v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0),
+                });
+              }
+              scan(v, p, depth + 1, out);
+            }
+            return out;
+          };
+          const report = [];
+          for (const [node, token, app] of accounts) {
+            const entry = { node, app };
+            if (!token) { entry.error = "token missing"; report.push(entry); continue; }
+            try {
+              const pc = await get(token, "/billing/payment-config");
+              const data = pc.body?.data ?? pc.body;
+              entry.paymentConfig = {
+                httpStatus: pc.status,
+                topLevelKeys: data && typeof data === "object" ? Object.keys(data) : [],
+                paymentSignals: scan(data),
+              };
+            } catch (e) { entry.paymentConfig = { error: String(e).slice(0, 160) }; }
+            try {
+              const cj = await get(token, "/apps/" + app + "/cron-jobs");
+              const rows = Array.isArray(cj.body) ? cj.body : (cj.body?.items ?? cj.body?.cronJobs ?? cj.body?.data ?? []);
+              entry.appCronJobs = {
+                httpStatus: cj.status,
+                count: Array.isArray(rows) ? rows.length : null,
+                names: Array.isArray(rows) ? rows.map(r => r?.name ?? r?.id ?? null).filter(Boolean) : [],
+              };
+            } catch (e) { entry.appCronJobs = { error: String(e).slice(0, 160) }; }
+            report.push(entry);
+          }
+          fs.writeFileSync("hostless-diagnostics/payment-and-cron-presence.json", JSON.stringify(report, null, 2));
+          NODE
+
+      - name: Sanitize diagnostic files before any publication
+        id: sanitize
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d hostless-diagnostics ]; then
+            node scripts/sanitize-diagnostics.mjs hostless-diagnostics
+          else
+            echo "No diagnostic directory was created."
+          fi
+
+      - name: Publish sanitized audit summary
+        if: ${{ always() && steps.sanitize.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          run_id = os.environ["RUN_ID"]
+          files = [pathlib.Path('hostless-diagnostics/account-plans.json'), pathlib.Path('hostless-diagnostics/payment-and-cron-presence.json'), pathlib.Path('hostless-diagnostics/account-plans-exit.txt'), pathlib.Path('hostless-diagnostics/account-plans-stderr.log')]
+          def redact(s):
+            patterns = [(r'(?i)(authorization\s*[:=]\s*bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(bearer\s+)\S+', r'\1[REDACTED]'), (r'(?i)(cookie|set-cookie)\s*[:=]\s*[^\r\n]+', r'\1: [REDACTED]'), (r'(?i)(["\']?(?:token|secret|password|passwd|api[_-]?key|session[_-]?key)["\']?\s*[:=]\s*["\']?)[^\s,;"\']+', r'\1[REDACTED]'), (r'(?i)(sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})', '[REDACTED]'), (r'(?i)(eyJ[a-z0-9_-]{10,}\.)[a-z0-9_-]{10,}(?:\.[a-z0-9_-]{10,})?', '[REDACTED-JWT]')]
+            for p, repl in patterns: s = re.sub(p, repl, s)
+            return s
+          out = ['## account plans audit — run '+run_id, '']
+          budget = 48000
+          for f in files:
+            if not f.exists() or budget <= 0: continue
+            content = redact(f.read_text(errors='replace'))
+            excerpt = content[:min(12000, budget)]
+            out += ['### '+f.name, '```text', excerpt, '```', '']
+            budget -= len(excerpt)
+          out += ['[Issue comment excerpts are bounded; the complete sanitized collection is in the workflow artifact.]']
+          pathlib.Path('agent-summary.md').write_text('\n'.join(out))
+          PY
+          gh issue comment 517 --repo "$REPOSITORY" --body-file agent-summary.md
+
+      - name: Upload audit logs
+        if: ${{ always() && steps.sanitize.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostless-account-plans-audit-${{ github.run_id }}
+          path: hostless-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
