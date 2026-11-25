@@ -173,7 +173,7 @@ test("signed-out provider recovery verifies the entered username, sets a passwor
       assert.equal(pendingPayload.provider, provider);
       const callbackUrl = browserBase + "/v1/onboarding/twitch/callback?state=" + encodeURIComponent(state) + "&code=" + provider + "-valid-code";
       const [pendingName] = pendingCookie.split("=", 2);
-      const changedSignature = pendingSignature.slice(0, -1) + (pendingSignature.endsWith("A") ? "B" : "A");
+      const changedSignature = (pendingSignature.startsWith("A") ? "B" : "A") + pendingSignature.slice(1);
       const beforeTamper = calls.length;
       const tampered = await fetch(callbackUrl, {
         headers: { cookie: pendingName + "=" + encodeURIComponent(pendingPayloadBase64 + "." + changedSignature) },
