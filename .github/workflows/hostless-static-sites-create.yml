@@ -1,0 +1,113 @@
+name: Create Apollo static entrance sites
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hostless-static-sites-create.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    name: Create ${{ matrix.label }} static site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: SpaceMountain entrance
+            secret: HOSTLESS_NODE1_TOKEN
+            project_id: 6aec957dc955e8e164c8d27e
+            site_name: spacemountain-entrance
+            git_repo: Mtman1987/ApolloStation
+            git_branch: main
+            git_commit: 2cc3263723eec562d71938c1cad3fb506b3cb8c7
+            output_path: static/spacemountain-entrance
+          - label: SPMT developer portal
+            secret: HOSTLESS_NODE2_TOKEN
+            project_id: 6aeb3d787e029fb6169f2da4
+            site_name: spmt-developer-portal
+            git_repo: Mtman1987/spmt-live
+            git_branch: main
+            git_commit: 38708478ae8823ed6c862b8ccd19ec148cea8e05
+            output_path: public
+    steps:
+      - name: Create or inspect the static site
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
+          PROJECT_ID: ${{ matrix.project_id }}
+          SITE_NAME: ${{ matrix.site_name }}
+          GIT_REPO: ${{ matrix.git_repo }}
+          GIT_BRANCH: ${{ matrix.git_branch }}
+          GIT_COMMIT: ${{ matrix.git_commit }}
+          OUTPUT_PATH: ${{ matrix.output_path }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          node --input-type=module <<'NODE'
+          const token = process.env.HOSTLESS_TOKEN;
+          const api = "https://api.hostless.cloud/v1";
+          const siteName = process.env.SITE_NAME;
+          if (!token) throw new Error("Existing Hostless token is not configured.");
+          const listed = await fetch(api + "/sites?projectId=" + encodeURIComponent(process.env.PROJECT_ID), {
+            headers: {Authorization:token,Accept:"application/json"},
+            signal:AbortSignal.timeout(15000)
+          });
+          const listedText = await listed.text();
+          let inventory = {};
+          try { inventory = listedText ? JSON.parse(listedText) : {}; } catch {}
+          if (!listed.ok) throw new Error("Hostless site inventory failed with HTTP " + listed.status);
+          const items = Array.isArray(inventory) ? inventory : inventory.sites ?? inventory.items ?? inventory.data?.sites ?? [];
+          const existing = items.find(site => (site.name ?? site.siteName) === siteName);
+          async function parseMcp(response) {
+            const raw = await response.text();
+            try { return JSON.parse(raw); } catch {
+              const data = raw.split(/\r?\n/).filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trim()).filter(Boolean);
+              if(data.length){try{return JSON.parse(data[data.length-1]);}catch{}}
+            }
+            throw new Error("Hostless MCP returned an unreadable response.");
+          }
+          async function mcp(method, params, id, sessionId) {
+            const headers = {Authorization:token,"Content-Type":"application/json",Accept:"application/json, text/event-stream"};
+            if(sessionId) headers["MCP-Session-Id"]=sessionId;
+            return fetch("https://mcp.hostless.app/mcp",{
+              method:"POST",headers,
+              body:JSON.stringify({jsonrpc:"2.0",id,method,params}),
+              signal:AbortSignal.timeout(30000)
+            });
+          }
+          let result;
+          if (existing) {
+            result = {existing:true,site:{name:existing.name ?? existing.siteName,url:existing.url ?? existing.siteUrl ?? existing.publicUrl,status:existing.status ?? existing.state}};
+          } else {
+            const initResponse = await mcp("initialize",{
+              protocolVersion:"2025-03-26",capabilities:{},
+              clientInfo:{name:"apollo-static-site-provisioner",version:"1.0.0"}
+            },1);
+            const init = await parseMcp(initResponse);
+            if (!initResponse.ok || init.error || !init.result) throw new Error("Hostless MCP initialization failed: " + (init.error?.message ?? initResponse.status));
+            const callResponse = await mcp("tools/call",{
+              name:"sites_create",
+              arguments:{
+                name:siteName,
+                projectId:process.env.PROJECT_ID,
+                gitPlatform:"Github",
+                gitRepo:process.env.GIT_REPO,
+                gitBranch:process.env.GIT_BRANCH,
+                gitCommitHash:process.env.GIT_COMMIT,
+                framework:"static",
+                buildCommand:"echo static-files-ready",
+                outputPath:process.env.OUTPUT_PATH
+              }
+            },2,initResponse.headers.get("mcp-session-id"));
+            const call = await parseMcp(callResponse);
+            if (!callResponse.ok || call.error || call.result?.isError) {
+              throw new Error("Hostless site creation failed: " + JSON.stringify(call.error ?? call.result?.content ?? call).slice(0,2500));
+            }
+            result = {existing:false,site:call.result?.structuredContent ?? call.result?.content ?? call.result};
+          }
+          console.log(JSON.stringify({account:process.env.LABEL,siteName,...result}));
+          NODE
