@@ -1,4 +1,5 @@
 // Production supervisor for the two independent Hostless node applications.
+// Node services remain isolated by role; deployment concurrency is owned by the release workflow.
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
