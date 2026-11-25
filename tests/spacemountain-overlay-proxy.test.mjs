@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { createSpaceMountainWebHost, validateIntegratedWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
 import { createIntegratedSpaceMountainWebHost, stripHopByHopHeaders } from "../apps/spacemountain-web/dist/integrated-server.js";
+import { validateHearMeOutRtcOrigin } from "../apps/spacemountain-web/dist/rtc-upgrade-proxy.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
 function origin(server) { return `http://127.0.0.1:${server.address().port}`; }
@@ -299,9 +300,20 @@ test("integrated gateway routes Nebula Arcade app and API to Node 2", async () =
     const api = await fetch(base + "/api/nebula-arcade/health");
     assert.equal(api.status, 200);
     assert.equal((await api.json()).path, "/api/nebula-arcade/health");
-    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health"]);
+    const asset = await fetch(base + "/assets/nebula-game-mix.js");
+    assert.equal(asset.status, 200);
+    assert.equal((await asset.json()).path, "/assets/nebula-game-mix.js");
+    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health", "/assets/nebula-game-mix.js"]);
   } finally {
     await web.close();
     await new Promise(resolve => nebula.close(resolve));
   }
+});
+
+test("HearMeOut RTC proxy accepts HTTPS peer origins and only loopback HTTP", () => {
+  assert.equal(validateHearMeOutRtcOrigin("https://apollo-node-2.hostless.app").origin, "https://apollo-node-2.hostless.app");
+  assert.equal(validateHearMeOutRtcOrigin("http://127.0.0.1:3203").origin, "http://127.0.0.1:3203");
+  assert.throws(() => validateHearMeOutRtcOrigin("http://hearmeout.example.test"), /must be HTTPS or loopback HTTP/);
+  assert.throws(() => validateHearMeOutRtcOrigin("https://user:pass@hearmeout.example.test"), /must be HTTPS or loopback HTTP/);
+  assert.throws(() => validateHearMeOutRtcOrigin("https://hearmeout.example.test/api"), /must be HTTPS or loopback HTTP/);
 });
