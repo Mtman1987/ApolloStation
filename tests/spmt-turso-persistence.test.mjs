@@ -68,11 +68,13 @@ function createFakeTurso() {
       const table = tables.get(m[1]);
       return ok(["cid", "name", "type", "notnull", "dflt_value", "pk"], table ? table.columns.map((name, i) => [encode(i), encode(name), encode("TEXT"), encode(0), { type: "null" }, encode(i < table.pkCount ? 1 : 0)]) : []);
     }
-    if ((m = sql.match(/^SELECT ([\s\S]+) FROM "([^"]+)"$/))) {
+    if ((m = sql.match(/^SELECT ([\s\S]+?) FROM "([^"]+)"(?: ORDER BY rowid LIMIT (\d+) OFFSET (\d+))?$/))) {
       const table = tables.get(m[2]);
       if (!table) throw new Error(`no such table: ${m[2]}`);
       const cols = m[1].split(",").map((s) => s.trim().replaceAll('"', ""));
-      return ok(cols, [...table.rows.values()].map((row) => cols.map((c) => encode(row.get(c) ?? null))));
+      let rows = [...table.rows.values()];
+      if (m[3] !== undefined) rows = rows.slice(Number(m[4]), Number(m[4]) + Number(m[3]));
+      return ok(cols, rows.map((row) => cols.map((c) => encode(row.get(c) ?? null))));
     }
     throw new Error(`fake turso: unsupported SQL: ${sql.slice(0, 120)}`);
   }
@@ -200,6 +202,37 @@ test("hydrate preserves XP eventType and metadata so the sync round trip stays l
     const mirrored = JSON.parse(fake.tables.get("spmt_xp_ledger").rows.get(JSON.stringify(["xp_meta"])).get("body"));
     assert.equal(mirrored.eventType, "dsh-twitch-message");
     assert.deepEqual(mirrored.metadata, { schemaVersion: 1, serverId: "server-1", channel: "general" });
+  } finally {
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("turso sync pages large local tables instead of materializing them", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-paging-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    authority.putUser({ id: "user_bulk", createdAt: NOW });
+    // More than two 2000-row pages: the promoted seed-era XP ledger is
+    // ~180k rows, and the sync must stream it in bounded pages.
+    const TOTAL = 4500;
+    for (let i = 0; i < TOTAL; i++) {
+      authority.appendXp({ id: `xp_bulk_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1, sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_bulk_key_${i}`, createdAt: NOW });
+    }
+    const syncReport = await syncSpmtToTurso({ databasePath, fetchImpl: fake.fetchImpl });
+    assert.equal(syncReport.tables.spmt_xp_ledger.error, undefined);
+    assert.equal(syncReport.tables.spmt_xp_ledger.local, TOTAL);
+    assert.equal(syncReport.tables.spmt_xp_ledger.written, TOTAL);
+    assert.equal(fake.tables.get("spmt_xp_ledger").rows.size, TOTAL);
   } finally {
     authority?.close(); platform?.close();
     if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
