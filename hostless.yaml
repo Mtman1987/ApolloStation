@@ -1,6 +1,10 @@
 build:
   system: auto
-  command: "npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless"
+  min_cpu: 1
+  max_cpu: 4
+  min_memory: 1024
+  max_memory: 4096
+  command: "npm ci --prefer-offline --no-audit --no-fund --no-progress && npm run build:hostless"
 working_directory: /
 build_context_directory: /
 start_command: "node scripts/hostless/start-node.mjs"
