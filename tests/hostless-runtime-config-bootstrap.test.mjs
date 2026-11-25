@@ -192,7 +192,7 @@ test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
     assert.ok(build.includes(app), "Hostless build must include " + app);
   }
   assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
-  assert.match(hostless, /min_cpu: 1[\\s\\S]*max_cpu: 4[\\s\\S]*min_memory: 1024[\\s\\S]*max_memory: 4096/);
+  for (const setting of ["min_cpu: 1", "max_cpu: 4", "min_memory: 1024", "max_memory: 4096"]) assert.ok(hostless.includes(setting), "Hostless build resources must include " + setting);
   assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund --no-progress && npm run build:hostless/);
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /Build focused Node 1 and Node 2 Hostless runtime[\s\S]*?run: npm run build:hostless/);
