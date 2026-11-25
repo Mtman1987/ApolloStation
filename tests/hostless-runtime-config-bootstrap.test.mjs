@@ -158,7 +158,7 @@ test("Node 1 always pins the OAuth callback base to its stable Hostless origin",
   assert.match(script, /custom domain is an additional alias, not the callback origin/);
 });
 
-test("Hostless recovery release keeps a twenty-minute wait, serializes nodes, and probes the live recovery routes safely", () => {
+test("Hostless recovery release keeps bounded polling, parallelizes independent nodes, and probes recovery routes safely", () => {
   const script = readFileSync(new URL("../scripts/hostless/ensure-node-app.mjs", import.meta.url), "utf8");
   const release = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   const diagnostics = readFileSync(new URL("../.github/workflows/hostless-runtime-log-diagnostics.yml", import.meta.url), "utf8");
@@ -172,8 +172,10 @@ test("Hostless recovery release keeps a twenty-minute wait, serializes nodes, an
   assert.ok(script.includes("isHostlessDeploymentSuccessful(finalStatus)"));
   assert.ok(!script.includes("const deadline = Date.now() + 10 * 60 * 1000;"));
   assert.ok(release.includes("timeout-minutes: 22"));
-  assert.ok(release.includes("max-parallel: 1"));
-  assert.ok(release.includes("fail-fast: true"));
+  assert.ok(release.includes("max-parallel: 2"));
+  assert.ok(release.includes("fail-fast: false"));
+  assert.ok(release.includes("group: apollo-hostless-${{ matrix.node }}"));
+  assert.ok(!release.includes("group: apollo-hostless-release-${{ github.event_name"));
   assert.ok(diagnostics.includes("apollo-recovery-start"));
   assert.ok(diagnostics.includes("/v1/auth/linked-provider-recovery/start?provider=$provider"));
   assert.ok(diagnostics.includes("callbackHost="));
@@ -190,7 +192,8 @@ test("Hostless deploy uses a focused Node 1 and Node 2 build graph", () => {
     assert.ok(build.includes(app), "Hostless build must include " + app);
   }
   assert.match(build, /scripts\/build-rtc-browser\.mjs$/);
-  assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund && npm run build:hostless/);
+  assert.match(hostless, /min_cpu: 1[\\s\\S]*max_cpu: 4[\\s\\S]*min_memory: 1024[\\s\\S]*max_memory: 4096/);
+  assert.match(hostless, /npm ci --prefer-offline --no-audit --no-fund --no-progress && npm run build:hostless/);
   const workflow = readFileSync(new URL("../.github/workflows/hostless-three-node-deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /Build focused Node 1 and Node 2 Hostless runtime[\s\S]*?run: npm run build:hostless/);
   assert.match(workflow, /\[node1-only\]/);
