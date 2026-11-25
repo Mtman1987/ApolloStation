@@ -38,4 +38,4 @@ The worker does not choose or switch custom GPTs, models, or connected apps. It 
 
 ## Bounced work
 
-Each ChatGPT task receives a unique completion marker and a configurable 1–100 cycle limit (default 8). If the response does not contain the marker on its own line, the next continuation is queued for 60 seconds later. A genuine completion marker ends the task. An explicit owner-review request or exhausted cycle budget pauses it for review. Uncertain sends are never automatically continued or retried.
+Each ChatGPT task receives a unique completion marker and a configurable 1–100 cycle limit (default 8). If the response does not contain the marker on its own line, the next continuation is queued for 60 seconds later. A genuine completion marker ends the task. An explicit task-specific review marker or exhausted cycle budget pauses it for review; merely echoing the review URL does not trigger a review state. The owner can inspect the saved task and resume it as a continuation rather than replaying the original prompt. Uncertain sends are never automatically continued or retried.
