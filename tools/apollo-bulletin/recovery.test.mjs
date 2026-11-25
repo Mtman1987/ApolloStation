@@ -311,3 +311,30 @@ test("an assistant echoing the review URL does not falsely request owner review"
     if(priorRequireTurso===undefined)delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;else process.env.APOLLO_BULLETIN_REQUIRE_TURSO=priorRequireTurso;
   }
 });
+
+test("legacy tasks receive a private review marker during queue recovery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "apollo-bulletin-review-marker-migration-"));
+  const statePath = join(directory, "state.json");
+  const legacy = { id: "legacy-review-task", name: "Legacy review task", prompt: "Continue my existing work", basePrompt: "Continue my existing work", destination: "chatgpt", status: "paused", schedule: { type: "manual" }, nextRunAt: null };
+  let persisted = { tasks: [legacy], activity: [] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ statePath, port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/api/tasks");
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal("reviewMarker" in data.tasks[0], false);
+    assert.match(persisted.tasks[0].reviewMarker, /^APOLLO_BULLETIN_REVIEW_/);
+    assert.ok(persisted.tasks[0].prompt.includes(persisted.tasks[0].reviewMarker));
+    assert.ok(persisted.activity.some(item => item.event === "review-marker-migrated" && item.taskId === "legacy-review-task"));
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
