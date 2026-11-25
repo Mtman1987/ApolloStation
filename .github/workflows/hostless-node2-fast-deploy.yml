@@ -2,24 +2,23 @@ name: ApolloStation Hostless Node 2 fast deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/hostless-node2-fast-deploy.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: apollo-hostless-release
+  group: apollo-hostless-node2-manual
   cancel-in-progress: false
 
 jobs:
   deploy-node2:
     name: Deploy Node 2 only — Chat Gateway / StreamWeaver / Nebula / HearMeOut
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 22
     environment: production
+    concurrency:
+      group: apollo-hostless-node2
+      cancel-in-progress: false
     steps:
       - name: Check out the exact Node 2 commit
         uses: actions/checkout@v4
