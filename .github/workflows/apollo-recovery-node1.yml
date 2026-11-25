@@ -1,8 +1,13 @@
 name: Apollo recovery deploy — Node 1 (owner access)
 
 on:
-  # Manual emergency recovery only. Normal main pushes are deployed by the
-  # single Hostless two-node release workflow to avoid competing Node 1 builds.
+  # Node 1-only recovery deploy. This path-scoped push trigger redeploys only
+  # Node 1 when this workflow is corrected; Node 2 remains independent.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apollo-recovery-node1.yml'
+      - 'scripts/hostless/**'
   workflow_dispatch:
 
 permissions:
