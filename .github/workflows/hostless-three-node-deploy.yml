@@ -91,8 +91,8 @@ jobs:
         run: node --test tests/hostless-hybrid-entrypoints.test.mjs
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
-      - name: Check dedicated browser worker syntax
-        run: node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --test tools/apollo-bulletin/readiness.test.mjs tools/apollo-bulletin/schedule.test.mjs tools/apollo-bulletin/recovery.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs
+      - name: Check managed browser, cron, persistence, and Bulletin recovery
+        run: node --check scripts/setup-local-browser.mjs && node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-auth.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --check tools/apollo-bulletin/schedule.mjs && node --test scripts/setup-local-browser.test.mjs tools/apollo-bulletin/browser-worker.test.mjs tools/apollo-bulletin/cron-auth.test.mjs tools/apollo-bulletin/turso-store.test.mjs tools/apollo-bulletin/readiness.test.mjs tools/apollo-bulletin/schedule.test.mjs tools/apollo-bulletin/recovery.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs
 
   detect-deploy-targets:
     name: Detect which Hostless nodes changed
@@ -418,22 +418,81 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const base = "https://apollo-node-1.hostless.app";
-          for (const path of ["/health/ready", "/bulletin/health/ready"]) {
-            let last;
-            for (let attempt = 0; attempt < 8; attempt++) {
-              try {
-                const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(8000) });
-                const data = await response.json().catch(() => ({}));
-                if (response.ok && (data.ready === true || data.state === "ready")) {
-                  console.log(JSON.stringify({ path, status: response.status, ready: true, browser: data.browser ?? undefined, persistence: data.persistence ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
-                  last = null;
-                  break;
-                }
-                last = { status: response.status, ready: data.ready, detail: data };
-              } catch (error) { last = { error: String(error?.message || error) }; }
-              if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 3000));
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const rootReady = data => {
+            if (typeof data?.ready === "boolean") return data.ready;
+            return data?.live === true && ["ready", "degraded"].includes(data?.state) && data?.storage?.ready !== false;
+          };
+          let rootFailure;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+              const response = await fetch(base + "/health/ready", { cache: "no-store", signal: AbortSignal.timeout(2500) });
+              const data = await response.json().catch(() => ({}));
+              if (response.ok && rootReady(data)) {
+                console.log(JSON.stringify({ path: "/health/ready", status: response.status, ready: true, state: data.state ?? undefined }));
+                rootFailure = null;
+                break;
+              }
+              rootFailure = { status: response.status, ready: data.ready, state: data.state, storageReady: data.storage?.ready };
+            } catch (error) { rootFailure = { error: String(error?.message || error) }; }
+            if (attempt < 3) await wait(1000);
+          }
+          if (rootFailure) throw new Error("Live SPMT readiness failed: " + JSON.stringify(rootFailure));
+
+          let bulletinFailure;
+          for (let attempt = 0; attempt < 30; attempt++) {
+            try {
+              const response = await fetch(base + "/bulletin/health/ready", { cache: "no-store", signal: AbortSignal.timeout(2500) });
+              const data = await response.json().catch(() => ({}));
+              const completedAt = Number(data.cron?.lastTickCompletedAt);
+              const cronFresh = Number.isFinite(completedAt) && completedAt > 0 && completedAt <= Date.now() && Date.now() - completedAt <= 300000;
+              const complete = response.ok && data.ready === true &&
+                data.browserHealthy === true && data.browserSessionPersisted === true &&
+                data.persistence === "turso" && data.cronRequired === true &&
+                data.cronAuthConfigured === true && data.cronExecutionConfirmed === true &&
+                data.cron?.lastTickStatus === "completed" && cronFresh;
+              if (complete) {
+                console.log(JSON.stringify({
+                  path: "/bulletin/health/ready", status: response.status, ready: true,
+                  browserHealthy: data.browserHealthy, browserSessionPersisted: data.browserSessionPersisted,
+                  browserLoginRequired: data.browserLoginRequired, browserSessionReady: data.browserSessionReady,
+                  persistence: data.persistence, cronStatus: data.cron.lastTickStatus,
+                  cronCompletedTicks: data.cron.completedTicks, cronLastTickProcessed: data.cron.lastTickProcessed,
+                  cronFresh,
+                }));
+                bulletinFailure = null;
+                break;
+              }
+              bulletinFailure = {
+                status: response.status, ready: data.ready, browser: data.browser,
+                browserHealthy: data.browserHealthy, browserSessionPersisted: data.browserSessionPersisted,
+                persistence: data.persistence, cronRequired: data.cronRequired,
+                cronAuthConfigured: data.cronAuthConfigured, cronExecutionConfirmed: data.cronExecutionConfirmed,
+                cronStatus: data.cron?.lastTickStatus, cronCompletedAt: data.cron?.lastTickCompletedAt, cronFresh,
+              };
+            } catch (error) { bulletinFailure = { error: String(error?.message || error) }; }
+            if (attempt < 29) await wait(2500);
+          }
+          if (bulletinFailure) throw new Error("Live Apollo Bulletin readiness failed: " + JSON.stringify(bulletinFailure));
+
+          const protectedRoutes = [
+            { path: "/bulletin/api/tasks", method: "GET", allowed: [401, 403] },
+            { path: "/bulletin/api/browser/status", method: "GET", allowed: [401, 403] },
+            { path: "/bulletin/browser", method: "GET", allowed: [401, 403] },
+            { path: "/bulletin/api/cron/tick", method: "POST", allowed: [401, 503] },
+          ];
+          for (const route of protectedRoutes) {
+            const response = await fetch(base + route.path, {
+              method: route.method,
+              headers: route.method === "POST" ? { "content-type": "application/json" } : undefined,
+              body: route.method === "POST" ? "{}" : undefined,
+              cache: "no-store",
+              signal: AbortSignal.timeout(4000),
+            });
+            if (!route.allowed.includes(response.status)) {
+              throw new Error("Bulletin protected route was not denied as expected: " + route.path + " returned " + response.status);
             }
-            if (last) throw new Error("Live readiness failed for " + path + ": " + JSON.stringify(last));
+            console.log(JSON.stringify({ path: route.path, method: route.method, unauthenticatedStatus: response.status, protected: true }));
           }
           NODE
   # Live log snapshot per node, uploaded as an Actions artifact after every
