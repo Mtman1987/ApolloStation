@@ -50,7 +50,7 @@ test("Node 2 ingress forwards HearMeOut app and health requests to its own servi
   assert.deepEqual(seen, ["/apps/hearmeout", "/health/ready?check=ready"]);
 });
 
-test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", async () => {
+test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { timeout: 15000 }, async () => {
   const upstream = createServer();
   const sockets = new WebSocketServer({ noServer: true });
   upstream.on("upgrade", (req, socket, head) => {
@@ -69,8 +69,9 @@ test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", as
     const [message] = await once(client, "message");
     assert.equal(message.toString(), "rtc-through");
   } finally {
-    client.close();
-    await once(client, "close").catch(() => {});
+    const closed = once(client, "close").catch(() => []);
+    client.terminate();
+    await Promise.race([closed, new Promise(resolve => setTimeout(resolve, 1000))]);
     await new Promise(resolve => ingress.close(resolve));
     await new Promise(resolve => sockets.close(resolve));
     await new Promise(resolve => upstream.close(resolve));
