@@ -34,6 +34,7 @@ import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spm
 import { SqliteMediaAssetStore, SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
 import { hydrateSpmtFromTurso, type TursoHydrateReport } from "./turso-hydrate.js";
+import { syncSpmtToTurso, type TursoSyncReport } from "./turso-sync.js";
 import {
   ProviderGrantBroker,
   ProviderGrantError,
@@ -181,6 +182,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
   let tursoHydrateReport: TursoHydrateReport | undefined;
   health.setDependency("turso-hydrate", "degraded", "not started");
+  let tursoSyncReport: TursoSyncReport | undefined;
+  health.setDependency("turso-sync", "degraded", "not started");
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
 
@@ -1058,17 +1061,51 @@ export function createSpmtService(options: SpmtServiceOptions) {
     }
   });
 
+  // Turso write-back: on Hostless the local SQLite file is ephemeral
+  // (/tmp), so identity/session state is mirrored to Turso on an interval
+  // and once more at shutdown; the boot hydrate restores it after a restart.
+  let tursoSyncTimer: NodeJS.Timeout | undefined;
+  let tursoSyncInFlight = false;
+  const runTursoSync = async () => {
+    if (tursoSyncInFlight) return;
+    tursoSyncInFlight = true;
+    try {
+      tursoSyncReport = await syncSpmtToTurso({ databasePath: options.databasePath, fetchImpl });
+      if (tursoSyncReport.enabled) {
+        const failed = Object.entries(tursoSyncReport.tables).filter(([, stats]) => stats.error);
+        const summary = Object.entries(tursoSyncReport.tables).map(([name, stats]) => `${name}:${stats.written}`).join(",") || "no-matching-tables";
+        const detail = `synced in ${tursoSyncReport.durationMs}ms (${summary})${failed.length ? `; errors: ${failed.map(([name]) => name).join(",")}` : ""}`;
+        health.setDependency("turso-sync", failed.length ? "degraded" : "ready", detail.slice(0, 200));
+      } else {
+        health.setDependency("turso-sync", "degraded", tursoSyncReport.reason ?? "turso credentials not configured");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "turso sync failed";
+      health.setDependency("turso-sync", "unavailable", message.slice(0, 200));
+      console.error("[spmt] turso sync failed:", message);
+    } finally {
+      tursoSyncInFlight = false;
+    }
+  };
+  const startTursoSync = () => {
+    if (runtimeMode !== "production" || tursoSyncTimer) return;
+    const first = setTimeout(() => { void runTursoSync(); }, 30_000); first.unref();
+    tursoSyncTimer = setInterval(() => { void runTursoSync(); }, 60_000); tursoSyncTimer.unref();
+  };
+
   return {
     speechPresence, store, platformStore, mediaAssets, setupStore, commlinkLiveChat, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     getTursoHydrateReport() { return tursoHydrateReport; },
+    getTursoSyncReport() { return tursoSyncReport; },
     async listen(port = options.port ?? 3000, host = options.host ?? "0.0.0.0") {
       try {
         tursoHydrateReport = await hydrateSpmtFromTurso({
           authority: store as unknown as Parameters<typeof hydrateSpmtFromTurso>[0]["authority"],
           platform: platformStore as unknown as Parameters<typeof hydrateSpmtFromTurso>[0]["platform"],
+          fetchImpl,
         });
         if (tursoHydrateReport.enabled) {
           const summary = Object.entries(tursoHydrateReport.tables).map(([name, stats]) => `${name}:${stats.inserted}/${stats.remote}`).join(",") || "no-matching-tables";
@@ -1085,11 +1122,20 @@ export function createSpmtService(options: SpmtServiceOptions) {
         server.once("error", reject);
         server.listen(port, host, () => {
           server.off("error", reject);
+          startTursoSync();
           done();
         });
       });
     },
-    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); twitchBots.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    async close() {
+      clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer);
+      if (tursoSyncTimer) { clearInterval(tursoSyncTimer); tursoSyncTimer = undefined; }
+      // Final write-back before the stores close, so a deploy or restart
+      // does not lose the last interval of sign-ins and session changes.
+      if (runtimeMode === "production") {
+        try { await Promise.race([runTursoSync(), new Promise<void>((resolve) => { const timer = setTimeout(resolve, 5_000); timer.unref(); })]); } catch { /* best effort */ }
+      }
+      return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); twitchBots.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 

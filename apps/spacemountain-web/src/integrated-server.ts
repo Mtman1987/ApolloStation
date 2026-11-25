@@ -77,7 +77,12 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
       // Discord changes Host to the mapped Sprite while retaining its iframe
       // Origin. This public request route uses the configured Activity identity.
       const activityRequest=request.method==='POST'&&/^\/api\/watch\/broadcast\/(?:requests|rooms|control|youtube\/[A-Za-z0-9_-]{11}\/(?:audio|video))$/.test(url.pathname)&&activityOrigin!==undefined&&request.headers.origin===activityOrigin;
-      if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
+      // The public entrance at spacemountain.live is a static GitHub Pages
+      // page; its sign-in form posts straight to the SPMT service. Allow
+      // exactly that one cross-origin post through the guard — the service
+      // enforces the same origin allowlist before setting any session cookie.
+      const entranceAuthRequest=request.method==='POST'&&url.pathname==='/v1/auth/browser-login'&&['https://spacemountain.live','https://www.spacemountain.live'].includes(request.headers.origin??'');
+      if (!sameOrigin&&!activityRequest&&!entranceAuthRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
     if(url.pathname === "/bulletin" || url.pathname.startsWith("/bulletin/")) {
