@@ -1,0 +1,29 @@
+name: Test static SpaceMountain login handoff
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/test-static-entrance-login.yml"
+      - "apps/spmt-service/src/index.ts"
+      - "apps/spmt-service/tests/static-entrance-login.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test browser login handoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build:hostless
+      - run: node --test apps/spmt-service/tests/static-entrance-login.test.mjs
