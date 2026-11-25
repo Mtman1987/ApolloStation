@@ -803,6 +803,41 @@ export function createSpmtService(options: SpmtServiceOptions) {
         }
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/auth/browser-login") {
+        const origin = header(request, "origin");
+        const allowedOrigins = new Set(["https://spacemountain.live", "https://www.spacemountain.live"]);
+        if (!origin || !allowedOrigins.has(origin)) return json(response, 403, { error: "invalid_origin" });
+        if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
+        let body: Record<string, string>;
+        try { body = await readFormBody(request); }
+        catch { return json(response, 400, { error: "invalid_form" }); }
+        const username = String(body.username ?? "").trim().toLowerCase().replace(/@spmt\\.live$/, "");
+        const password = body.password ?? "";
+        if (!username || !password || username.length > 80 || password.length > 1024) {
+          const target = new URL("/", origin);
+          target.searchParams.set("loginError", "1");
+          response.writeHead(303, { location: target.toString(), "cache-control": "no-store", "referrer-policy": "no-referrer" });
+          return response.end();
+        }
+        try {
+          const result = data.login(username, password, USER_SCOPES);
+          const browser = auth.issueBrowserSession(result.tokens.accessToken);
+          const home = process.env.SPMT_PUBLIC_URL ?? "https://apollo-node-1.hostless.app";
+          response.writeHead(303, {
+            location: new URL("/", home).toString(),
+            "cache-control": "no-store",
+            "referrer-policy": "no-referrer",
+            "set-cookie": browserSessionCookie(browser.accessToken),
+          });
+          return response.end();
+        } catch {
+          const target = new URL("/", origin);
+          target.searchParams.set("loginError", "1");
+          response.writeHead(303, { location: target.toString(), "cache-control": "no-store", "referrer-policy": "no-referrer" });
+          return response.end();
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/auth/login") {
         const body = await readBody(request);
         const username = str(body.username, "username").trim().toLowerCase().replace(/@spmt\.live$/, "");
@@ -1158,6 +1193,14 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("JSON object required");
   return parsed as Record<string, unknown>;
+}
+async function readFormBody(request: IncomingMessage): Promise<Record<string, string>> {
+  const contentType = header(request, "content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") throw new Error("application/x-www-form-urlencoded body required");
+  const chunks: Buffer[] = []; let total = 0;
+  for await (const chunk of request) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += buffer.byteLength; if (total > 16 * 1024) throw new Error("request body too large"); chunks.push(buffer); }
+  const params = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+  return Object.fromEntries(params.entries());
 }
 function str(value: unknown, name: string) { if (typeof value !== "string" || !value) throw new Error(`${name} is required`); return value; }
 function stringValues(value: unknown, name: string) { if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string" || !item)) throw new Error(`${name} must be a non-empty string array`); return value as string[]; }
