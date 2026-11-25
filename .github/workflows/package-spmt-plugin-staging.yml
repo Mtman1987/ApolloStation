@@ -1,0 +1,36 @@
+name: Package SPMT Ecosystem Plugin Staging
+
+on:
+  push:
+    branches:
+      - chore/spmt-ecosystem-plugin-0.3.1-package
+    paths:
+      - 'plugin-release/spmt-ecosystem-0.3.1/**'
+      - '.github/workflows/package-spmt-plugin-staging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Create ZIP archive
+        run: |
+          test -f plugin-release/spmt-ecosystem-0.3.1/plugin.json
+          cd plugin-release
+          zip -r ../spmt-ecosystem-plugin-0.3.1.zip spmt-ecosystem-0.3.1
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spmt-ecosystem-plugin-0.3.1
+          path: spmt-ecosystem-plugin-0.3.1.zip
+          if-no-files-found: error
+          retention-days: 14
