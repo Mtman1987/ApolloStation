@@ -340,3 +340,29 @@ test("legacy tasks receive a private review marker during queue recovery", async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("an owner can stop a task waiting for review without resending it", async () => {
+  const priorCron=process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON,priorBrowser=process.env.APOLLO_BULLETIN_ENABLE_BROWSER,priorRequireTurso=process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON="1";delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+  let persisted=null,dispatches=0;
+  const store={async loadQueue(){return persisted;},async saveQueue(value){persisted=structuredClone(value);},async loadBrowserState(){return null;},async saveBrowserState(){}};
+  const app=createBulletinServer({port:0,store,dispatch:async task=>{dispatches++;return{submitted:true,receipt:{reply:task.reviewMarker}};}});
+  try {
+    const address=await app.listen(),origin="http://127.0.0.1:"+address.port;
+    const created=await fetch(origin+"/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Stop after review",prompt:"Inspect this task",destination:"chatgpt",conversationUrl:"https://chatgpt.com/c/stop-after-review",scheduleType:"manual",maxCycles:2})});
+    const {task}=await created.json();
+    await fetch(origin+"/api/tasks/"+task.id+"/run",{method:"POST"});
+    for(let i=0;i<50&&persisted?.tasks[0]?.status!=="awaiting_review";i++)await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(persisted.tasks[0].status,"awaiting_review");
+    const stopped=await fetch(origin+"/api/tasks/"+task.id+"/stop",{method:"POST"});
+    assert.equal(stopped.status,200);
+    const {task:result}=await stopped.json();
+    assert.equal(result.status,"stopped");
+    assert.equal(dispatches,1,"stopping a reviewed task must not dispatch another cycle");
+  } finally {
+    await app.close();
+    if(priorCron===undefined)delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;else process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON=priorCron;
+    if(priorBrowser===undefined)delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;else process.env.APOLLO_BULLETIN_ENABLE_BROWSER=priorBrowser;
+    if(priorRequireTurso===undefined)delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;else process.env.APOLLO_BULLETIN_REQUIRE_TURSO=priorRequireTurso;
+  }
+});
