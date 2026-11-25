@@ -2840,19 +2840,19 @@ async function startBrowserDJ(roomId) {
   page.on('requestfailed', (req) => {
     const url = req.url();
     if (/livekit|peer|youtube-audio|\/api\/music|\/api\/db/.test(url)) {
-      console.warn(`[BrowserDJ:${roomId}] request failed: ${redactSensitiveLogText(url)} ${redactSensitiveLogText(req.failure()?.errorText || '')}`);
+      console.warn(`[BrowserDJ:${roomId}] request failed: ${redactSensitiveLogText(url)} ${redactSensitiveLogText(req.failure() || '')}`);
     }
   });
 
   const djUrl = `${APP_URL}/dj/${encodeURIComponent(roomId)}`;
   await page.goto(djUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => !!globalThis.__HEARMEOUT_DJ__, { timeout: 30000 });
+  await page.waitForFunction(() => !!globalThis.__HEARMEOUT_DJ__, null, { timeout: 30000 });
 
   await page.evaluate(() => globalThis.__HEARMEOUT_DJ__.startSession());
   await page.waitForFunction(() => {
     const status = globalThis.__HEARMEOUT_DJ__?.getStatus?.();
     return status?.isLive || /^ERROR:/i.test(status?.status || '');
-  }, { timeout: 60000 }).catch(() => {});
+  }, null, { timeout: 60000 }).catch(() => {});
 
   const started = await page.evaluate(() => globalThis.__HEARMEOUT_DJ__.getStatus());
   if (!started?.isLive) {
