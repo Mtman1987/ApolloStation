@@ -21,6 +21,7 @@
     "@spmt/control-core": "0.1.0",
     "@spmt/commlink-core": "0.1.0",
     "@spmt/execution-core": "0.1.0",
+    "@spmt/mcp": "0.3.0",
     "@spmt/monetization": "0.1.0",
     "@spmt/outbox-core": "0.1.0",
     "@spmt/platform-data-core": "0.1.0",

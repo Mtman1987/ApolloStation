@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ProviderIdentityApiAdapter } from "@spmt/account-recovery-core/provider-identity-api";
 import { ProviderIdentityOperations } from "@spmt/account-recovery-core/provider-identity-ops";
 import { createSpmtService, type SpmtServiceOptions } from "./index.js";
+import { mountMcpRoutes } from "./mcp-host.js";
 
 /**
  * Construct the normal SPMT service, then mount the provider identity adapter on
@@ -12,6 +13,7 @@ import { createSpmtService, type SpmtServiceOptions } from "./index.js";
 export function createSpmtServiceWithProviderIdentity(options: SpmtServiceOptions) {
   const service = createSpmtService(options);
   mountProviderIdentityRoutes(service);
+  mountMcpRoutes(service);
   return service;
 }
 
