@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import { once } from "node:events";
-import WebSocket, { WebSocketServer } from "ws";
+import { createHash } from "node:crypto";
+import { createServer as createNetServer } from "node:net";
+import WebSocket from "ws";
 import { createNode2Ingress, isHearMeOutPath, isNebulaPath } from "../scripts/hostless/node2-ingress.mjs";
 
 test("Nebula ingress matcher includes app, API, and browser assets", () => {
@@ -55,18 +57,25 @@ test("Node 2 ingress forwards HearMeOut app and health requests to its own servi
   assert.deepEqual(seen, ["/apps/hearmeout", "/health/ready?check=ready"]);
 });
 
-test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { timeout: 10000 }, async () => {
-  const upstream = createServer();
-  const sockets = new WebSocketServer({ noServer: true });
+test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { timeout: 8000 }, async () => {
   const upstreamSockets = new Set();
   const ingressSockets = new Set();
-  upstream.on("connection", socket => {
+  const upstream = createNetServer(socket => {
     upstreamSockets.add(socket);
     socket.on("close", () => upstreamSockets.delete(socket));
-  });
-  upstream.on("upgrade", (req, socket, head) => {
-    if (new URL(req.url, "http://localhost").pathname !== "/api/hearmeout/rtc") return socket.destroy();
-    sockets.handleUpgrade(req, socket, head, ws => ws.send("rtc-through"));
+    let handshake = "";
+    let upgraded = false;
+    socket.on("data", chunk => {
+      if (upgraded) return;
+      handshake += chunk.toString("latin1");
+      if (!handshake.includes("\r\n\r\n")) return;
+      const key = handshake.match(/sec-websocket-key:\s*([^\r\n]+)/i)?.[1]?.trim();
+      if (!key) return socket.destroy();
+      upgraded = true;
+      const accept = createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+      socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n");
+      socket.write(Buffer.concat([Buffer.from([0x81, 0x0b]), Buffer.from("rtc-through")]));
+    });
   });
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
@@ -80,15 +89,14 @@ test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { 
   const origin = "http://127.0.0.1:" + ingress.address().port;
   const client = new WebSocket(origin.replace("http:", "ws:") + "/api/hearmeout/rtc?roomId=room-a", { headers: { origin } });
   try {
-    await once(client, "open");
-    const [message] = await once(client, "message");
+    await Promise.race([once(client, "open"), new Promise((_, reject) => setTimeout(() => reject(new Error("RTC WebSocket handshake timed out")), 3000))]);
+    const [message] = await Promise.race([once(client, "message"), new Promise((_, reject) => setTimeout(() => reject(new Error("RTC WebSocket payload timed out")), 3000))]);
     assert.equal(message.toString(), "rtc-through");
   } finally {
     client.terminate();
     for (const socket of ingressSockets) socket.destroy();
     for (const socket of upstreamSockets) socket.destroy();
     ingress.close();
-    sockets.close();
     upstream.close();
   }
 });
