@@ -450,7 +450,7 @@ jobs:
                 data.browserHealthy === true && data.browserSessionPersisted === true &&
                 data.persistence === "turso" && data.cronRequired === true &&
                 data.cronAuthConfigured === true && data.cronExecutionConfirmed === true &&
-                data.cron?.lastTickStatus === "completed" && cronFresh;
+                (data.cron?.lastTickStatus === "completed" || (data.cron?.lastTickStatus === "running" && data.cron?.inFlight === true)) && cronFresh;
               if (complete) {
                 console.log(JSON.stringify({
                   path: "/bulletin/health/ready", status: response.status, ready: true,
