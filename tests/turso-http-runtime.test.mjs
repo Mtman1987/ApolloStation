@@ -112,3 +112,19 @@ test("parallel transaction calls are serialized on the same Hrana stream", async
   assert.deepEqual(calls.slice(1, 3).map((call) => call.requests[0].stmt.args[0].value), ["one", "two"]);
   assert.equal(calls[3].requests[0].stmt.sql, "COMMIT");
 });
+
+test("Turso pipeline requests close the connection so the next call dials fresh", async () => {
+  const seenHeaders = [];
+  const adapter = new TursoHttpAdapter({
+    url: "libsql://apollo.example.turso.io",
+    authToken: "test-only",
+    fetchImpl: async (_url, init) => {
+      seenHeaders.push(init.headers);
+      return response(null, [ok()]);
+    },
+  });
+  await adapter.execute("SELECT 1");
+  await adapter.execute("SELECT 2");
+  assert.equal(seenHeaders.length, 2);
+  for (const headers of seenHeaders) assert.equal(headers.connection, "close");
+});
