@@ -267,24 +267,40 @@ test("a running cron tick retains readiness only while its previous completed pr
   process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
   process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-running-test-token";
   process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
-  let persisted = { tasks: [], activity: [], cron: { status: "running", inFlight: true, completedTicks: 3, failedTicks: 0, lastTickStartedAt: Date.now(), lastTickCompletedAt: Date.now() - 60_000, lastTickProcessed: null } };
+  let persisted = {
+    tasks: [{ id:"slow-task", name:"Slow task", prompt:"Work", destination:"test-simulator", status:"scheduled", nextRunAt:Date.now()-1000, schedule:{type:"manual"} }],
+    activity: [],
+    cron: { status:"completed", inFlight:false, completedTicks:3, failedTicks:0, lastTickStartedAt:Date.now()-120_000, lastTickCompletedAt:Date.now()-60_000, lastTickProcessed:0 },
+  };
+  let startedResolve, release;
+  const started = new Promise(resolve => { startedResolve = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
   const store = {
     async loadQueue() { return structuredClone(persisted); },
     async saveQueue(value) { persisted = structuredClone(value); },
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
   };
-  const app = createBulletinServer({ port: 0, store });
+  const app = createBulletinServer({ port: 0, store, dispatch: async () => { startedResolve(); await gate; return { submitted:true, receipt:{ reply:"simulated receipt", runNumber:1 } }; } });
   try {
-    const address = await app.listen();
-    const response = await fetch("http://127.0.0.1:" + address.port + "/health/ready");
+    const address = await app.listen(), origin = "http://127.0.0.1:" + address.port;
+    const accepted = await fetch(origin + "/api/cron/tick", { method:"POST", headers:{ authorization:"Bearer cron-running-test-token" } });
+    assert.equal(accepted.status, 202);
+    assert.deepEqual(await accepted.json(), { accepted:true });
+    await started;
+    const response = await fetch(origin + "/health/ready");
     assert.equal(response.status, 200);
     const proof = await response.json();
     assert.equal(proof.ready, true);
     assert.equal(proof.cronExecutionConfirmed, true);
     assert.equal(proof.cron.lastTickStatus, "running");
     assert.equal(proof.cron.inFlight, true);
+    release();
+    for (let i=0;i<50&&persisted.cron.status!=="completed";i++) await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(persisted.cron.status, "completed");
+    assert.equal(persisted.cron.inFlight, false);
   } finally {
+    release?.();
     await app.close();
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
