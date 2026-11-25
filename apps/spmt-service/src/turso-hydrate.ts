@@ -1,6 +1,7 @@
 /**
  * Turso -> local SQLite hydrate for SPMT authority and platform stores.
  * Only fills missing local rows; never writes to Turso or replaces existing accounts.
+ * The reverse direction (local writes reaching Turso) lives in turso-sync.ts.
  */
 import { TursoHttpAdapter } from "@spmt/turso-http";
 
@@ -17,11 +18,21 @@ type AuthorityLike = {
   getWorkspace(id: string): { tenantId: string; revision: number } | undefined;
   putWorkspace(profile: Record<string, unknown>): void;
   appendXp?(event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string }): void;
+  getTenant?(id: string): { id: string } | undefined;
+  putTenant?(tenant: Record<string, unknown>): void;
+  getProviderLink?(provider: string, providerUserId: string): unknown;
+  putProviderLink?(link: Record<string, unknown>): void;
+  getAccessSessionByTokenHash?(tokenHash: string): unknown;
+  putAccessSession?(session: Record<string, unknown>): void;
+  getRefreshTokenByTokenHash?(tokenHash: string): unknown;
+  putRefreshToken?(token: Record<string, unknown>): void;
 };
 type PlatformLike = {
   getUserProfile(id: string): unknown | undefined;
   getUserProfileByUsername?(name: string): unknown | undefined;
   putUserProfile(profile: { userId: string; username: string; displayName: string; tenantIds: string[]; createdAt: string; updatedAt: string }): void;
+  getUserCredential?(userId: string): unknown | undefined;
+  putUserCredential?(userId: string, salt: string, hash: string): void;
 };
 
 const env = (name: string) => process.env[name]?.trim() || undefined;
@@ -43,7 +54,7 @@ async function columns(db: TursoHttpAdapter, table: string) {
   return r.rows.map(row => String(row[1] ?? ""));
 }
 
-export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; platform: PlatformLike; now?: () => string }): Promise<TursoHydrateReport> {
+export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; platform: PlatformLike; now?: () => string; fetchImpl?: typeof fetch }): Promise<TursoHydrateReport> {
   const started = Date.now();
   const report: TursoHydrateReport = { enabled: false, tables: {}, durationMs: 0 };
   const url = dbUrl(), token = authToken();
@@ -53,8 +64,11 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     return report;
   }
   report.enabled = true;
-  const db = new TursoHttpAdapter({ url, authToken: token });
+  const db = new TursoHttpAdapter({ url, authToken: token, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
   const now = options.now ?? (() => new Date().toISOString());
+  // Seed-era user bodies may carry profile fields (see the fallback at the
+  // end); keep them while the users table is being read.
+  const profileHints = new Map<string, Record<string, unknown>>();
 
   for (const table of ["spmt_users", "users"]) {
     if (!(await exists(db, table))) continue;
@@ -66,9 +80,46 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     for (const row of result.rows) {
       const id = String(row[0] ?? "");
       if (!id) continue;
-      if (options.authority.getUser(id)) { skipped++; continue; }
       const body = hasBody ? parseBody(row[1]) : undefined;
+      if (body && typeof body.username === "string" && body.username.trim()) profileHints.set(id, body);
+      if (options.authority.getUser(id)) { skipped++; continue; }
       options.authority.putUser({ id, createdAt: typeof body?.createdAt === "string" ? body.createdAt : now() });
+      inserted++;
+    }
+    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    break;
+  }
+
+  if (options.authority.getTenant && options.authority.putTenant) for (const table of ["spmt_tenants", "tenants"]) {
+    if (!(await exists(db, table))) continue;
+    const cols = await columns(db, table);
+    if (!cols.includes("id") || !cols.includes("body")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "expected id + body" }; continue; }
+    const result = await db.execute(`SELECT id, body FROM ${ident(table)}`, [], true);
+    let inserted = 0, skipped = 0;
+    for (const row of result.rows) {
+      const id = String(row[0] ?? "");
+      const body = parseBody(row[1]);
+      if (!id || !body || body.id !== id) { skipped++; continue; }
+      if (options.authority.getTenant(id)) { skipped++; continue; }
+      options.authority.putTenant(body);
+      inserted++;
+    }
+    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    break;
+  }
+
+  if (options.authority.getProviderLink && options.authority.putProviderLink) for (const table of ["spmt_provider_links", "provider_links"]) {
+    if (!(await exists(db, table))) continue;
+    const cols = await columns(db, table);
+    if (!cols.includes("provider") || !cols.includes("provider_user_id") || !cols.includes("body")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "expected provider + provider_user_id + body" }; continue; }
+    const result = await db.execute(`SELECT provider, provider_user_id, body FROM ${ident(table)}`, [], true);
+    let inserted = 0, skipped = 0;
+    for (const row of result.rows) {
+      const provider = String(row[0] ?? ""), providerUserId = String(row[1] ?? "");
+      const body = parseBody(row[2]);
+      if (!provider || !providerUserId || !body) { skipped++; continue; }
+      if (options.authority.getProviderLink(provider, providerUserId)) { skipped++; continue; }
+      options.authority.putProviderLink(body);
       inserted++;
     }
     report.tables[table] = { remote: result.rows.length, inserted, skipped };
@@ -90,6 +141,13 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       let revision = hasRevision ? Number(row[1] ?? 1) || 1 : 1;
       const body = hasBody ? parseBody(row[hasRevision ? 2 : 1]) : undefined;
       if (typeof body?.revision === "number" && !hasRevision) revision = body.revision;
+      // Rows mirrored by turso-sync carry the complete workspace profile;
+      // restore those verbatim instead of rebuilding the reduced seed shape.
+      if (body && body.tenantId === tenantId && Array.isArray(body.dockSlots) && body.appearance && typeof body.appearance === "object") {
+        options.authority.putWorkspace({ ...body, tenantId, revision });
+        inserted++;
+        continue;
+      }
       const appearance = body?.appearance && typeof body.appearance === "object" ? body.appearance as Record<string, unknown> : {};
       options.authority.putWorkspace({
         tenantId, revision, appearance: { theme: String(appearance.theme ?? "system") },
@@ -159,6 +217,74 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     }
     report.tables[table] = { remote: result.rows.length, inserted, skipped };
     break;
+  }
+
+  if (options.platform.getUserCredential && options.platform.putUserCredential) for (const table of ["spmt_user_credentials", "user_credentials"]) {
+    if (!(await exists(db, table))) continue;
+    const cols = await columns(db, table);
+    if (!cols.includes("user_id") || !cols.includes("salt") || !cols.includes("password_hash")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "expected user_id + salt + password_hash" }; continue; }
+    const result = await db.execute(`SELECT user_id, salt, password_hash FROM ${ident(table)}`, [], true);
+    let inserted = 0, skipped = 0;
+    for (const row of result.rows) {
+      const userId = String(row[0] ?? ""), salt = String(row[1] ?? ""), hash = String(row[2] ?? "");
+      if (!userId || !salt || !hash) { skipped++; continue; }
+      if (options.platform.getUserCredential(userId)) { skipped++; continue; }
+      options.platform.putUserCredential(userId, salt, hash);
+      inserted++;
+    }
+    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    break;
+  }
+
+  if (options.authority.getAccessSessionByTokenHash && options.authority.putAccessSession) for (const table of ["spmt_access_sessions", "access_sessions"]) {
+    if (!(await exists(db, table))) continue;
+    const cols = await columns(db, table);
+    if (!cols.includes("id") || !cols.includes("body")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "expected id + body" }; continue; }
+    const result = await db.execute(`SELECT id, body FROM ${ident(table)}`, [], true);
+    let inserted = 0, skipped = 0;
+    for (const row of result.rows) {
+      const body = parseBody(row[1]);
+      // Expired rows are useless, but revoked rows must come back: a logout
+      // recorded only in the mirrored row must stay revoked after a restart.
+      if (!body || typeof body.tokenHash !== "string" || typeof body.expiresAt !== "string" || body.expiresAt <= now()) { skipped++; continue; }
+      if (options.authority.getAccessSessionByTokenHash(body.tokenHash)) { skipped++; continue; }
+      options.authority.putAccessSession(body);
+      inserted++;
+    }
+    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    break;
+  }
+
+  if (options.authority.getRefreshTokenByTokenHash && options.authority.putRefreshToken) for (const table of ["spmt_refresh_tokens", "refresh_tokens"]) {
+    if (!(await exists(db, table))) continue;
+    const cols = await columns(db, table);
+    if (!cols.includes("id") || !cols.includes("body")) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "expected id + body" }; continue; }
+    const result = await db.execute(`SELECT id, body FROM ${ident(table)}`, [], true);
+    let inserted = 0, skipped = 0;
+    for (const row of result.rows) {
+      const body = parseBody(row[1]);
+      if (!body || typeof body.tokenHash !== "string" || typeof body.expiresAt !== "string" || body.expiresAt <= now()) { skipped++; continue; }
+      if (options.authority.getRefreshTokenByTokenHash(body.tokenHash)) { skipped++; continue; }
+      options.authority.putRefreshToken(body);
+      inserted++;
+    }
+    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    break;
+  }
+
+  // Seed-era exports kept profile fields inside the users body and never
+  // wrote a dedicated profiles table (the XP seed's source list has no
+  // profiles table). Derive any still-missing profiles from those bodies
+  // so recovered accounts come back with their usernames attached.
+  if (profileHints.size) {
+    let inserted = 0, skipped = 0;
+    for (const [userId, body] of profileHints) {
+      const username = String(body.username ?? "").trim().toLowerCase();
+      if (!username || options.platform.getUserProfile(userId) || options.platform.getUserProfileByUsername?.(username)) { skipped++; continue; }
+      options.platform.putUserProfile({ userId, username, displayName: String(body.displayName ?? username).slice(0, 120), tenantIds: Array.isArray(body.tenantIds) ? body.tenantIds.map(String) : [], createdAt: String(body.createdAt ?? now()), updatedAt: String(body.updatedAt ?? now()) });
+      inserted++;
+    }
+    report.tables["user_profile_hints"] = { remote: profileHints.size, inserted, skipped };
   }
   report.durationMs = Date.now() - started;
   return report;
