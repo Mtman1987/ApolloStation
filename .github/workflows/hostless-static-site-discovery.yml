@@ -1,0 +1,91 @@
+name: Hostless static-site account discovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hostless-static-site-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect ${{ matrix.label }} Hostless Sites access
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Node 1 account
+            secret: HOSTLESS_NODE1_TOKEN
+          - label: Node 2 account
+            secret: HOSTLESS_NODE2_TOKEN
+    steps:
+      - name: Read static-site inventory and scope access
+        env:
+          HOSTLESS_TOKEN: ${{ secrets[matrix.secret] }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://api.hostless.cloud/v1";
+          const token = process.env.HOSTLESS_TOKEN;
+          if (!token) {
+            console.log(JSON.stringify({account:process.env.LABEL,tokenConfigured:false}));
+            process.exit(0);
+          }
+          async function get(path) {
+            const response = await fetch(base + path, {
+              headers: {Authorization: token, Accept: "application/json"},
+              signal: AbortSignal.timeout(15000)
+            });
+            const body = await response.text();
+            let parsed = {};
+            try { parsed = body ? JSON.parse(body) : {}; } catch {}
+            return {status:response.status,body:parsed};
+          }
+          const rows = (value, keys) => {
+            if (Array.isArray(value)) return value;
+            for (const key of keys) {
+              if (Array.isArray(value?.[key])) return value[key];
+              if (Array.isArray(value?.data?.[key])) return value.data[key];
+            }
+            if (Array.isArray(value?.data)) return value.data;
+            return [];
+          };
+          const projects = await get("/projects");
+          const sites = await get("/sites");
+          const safeSite = (site) => ({
+            id: site.id ?? site.siteId ?? null,
+            name: site.name ?? site.siteName ?? site.slug ?? null,
+            status: site.status ?? site.state ?? null,
+            url: site.url ?? site.siteUrl ?? site.publicUrl ?? null,
+            projectId: site.projectId ?? site.project?.id ?? null,
+            domains: (Array.isArray(site.domains) ? site.domains : []).map(d =>
+              typeof d === "string" ? d : {
+                domain: d.domain ?? d.hostname ?? d.name ?? null,
+                status: d.status ?? d.state ?? null,
+                verified: d.verified ?? d.isVerified ?? null
+              })
+          });
+          const result = {
+            account: process.env.LABEL,
+            projects: {
+              httpStatus: projects.status,
+              items: rows(projects.body, ["projects","items"]).map(p => ({
+                id:p.id ?? p.projectId ?? null,
+                name:p.name ?? p.projectName ?? p.slug ?? null
+              }))
+            },
+            sites: {
+              httpStatus: sites.status,
+              items: rows(sites.body, ["sites","items"]).map(safeSite)
+            }
+          };
+          console.log(JSON.stringify(result));
+          if (sites.status === 401 || sites.status === 403) {
+            console.log("Sites API access denied; no resource was changed.");
+          }
+          NODE
