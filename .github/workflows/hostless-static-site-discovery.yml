@@ -83,11 +83,18 @@ jobs:
               if(data.length){try{payload=JSON.parse(data[data.length-1]);}catch{}}
             }
             const tools=payload?.result?.tools??[];
-            mcpTools={status:listed.status,tools:tools.filter(t=>/sites_(create|list|get|patch|deployments|variables)/.test(t.name)).map(t=>({name:t.name,description:t.description,inputSchema:t.inputSchema})),error:payload?.error?.message??null};
+            mcpTools={status:listed.status,tools:tools.filter(t=>/^sites_/.test(t.name)).map(t=>({name:t.name,description:t.description,inputSchema:t.inputSchema})),error:payload?.error?.message??null};
           }
           const credential = await get("/api-keys/current");
           const projects = await get("/projects");
           const sites = await get("/sites");
+          const projectRows = rows(projects.body, ["projects","items"]);
+          const gitConnections = await Promise.all(projectRows.map(async p => {
+            const id = p.id ?? p.projectId;
+            if (!id) return {project:p.name ?? null,accountsStatus:0,accounts:[]};
+            const accounts = await get(`/projects/${encodeURIComponent(id)}/github/accounts`);
+            return {project:p.name ?? p.projectName ?? null,accountsStatus:accounts.status,accounts:rows(accounts.body,["accounts","items"]).map(a=>({login:a.login ?? a.name ?? null}))};
+          }));
           const safeSite = (site) => ({
             id: site.id ?? site.siteId ?? null,
             name: site.name ?? site.siteName ?? site.slug ?? null,
@@ -105,6 +112,7 @@ jobs:
             account: process.env.LABEL,
             credential: {httpStatus:credential.status,kind:credential.body.kind ?? null,name:credential.body.name ?? null,prefix:credential.body.prefix ?? null,scopes:credential.body.scopes ?? [],projects:credential.body.projects ?? []},
             mcpTools,
+            gitConnections,
             projects: {
               httpStatus: projects.status,
               items: rows(projects.body, ["projects","items"]).map(p => ({
