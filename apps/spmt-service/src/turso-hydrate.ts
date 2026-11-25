@@ -17,7 +17,7 @@ type AuthorityLike = {
   putUser(user: { id: string; createdAt: string }): void;
   getWorkspace(id: string): { tenantId: string; revision: number } | undefined;
   putWorkspace(profile: Record<string, unknown>): void;
-  appendXp?(event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string }): void;
+  appendXp?(event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> }): void;
   getTenant?(id: string): { id: string } | undefined;
   putTenant?(tenant: Record<string, unknown>): void;
   getProviderLink?(provider: string, providerUserId: string): unknown;
@@ -182,11 +182,18 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     for (const row of result.rows) {
       const id = String(row[0] ?? "");
       if (!id) continue;
-      let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string };
+      let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
       if (hasBody) {
         const body = parseBody(row[1]);
         if (!body) { skipped++; continue; }
         event = { id, tenantId: String(body.tenantId ?? body.tenant_id ?? ""), userId: String(body.userId ?? body.user_id ?? ""), delta: Number(body.delta ?? 0), sourceAppId: String(body.sourceAppId ?? body.source_app_id ?? "spmt"), reason: String(body.reason ?? "imported"), idempotencyKey: String(body.idempotencyKey ?? body.idempotency_key ?? id), createdAt: String(body.createdAt ?? body.created_at ?? now()) };
+        // Carry the optional event facets through the round trip: the local
+        // store persists the whole event as its body and turso-sync mirrors
+        // it back, so dropping them here would silently strip them from the
+        // Turso copy on the next sync (seed-era events keep their Discord
+        // server/channel context only in metadata).
+        if (typeof body.eventType === "string" && body.eventType) event.eventType = body.eventType;
+        if (body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)) event.metadata = body.metadata as Record<string, unknown>;
       } else {
         event = { id, tenantId: String(row[1] ?? ""), userId: String(row[2] ?? ""), delta: Number(row[3] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[4] ?? id), createdAt: now() };
       }

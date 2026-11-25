@@ -1,0 +1,96 @@
+name: Promote seed-era XP and workspaces to Turso mirror shapes
+
+# One-shot promotion for the seed-era (Fly-export) data the read-only
+# recon (turso-recon.yml) measured: legacy-shaped spmt_xp_ledger /
+# spmt_workspace_profiles / spmt_users tables are renamed aside to
+# *_legacy_seed (preserved byte-for-byte) and replaced with mirror-shaped
+# tables populated with transformed rows. See
+# scripts/promote-seed-xp-workspaces.mjs for the full design.
+#
+# Dispatch manually. The default mode is a read-only dry run; "apply"
+# performs the rename + populate + verify; "rollback" drops the promoted
+# tables and renames the legacy tables back.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (read-only), apply, or rollback"
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - apply
+          - rollback
+        default: dry-run
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: promote-seed-xp-workspaces
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Seed-era XP / workspace promotion (${{ inputs.mode }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
+      PROMOTE_MODE: ${{ inputs.mode }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Turso configuration is present (names only)
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "::error::TURSO_DATABASE_URL missing"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "::error::NODE1_TURSO_AUTH_TOKEN missing"; exit 1; }
+          node --check scripts/promote-seed-xp-workspaces.mjs
+      - name: Run seed promotion (${{ inputs.mode }})
+        run: node scripts/promote-seed-xp-workspaces.mjs
+      - name: Upload promotion report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-promotion-report
+          path: |
+            seed-promotion-report.json
+            seed-promotion-digest.md
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish promotion digest to Apollo diagnostics issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const title = 'Turso read-only recon diagnostics';
+            let digest = 'Promotion digest file was not produced; see the run log.';
+            try { digest = fs.readFileSync('seed-promotion-digest.md', 'utf8'); } catch {}
+            if (digest.length > 60000) digest = digest.slice(0, 60000) + '\n\n[digest truncated; full JSON is in the run artifact]';
+            const body = [
+              'Seed-era XP / workspace promotion executed (mode: ${{ inputs.mode }}).',
+              '',
+              '- Run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Commit: ' + context.sha,
+              '',
+              digest
+            ].join('\n');
+            const found = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 });
+            const existing = found.data.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }

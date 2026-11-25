@@ -159,6 +159,55 @@ test("spmt identity state survives a local wipe through the Turso write-back and
   }
 });
 
+test("hydrate preserves XP eventType and metadata so the sync round trip stays lossless", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-xp-meta-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  // A mirrored XP row whose body carries the optional facets (seed-era
+  // events keep their Discord server/channel context only in metadata).
+  const body = JSON.stringify({
+    id: "xp_meta", tenantId: "tenant_meta", userId: "user_meta", delta: 10,
+    sourceAppId: "discord-stream-hub", reason: "dsh-twitch-message",
+    idempotencyKey: "xp_meta_key", createdAt: NOW,
+    eventType: "dsh-twitch-message",
+    metadata: { schemaVersion: 1, serverId: "server-1", channel: "general" },
+  });
+  fake.tables.set("spmt_xp_ledger", {
+    columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
+    pkCount: 1,
+    rows: new Map([[JSON.stringify(["xp_meta"]), new Map([
+      ["id", "xp_meta"], ["tenant_id", "tenant_meta"], ["user_id", "user_meta"],
+      ["idempotency_key", "xp_meta_key"], ["delta", 10], ["body", body],
+    ])]]),
+  });
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, 1);
+    const events = authority.listXp("tenant_meta", "user_meta");
+    assert.equal(events.length, 1);
+    assert.equal(events[0].eventType, "dsh-twitch-message");
+    assert.deepEqual(events[0].metadata, { schemaVersion: 1, serverId: "server-1", channel: "general" });
+
+    // The write-back must mirror the facets back instead of stripping them.
+    const syncReport = await syncSpmtToTurso({ databasePath, fetchImpl: fake.fetchImpl });
+    assert.equal(syncReport.tables.spmt_xp_ledger.error, undefined);
+    const mirrored = JSON.parse(fake.tables.get("spmt_xp_ledger").rows.get(JSON.stringify(["xp_meta"])).get("body"));
+    assert.equal(mirrored.eventType, "dsh-twitch-message");
+    assert.deepEqual(mirrored.metadata, { schemaVersion: 1, serverId: "server-1", channel: "general" });
+  } finally {
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("turso sync and hydrate stay disabled without credentials", async () => {
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
   const previousShared = process.env.SHARED_TURSO_DATABASE_URL, previousNode = process.env.NODE1_TURSO_AUTH_TOKEN;
