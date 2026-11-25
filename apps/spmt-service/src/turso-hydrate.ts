@@ -182,7 +182,7 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     for (const row of result.rows) {
       const id = String(row[0] ?? "");
       if (!id) continue;
-      let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string };
+      let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
       if (hasBody) {
         const body = parseBody(row[1]);
         if (!body) { skipped++; continue; }
