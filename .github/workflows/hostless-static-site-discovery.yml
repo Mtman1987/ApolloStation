@@ -89,6 +89,7 @@ jobs:
           const projects = await get("/projects");
           const sites = await get("/sites");
           const billingCycles = await get("/billing/cycles");
+          const paymentConfig = await get("/billing/payment-config");
           const summarize = (value, depth=0) => {
             if (depth>5 || value==null) return value;
             if (Array.isArray(value)) return value.slice(0,10).map(v=>summarize(v,depth+1));
@@ -129,7 +130,7 @@ jobs:
                 name:p.name ?? p.projectName ?? p.slug ?? null
               }))
             },
-            billing: {cyclesStatus:billingCycles.status,cycles:summarize(billingCycles.body)},
+            billing: {cyclesStatus:billingCycles.status,cycles:summarize(billingCycles.body),paymentConfigStatus:paymentConfig.status,paymentConfig:summarize(paymentConfig.body)},
             sites: {
               httpStatus: sites.status,
               items: rows(sites.body, ["sites","items"]).map(safeSite)
