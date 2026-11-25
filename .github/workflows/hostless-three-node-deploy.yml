@@ -25,6 +25,7 @@ on:
       - "apps/streamweaver/**"
       - "apps/stellar-core/**"
       - "apps/nebula-arcade/**"
+      - "apps/hearmeout/**"
       - "packages/**"
       - "services/**"
       - "hostless.yaml"
@@ -90,6 +91,8 @@ jobs:
       - run: npm run typecheck
       - name: Verify hosted AI fallback and Venice routing
         run: node --test tests/stellar-ai-chain.test.mjs
+      - name: Verify combined Node 1 and Node 2 hybrid runtime
+        run: node --test tests/hostless-hybrid-entrypoints.test.mjs
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
       - name: Check dedicated browser worker syntax
@@ -156,11 +159,11 @@ jobs:
               NODE1_TURSO_REQUIRED=false
               while IFS= read -r file; do
                 case "$file" in
-                  apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|scripts/setup-local-browser.mjs) NODE1=true; NODE1_TURSO_REQUIRED=true ;;
+                  apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|scripts/setup-local-browser.mjs) NODE1=true; NODE1_TURSO_REQUIRED=true ;;
                   tools/apollo-bulletin/*|apps/stellar-core/*|.github/workflows/hostless-three-node-deploy.yml) NODE1=true ;;
                 esac
                 case "$file" in
-                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|apps/stellar-core/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs) NODE2=true ;;
+                  apps/chat-gateway/*|apps/streamweaver/*|apps/nebula-arcade/*|apps/hearmeout/*|apps/stellar-core/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs|scripts/hostless/node2-ingress.mjs|scripts/hostless/ensure-node-app.mjs|tests/hostless-node2-ingress.test.mjs) NODE2=true ;;
                 esac
               done <<< "$CHANGED"
               case "$TARGET" in
@@ -188,7 +191,7 @@ jobs:
           NODE1_TURSO_REQUIRED=false
           while IFS= read -r file; do
             case "$file" in
-              apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|services/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs)
+              apps/spmt-service/*|apps/spacemountain-web/*|apps/spacemountain/*|apps/discord-stream-hub/*|packages/*|hostless.yaml|package.json|package-lock.json|tsconfig*.json|scripts/hostless/start-node.mjs)
                 NODE1=true
                 NODE1_TURSO_REQUIRED=true
                 ;;
@@ -225,7 +228,7 @@ jobs:
           });
           if (process.env.NODE2 === "true") include.push({
             node: "node2",
-            label: "Node 2 — Chat Gateway / StreamWeaver / Nebula",
+            label: "Node 2 — Chat Gateway / StreamWeaver / Nebula / HearMeOut",
             app: "apollo-node-2",
             hostless_secret: "HOSTLESS_NODE2_TOKEN",
           });

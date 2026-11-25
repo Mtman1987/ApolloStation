@@ -104,5 +104,57 @@ test('browser controller rejects non-Restream destinations and temporary profile
   assert.equal(allowedRestreamHost('https://example.com/'), false);
   assert.equal(allowedRestreamHost('http://app.restream.io/channel'), false);
   assert.equal(allowedRestreamHost('https://user:pass@app.restream.io/channel'), false);
-  assert.throws(() => createRestreamControl({ chromiumPath: '/usr/bin/chromium', puppeteer: {}, profileDir: '' }), /explicit absolute persistent-volume path/);
+  assert.throws(() => createRestreamControl({ chromiumPath: '/usr/bin/chromium', chromium: {}, profileDir: '' }), /explicit absolute persistent-volume path/);
+});
+
+test('browser controller launches a persistent Playwright context and stays on Restream', async t => {
+  const { createRestreamControl } = require('../src/restream-control');
+  const { mkdtemp, rm } = require('node:fs/promises');
+  const { tmpdir } = require('node:os');
+  const { join } = require('node:path');
+  const profileDir = await mkdtemp(join(tmpdir(), 'apollo-playwright-profile-'));
+  t.after(() => rm(profileDir, { recursive: true, force: true }));
+  const calls = [];
+  let currentUrl = 'about:blank';
+  const page = {
+    isClosed: () => false,
+    url: () => currentUrl,
+    goto: async url => { currentUrl = url; },
+    setViewportSize: async size => calls.push(['viewport', size]),
+    frames: () => [{ evaluate: async () => [{ index: 0, label: 'Go Live' }] }],
+    title: async () => 'Restream',
+  };
+  const context = {
+    pages: () => [page],
+    newPage: async () => page,
+    on: (event, listener) => calls.push(['event', event, typeof listener]),
+    close: async () => calls.push(['close']),
+  };
+  const chromium = {
+    launchPersistentContext: async (directory, options) => {
+      calls.push(['launch', directory, options]);
+      return context;
+    },
+  };
+  const { EventEmitter } = require('node:events');
+  const spawnImpl = () => {
+    const display = new EventEmitter();
+    display.pid = 123;
+    display.exitCode = null;
+    display.signalCode = null;
+    display.stdio = [null, null, new EventEmitter(), new EventEmitter()];
+    display.kill = () => { display.exitCode = 0; display.emit('close'); };
+    setImmediate(() => display.stdio[3].emit('data', Buffer.from('99\n')));
+    return display;
+  };
+  const control = createRestreamControl({ chromiumPath: '/usr/bin/chromium', chromium, profileDir, spawnImpl });
+  const status = await control.status();
+  assert.equal(status.state, 'offline', status.error || 'Playwright browser status did not resolve');
+  assert.equal(status.url, 'https://app.restream.io/channel');
+  const launch = calls.find(call => call[0] === 'launch');
+  assert.equal(launch[1], profileDir);
+  assert.equal(launch[2].executablePath, '/usr/bin/chromium');
+  assert.equal(launch[2].headless, false);
+  assert.deepEqual(launch[2].viewport, null);
+  await control.close();
 });

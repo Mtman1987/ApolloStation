@@ -12,7 +12,7 @@ const api = process.env.HOSTLESS_API_URL ?? "https://api.hostless.cloud/v1";
 
 const nodes = {
   node1: { label: "Node 1 — SPMT authority / SpaceMountain / OverlayBay", app: "apollo-node-1" },
-  node2: { label: "Node 2 — Chat Gateway / StreamWeaver / Nebula", app: "apollo-node-2" },
+  node2: { label: "Node 2 — Chat Gateway / StreamWeaver / Nebula / HearMeOut", app: "apollo-node-2" },
 };
 
 function fail(message) {
