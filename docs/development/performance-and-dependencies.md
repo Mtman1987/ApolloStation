@@ -78,8 +78,8 @@ Keep browser RTC code in its dedicated generated artifact and keep server/legacy
 - apps/spacemountain/src/shell-ui-base.ts is a large (~184 KB source) shell UI module. It is core product code, not dead code. Split by shell feature only after event wiring, state, navigation and accessibility tests exist.
 - apps/discord-stream-hub has browser capture and image rendering code; these should be worker-only.
 - apps/nebula-arcade uses sharp for image/media processing. Keep it on the worker/server path and out of browser/shell dependencies.
-- apps/hearmeout has a separate legacy worker with Discord voice/Opus, native RTC/WebRTC, Puppeteer, HLS and YouTube tooling. It is still imported by the current adapter and is migration debt, not unused code.
-- services/restream-control uses Puppeteer in a separate service package. It is not part of the shell dependency graph, but it is not yet launched by the Hostless Node 2 process map.
+- apps/hearmeout has a separate legacy worker with Discord voice/Opus, native RTC/WebRTC, Playwright, HLS and YouTube tooling. It is still imported by the current adapter and is migration debt, not unused code.
+- services/restream-control uses Playwright in a separate service package. It is not part of the shell dependency graph, but it is not yet launched by the Hostless Node 2 process map.
 
 ## 4. Asset audit
 
@@ -135,7 +135,7 @@ Each step should be a separate pull request with focused tests, full validation,
 - Do not remove Playwright from DSH until gameplay capture is moved into a dedicated worker.
 - Do not remove the HearMeOut legacy worker while the web server still imports its adapter.
 - Do not remove Nebula sharp while art/media routes use it.
-- Do not remove Restream Control Puppeteer while its service contract remains a planned capability.
+- Do not remove Restream Control Playwright while its service contract remains a planned capability.
 - Do not delete app code based only on file age, low direct-import counts or donor provenance.
 
 ## 8. Validation for every optimization

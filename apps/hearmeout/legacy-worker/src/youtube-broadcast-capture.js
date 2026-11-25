@@ -10,12 +10,12 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // This browser is a source appliance owned by the worker, never a viewing
 // window. Its private display and audio sink are recorded once into reusable
 // HLS. HTTP disconnects do not cancel this job.
-async function captureYoutubeBroadcast({ videoId, directory, indexPath, chromiumPath, puppeteer, onEncoder }) {
+async function captureYoutubeBroadcast({ videoId, directory, indexPath, chromiumPath, chromium, onEncoder }) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw Error('Invalid YouTube video');
   if (active.size >= 2) throw Error('Two YouTube sources are already being saved. Retry when one finishes.');
   const job = {};
   active.add(job);
-  let root, display, pulse, browser, host, encoder, encoderDone, encoderFailure = '', shuttingDown = false;
+  let root, display, pulse, context, host, encoder, encoderDone, encoderFailure = '', shuttingDown = false;
   const children = [];
   function child(command, args, options = {}) {
     const process = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], ...options });
@@ -60,15 +60,15 @@ async function captureYoutubeBroadcast({ videoId, directory, indexPath, chromium
       response.end(sourcePage(videoId));
     });
     await new Promise(resolve => host.listen(0, '127.0.0.1', resolve));
-    browser = await puppeteer.launch({
-      executablePath: chromiumPath, headless: false, defaultViewport: null,
-      userDataDir: join(root, 'chromium'), env: environment,
-      // Puppeteer's default mute flag would otherwise produce silent captures.
+    context = await chromium.launchPersistentContext(join(root, 'chromium'), {
+      executablePath: chromiumPath, headless: false, viewport: null,
+      env: environment,
+      // Chromium's default mute flag would otherwise produce silent captures.
       ignoreDefaultArgs: ['--mute-audio'],
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-position=0,0', '--window-size=1280,720', '--force-device-scale-factor=1', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
     });
-    browser.on('disconnected', () => { if (!shuttingDown) encoderFailure ||= 'The shared YouTube player disconnected'; });
-    const page = (await browser.pages())[0] || await browser.newPage();
+    context.on('close', () => { if (!shuttingDown) encoderFailure ||= 'The shared YouTube player disconnected'; });
+    const page = context.pages()[0] || await context.newPage();
     await page.goto('http://127.0.0.1:' + host.address().port + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => window.hmoCapture?.ready || window.hmoCapture?.error, { timeout: 30000 }).catch(() => { throw Error('YouTube did not load in the shared source player'); });
     let state = await page.evaluate(() => window.hmoCapture);
@@ -113,7 +113,7 @@ async function captureYoutubeBroadcast({ videoId, directory, indexPath, chromium
     shuttingDown = true;
     // Stop the encoder before tearing down its display/audio devices.
     await stop(encoder);
-    await browser?.close().catch(() => {});
+    await context?.close().catch(() => {});
     await Promise.all(children.filter(process => process !== encoder).map(stop));
     if (host) { host.closeAllConnections(); await new Promise(resolve => host.close(resolve)); }
     if (root) await rm(root, { recursive: true, force: true });

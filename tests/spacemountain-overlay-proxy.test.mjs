@@ -121,11 +121,13 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
     NEBULA_ARCADE_ORIGIN: "https://nebula.example.test",
     STREAMWEAVER_WEB_ORIGIN: "https://streamweaver.example.test",
     DSH_WEB_ORIGIN: "https://discord.example.test",
+    HEARMEOUT_WEB_ORIGIN: "https://hearmeout.example.test",
   });
   assert.equal(checked.spmtOrigin, "http://127.0.0.1:3000");
   assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
   assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
+  assert.equal(checked.greenAppOrigins.hearmeout, "https://hearmeout.example.test");
   assert.throws(() => validateIntegratedWebEnvironment({
     SPMT_RUNTIME_MODE: "production",
     SPMT_ORIGIN: "http://spmt.example.test",
@@ -240,4 +242,66 @@ test("ingress proxy strips standard and Connection-nominated hop-by-hop headers"
   assert.equal(headers["content-type"], "application/json");
   assert.equal(headers["content-length"], "12");
   assert.equal(headers.authorization, "Bearer service-token");
+});
+
+test("integrated gateway proxies HearMeOut app and watch APIs to the Node 2 origin", async () => {
+  const received = [];
+  const hmo = createServer((request, response) => {
+    received.push({ url: request.url, origin: request.headers.origin });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ app: "hearmeout", path: request.url }));
+  });
+  await new Promise(resolve => hmo.listen(0, "127.0.0.1", resolve));
+  const hmoOrigin = origin(hmo);
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    greenAppOrigins: { hearmeout: hmoOrigin },
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const base = origin(web.server);
+    const app = await fetch(base + "/apps/hearmeout", { headers: { origin: base } });
+    assert.equal(app.status, 200);
+    assert.equal((await app.json()).app, "hearmeout");
+    const watch = await fetch(base + "/api/watch/search?q=film", { headers: { origin: base } });
+    assert.equal(watch.status, 200);
+    assert.equal((await watch.json()).path, "/api/watch/search?q=film");
+    assert.deepEqual(received.map(value => value.url), ["/apps/hearmeout", "/api/watch/search?q=film"]);
+    assert.ok(received.every(value => value.origin === hmoOrigin));
+  } finally {
+    await web.close();
+    await new Promise(resolve => hmo.close(resolve));
+  }
+});
+
+test("integrated gateway routes Nebula Arcade app and API to Node 2", async () => {
+  const received = [];
+  const nebula = createServer((request, response) => {
+    received.push(request.url);
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ app: "nebula-arcade", path: request.url }));
+  });
+  await new Promise(resolve => nebula.listen(0, "127.0.0.1", resolve));
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    nebulaArcadeOrigin: origin(nebula),
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const base = origin(web.server);
+    const app = await fetch(base + "/apps/nebula-arcade");
+    assert.equal(app.status, 200);
+    assert.equal((await app.json()).app, "nebula-arcade");
+    const api = await fetch(base + "/api/nebula-arcade/health");
+    assert.equal(api.status, 200);
+    assert.equal((await api.json()).path, "/api/nebula-arcade/health");
+    assert.deepEqual(received, ["/apps/nebula-arcade", "/api/nebula-arcade/health"]);
+  } finally {
+    await web.close();
+    await new Promise(resolve => nebula.close(resolve));
+  }
 });

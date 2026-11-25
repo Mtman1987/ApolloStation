@@ -22,7 +22,7 @@ try {
   console.warn('[DJ Worker] @livekit/rtc-node not available — LiveKit DJ engine disabled. Run `npm install` inside the worker/ directory to enable it.');
 }
 const wrtc = require('@roamhq/wrtc');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 const { captureYoutubeBroadcast } = require('./youtube-broadcast-capture');
 const { createSpotlightHls } = require('./spotlight-hls');
 const { createLoungeBroadcast } = require('./lounge-broadcast');
@@ -66,13 +66,13 @@ const WORKER_CALLBACK_HEADERS = WORKER_SHARED_SECRET
   : {};
 const DEFAULT_WINDOWS_CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CHROMIUM_PATH =
-  process.env.PUPPETEER_EXECUTABLE_PATH ||
+  process.env.PLAYWRIGHT_EXECUTABLE_PATH ||
   (process.platform === 'win32' && existsSync(DEFAULT_WINDOWS_CHROME) ? DEFAULT_WINDOWS_CHROME : '/usr/bin/chromium');
 const EXTRACTOR_USER_DATA_DIR =
   process.env.EXTRACTOR_USER_DATA_DIR ||
-  process.env.PUPPETEER_USER_DATA_DIR ||
+  process.env.PLAYWRIGHT_USER_DATA_DIR ||
   join(rootDir, '.tmp-chrome-profile');
-const EXTRACTOR_PROFILE_DIR = process.env.EXTRACTOR_PROFILE_DIR || process.env.PUPPETEER_PROFILE_DIR || 'Default';
+const EXTRACTOR_PROFILE_DIR = process.env.EXTRACTOR_PROFILE_DIR || process.env.PLAYWRIGHT_PROFILE_DIR || 'Default';
 const UPSTREAM_EXTRACTOR_URL = (process.env.UPSTREAM_EXTRACTOR_URL || process.env.LOCAL_EXTRACTOR_URL || '').replace(/\/+$/, '');
 const UPSTREAM_EXTRACTOR_SECRET = process.env.UPSTREAM_EXTRACTOR_SECRET || process.env.LOCAL_EXTRACTOR_SECRET || '';
 const CACHE_DIR = process.env.MUSIC_CACHE_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/music' : join(__dirname, '..', '.cache', 'music'));
@@ -97,7 +97,7 @@ const PRIVATE_RENDERER = process.env.HMO_PRIVATE_RENDERER === 'true';
 const RUN_SPOTLIGHT = WORKER_ROLE === 'all' || WORKER_ROLE === 'spotlight';
 const RUN_LOUNGE = WORKER_ROLE === 'all' || WORKER_ROLE === 'lounge';
 const spotlightBroadcast = createSpotlightHls({
-  spotlightEndpoint: process.env.SPOTLIGHT_ENDPOINT || 'https://discord-stream-hub-new.fly.dev/api/community-spotlight',
+  spotlightEndpoint: process.env.SPOTLIGHT_ENDPOINT || new URL('/api/community-spotlight', process.env.SPMT_ORIGIN || 'https://apollo-node-1.hostless.app').toString(),
 });
 const directLounge = RUN_LOUNGE && process.env.HMO_LOUNGE_DIRECT_ONLY === 'true'
   ? createDirectLounge({
@@ -114,10 +114,10 @@ const directLounge = RUN_LOUNGE && process.env.HMO_LOUNGE_DIRECT_ONLY === 'true'
   : null;
 const loungeBroadcast = RUN_LOUNGE && !directLounge ? createLoungeBroadcast({
   chromiumPath: CHROMIUM_PATH,
-  puppeteer,
+  chromium,
   sourceUrl: process.env.LOUNGE_SOURCE_URL || (APP_URL ? `${APP_URL}/overlay/system-spacemountainlive-lounge?clean=1` : ''),
 }) : null;
-const restreamControl = RUN_LOUNGE ? createRestreamControl({ chromiumPath: CHROMIUM_PATH, puppeteer }) : null;
+const restreamControl = RUN_LOUNGE ? createRestreamControl({ chromiumPath: CHROMIUM_PATH, chromium }) : null;
 
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const OFFLINE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac']);
@@ -710,10 +710,9 @@ async function extractAudioInfo(videoId, forceRefresh = false) {
 
   console.warn(`[Extract] Browser capture starting for ${videoId}`);
   const userDataDir = createExtractorUserDataDir('audio', videoId);
-  const browser = await puppeteer.launch({
+  const context = await chromium.launchPersistentContext(userDataDir, {
     executablePath: CHROMIUM_PATH,
     headless: true,
-    userDataDir,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -724,8 +723,8 @@ async function extractAudioInfo(videoId, forceRefresh = false) {
     ],
   });
 
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 720 });
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 720 });
   let capturedUrl = null;
   let capturedContentType = null;
   let firstMediaUrl = null;
@@ -804,7 +803,7 @@ async function extractAudioInfo(videoId, forceRefresh = false) {
     setCachedExtractedInfo(videoId, info, 'audio');
     return info;
   } finally {
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
     cleanupExtractorUserDataDir(userDataDir);
   }
 }
@@ -842,10 +841,9 @@ async function extractVideoInfo(videoId, forceRefresh = false) {
 
   console.warn(`[Extract] Browser video capture starting for ${videoId}`);
   const userDataDir = createExtractorUserDataDir('video', videoId);
-  const browser = await puppeteer.launch({
+  const context = await chromium.launchPersistentContext(userDataDir, {
     executablePath: CHROMIUM_PATH,
     headless: true,
-    userDataDir,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -856,8 +854,8 @@ async function extractVideoInfo(videoId, forceRefresh = false) {
     ],
   });
 
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 720 });
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 720 });
   let capturedUrl = null;
   let capturedContentType = null;
   let firstMediaUrl = null;
@@ -947,7 +945,7 @@ async function extractVideoInfo(videoId, forceRefresh = false) {
     setCachedExtractedInfo(videoId, info, 'video');
     return info;
   } finally {
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
     cleanupExtractorUserDataDir(userDataDir);
   }
 }
@@ -1485,7 +1483,7 @@ function ensureYoutubeWatchHls(videoId, clientResolved = null) {
     }
 
     if (clientResolved?.capture === true) {
-      await captureYoutubeBroadcast({ videoId, directory: dir, indexPath, chromiumPath: CHROMIUM_PATH, puppeteer, onEncoder: protectWatchHlsStorage });
+      await captureYoutubeBroadcast({ videoId, directory: dir, indexPath, chromiumPath: CHROMIUM_PATH, chromium, onEncoder: protectWatchHlsStorage });
       return;
     }
 
@@ -2816,7 +2814,7 @@ async function startBrowserDJ(roomId) {
   }
 
   console.log(`[BrowserDJ:${roomId}] Launching Chromium publisher...`);
-  const browser = await puppeteer.launch({
+  const browser = await chromium.launch({
     executablePath: CHROMIUM_PATH,
     headless: true,
     args: [

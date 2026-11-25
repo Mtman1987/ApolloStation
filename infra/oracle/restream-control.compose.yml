@@ -16,7 +16,7 @@ services:
       RESTREAM_TLS_CERT_FILE: /run/secrets/restream-control.crt
       RESTREAM_TLS_KEY_FILE: /run/secrets/restream-control.key
       RESTREAM_AUTOMATION_ENABLED: ${RESTREAM_AUTOMATION_ENABLED:-false}
-      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PLAYWRIGHT_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - type: bind
         source: ${RESTREAM_PROFILE_HOST_PATH:?Mount the encrypted OCI profile volume on the host first}
