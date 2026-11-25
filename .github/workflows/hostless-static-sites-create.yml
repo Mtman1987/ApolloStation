@@ -62,52 +62,37 @@ jobs:
           if (!listed.ok) throw new Error("Hostless site inventory failed with HTTP " + listed.status);
           const items = Array.isArray(inventory) ? inventory : inventory.sites ?? inventory.items ?? inventory.data?.sites ?? [];
           const existing = items.find(site => (site.name ?? site.siteName) === siteName);
-          async function parseMcp(response) {
-            const raw = await response.text();
-            try { return JSON.parse(raw); } catch {
-              const data = raw.split(/\r?\n/).filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trim()).filter(Boolean);
-              if(data.length){try{return JSON.parse(data[data.length-1]);}catch{}}
-            }
-            throw new Error("Hostless MCP returned an unreadable response.");
-          }
-          async function mcp(method, params, id, sessionId) {
-            const headers = {Authorization:token,"Content-Type":"application/json",Accept:"application/json, text/event-stream"};
-            if(sessionId) headers["MCP-Session-Id"]=sessionId;
-            return fetch("https://mcp.hostless.app/mcp",{
-              method:"POST",headers,
-              body:JSON.stringify({jsonrpc:"2.0",id,method,params}),
-              signal:AbortSignal.timeout(30000)
-            });
-          }
           let result;
           if (existing) {
             result = {existing:true,site:{name:existing.name ?? existing.siteName,url:existing.url ?? existing.siteUrl ?? existing.publicUrl,status:existing.status ?? existing.state}};
           } else {
-            const initResponse = await mcp("initialize",{
-              protocolVersion:"2025-03-26",capabilities:{},
-              clientInfo:{name:"apollo-static-site-provisioner",version:"1.0.0"}
-            },1);
-            const init = await parseMcp(initResponse);
-            if (!initResponse.ok || init.error || !init.result) throw new Error("Hostless MCP initialization failed: " + (init.error?.message ?? initResponse.status));
-            const callResponse = await mcp("tools/call",{
-              name:"sites_create",
-              arguments:{
-                name:siteName,
-                projectId:process.env.PROJECT_ID,
-                gitPlatform:"Github",
-                gitRepo:process.env.GIT_REPO,
-                gitBranch:process.env.GIT_BRANCH,
-                gitCommitHash:process.env.GIT_COMMIT,
-                framework:"static",
-                buildCommand:"echo static-files-ready",
-                outputPath:process.env.OUTPUT_PATH
-              }
-            },2,initResponse.headers.get("mcp-session-id"));
-            const call = await parseMcp(callResponse);
-            if (!callResponse.ok || call.error || call.result?.isError) {
-              throw new Error("Hostless site creation failed: " + JSON.stringify(call.error ?? call.result?.content ?? call).slice(0,2500));
+            const payload = {
+              name:siteName,
+              projectId:process.env.PROJECT_ID,
+              gitPlatform:"Github",
+              gitRepo:process.env.GIT_REPO,
+              gitBranch:process.env.GIT_BRANCH,
+              gitCommitHash:process.env.GIT_COMMIT,
+              framework:"static",
+              buildCommand:"echo static-files-ready",
+              outputPath:process.env.OUTPUT_PATH
+            };
+            let response, body = {};
+            for (let attempt=1; attempt<=3; attempt++) {
+              response = await fetch(api + "/sites", {
+                method:"POST",
+                headers:{Authorization:token,Accept:"application/json","Content-Type":"application/json"},
+                body:JSON.stringify(payload),
+                signal:AbortSignal.timeout(30000)
+              });
+              const raw = await response.text();
+              try { body = raw ? JSON.parse(raw) : {}; } catch { body = {message:raw.slice(0,1200)}; }
+              if (response.status !== 503 || attempt === 3) break;
+              await new Promise(resolve=>setTimeout(resolve,5000*attempt));
             }
-            result = {existing:false,site:call.result?.structuredContent ?? call.result?.content ?? call.result};
+            if (!response.ok) throw new Error("Hostless site creation failed with HTTP " + response.status + ": " + JSON.stringify(body).slice(0,2500));
+            const site = body.site ?? body.data ?? body;
+            result = {existing:false,site:{name:site.name ?? site.siteName ?? siteName,url:site.url ?? site.siteUrl ?? site.publicUrl ?? null,status:site.status ?? site.state ?? null,id:site.id ?? site.siteId ?? null,raw:site}};
           }
           console.log(JSON.stringify({account:process.env.LABEL,siteName,...result}));
           NODE
