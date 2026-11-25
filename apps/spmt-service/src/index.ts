@@ -808,7 +808,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
       if (request.method === "POST" && url.pathname === "/v1/auth/browser-login") {
         const origin = header(request, "origin");
-        const allowedOrigins = new Set(["https://spacemountain.live", "https://www.spacemountain.live"]);
+        const allowedOrigins = new Set(["https://spacemountain.live", "https://www.spacemountain.live", "https://spmt.live", "https://www.spmt.live"]);
         if (!origin || !allowedOrigins.has(origin)) return json(response, 403, { error: "invalid_origin" });
         if (runtimeMode !== "production") return json(response, 404, { error: "not_found" });
         let body: Record<string, string>;
