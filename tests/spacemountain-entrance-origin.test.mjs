@@ -3,7 +3,7 @@ import test from "node:test";
 import { createServer } from "node:http";
 import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
 
-// The spacemountain.live entrance is a static GitHub Pages page whose sign-in
+// The spacemountain.live and spmt.live entrances are static GitHub Pages pages whose sign-in
 // form posts cross-origin to Node 1. Three layers must line up for it to work:
 // the ingress cross-origin guard lets exactly that one post through, the SPMT
 // API proxy forwards it WITHOUT rewriting the Origin header, and the SPMT
@@ -14,7 +14,7 @@ test("the entrance origin may post only the browser sign-in through Apollo ingre
   const spmt = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://stub.invalid");
     if (url.pathname === "/v1/auth/browser-login") {
-      if (["https://spacemountain.live", "https://www.spacemountain.live"].includes(req.headers.origin ?? "")) {
+      if (["https://spacemountain.live", "https://www.spacemountain.live", "https://spmt.live", "https://www.spmt.live"].includes(req.headers.origin ?? "")) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end('{"stub":"spmt-service"}');
       } else {
@@ -35,12 +35,12 @@ test("the entrance origin may post only the browser sign-in through Apollo ingre
     const base = `http://127.0.0.1:${ingress.server.address().port}`;
     const post = (path, origin) => fetch(base + path, { method: "POST", headers: { origin, "content-type": "application/x-www-form-urlencoded" }, body: "username=probe&password=probe", redirect: "manual" });
 
-    for (const origin of ["https://spacemountain.live", "https://www.spacemountain.live"]) {
+    for (const origin of ["https://spacemountain.live", "https://www.spacemountain.live", "https://spmt.live", "https://www.spmt.live"]) {
       const response = await post("/v1/auth/browser-login", origin);
       assert.equal(response.status, 200, `${origin} sign-in post must reach the SPMT service with its origin intact`);
       assert.match(await response.text(), /spmt-service/);
     }
-    for (const origin of ["https://evil.example", "http://spacemountain.live", "https://spacemountain.live.evil.example", "null"]) {
+    for (const origin of ["https://evil.example", "http://spacemountain.live", "https://spacemountain.live.evil.example", "http://spmt.live", "https://spmt.live.evil.example", "null"]) {
       assert.equal((await post("/v1/auth/browser-login", origin)).status, 403, `${origin} must stay rejected`);
     }
     for (const path of ["/v1/auth/token", "/v1/auth/register", "/v1/apps", "/v1/auth/browser-login/extra"]) {
