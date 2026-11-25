@@ -52,9 +52,11 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // sees every row, in rowid order, and the per-table totals are unchanged.
 const HYDRATE_PAGE_SIZE = 2000;
 const HYDRATE_PAGE_ATTEMPTS = 3;
+const HYDRATE_PROGRESS_EVERY_PAGES = 5;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
-async function forEachHydratePage(db: TursoHttpAdapter, select: string, onRow: (row: HydrateRow) => void): Promise<number> {
-  let offset = 0, total = 0;
+async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: string, onRow: (row: HydrateRow) => void): Promise<number> {
+  let offset = 0, total = 0, pages = 0;
+  const started = Date.now();
   for (;;) {
     // One failed page fetch used to abort the whole boot hydrate: the paged
     // reads make ~120 sequential requests, and a single stale keep-alive
@@ -74,11 +76,20 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, onRow: (
       }
     }
     if (!page) throw new Error("turso hydrate page fetch returned no result");
+    pages++;
     total += page.rows.length;
     for (const row of page.rows) onRow(row);
+    // Progress logging: a boot that pages a large table (the promoted XP
+    // ledger is ~92 pages) used to log nothing until the whole hydrate
+    // finished, so a slow or hung boot was indistinguishable from a dead
+    // one in the runtime logs. Speak every few pages and once at the end.
+    if (pages % HYDRATE_PROGRESS_EVERY_PAGES === 0) {
+      console.log(`[spmt] turso hydrate progress table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
+    }
     if (page.rows.length < HYDRATE_PAGE_SIZE) break;
     offset += page.rows.length;
   }
+  console.log(`[spmt] turso hydrate scan complete table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
   return total;
 }
 
@@ -113,7 +124,7 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     if (!idCol) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "no user id column" }; continue; }
     const hasBody = cols.includes("body");
     let inserted = 0, skipped = 0;
-    const remote = await forEachHydratePage(db, `SELECT ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, (row) => {
+    const remote = await forEachHydratePage(db, `SELECT ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, table, (row) => {
       const id = String(row[0] ?? "");
       if (!id) return;
       const body = hasBody ? parseBody(row[1]) : undefined;
@@ -219,7 +230,7 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     // reads this.db, so an unbound capture would throw on every event.
     const appendXp = options.authority.appendXp.bind(options.authority);
     let inserted = 0, skipped = 0;
-    const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, (row) => {
+    const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, table, (row) => {
       const id = String(row[0] ?? "");
       if (!id) return;
       let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
