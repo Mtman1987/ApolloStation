@@ -224,3 +224,37 @@ test("submitted dispatch without a verified reply receipt is uncertain and never
     if (priorRequireTurso === undefined) delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO; else process.env.APOLLO_BULLETIN_REQUIRE_TURSO = priorRequireTurso;
   }
 });
+
+test("restart marks an interrupted persisted Hostless cron tick failed and not ready", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-restart-test-token";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  let persisted = {
+    tasks: [], activity: [],
+    cron: { status: "running", inFlight: true, completedTicks: 4, failedTicks: 0, lastTickStartedAt: Date.now(), lastTickCompletedAt: Date.now() - 600_000, lastTickProcessed: null },
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/health/ready");
+    assert.equal(response.status, 503);
+    const proof = await response.json();
+    assert.equal(proof.cron.lastTickStatus, "interrupted");
+    assert.equal(proof.cron.inFlight, false);
+    assert.equal(proof.cron.failedTicks, 1);
+    assert.equal(persisted.cron.status, "interrupted");
+    assert.equal(persisted.cron.inFlight, false);
+  } finally {
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
