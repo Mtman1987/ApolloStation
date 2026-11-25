@@ -45,6 +45,25 @@ const parseBody = (value: unknown): Record<string, unknown> | undefined => {
 };
 const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 
+// Turso's HTTP adapter returns a whole result set in one JSON response, so a
+// full-table read of a large table (the promoted XP ledger is ~182k rows,
+// ~110 MB) can spike the boot process's memory before it ever listens. Page
+// the big reads so only one page is in flight at a time; the caller still
+// sees every row, in rowid order, and the per-table totals are unchanged.
+const HYDRATE_PAGE_SIZE = 2000;
+type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
+async function forEachHydratePage(db: TursoHttpAdapter, select: string, onRow: (row: HydrateRow) => void): Promise<number> {
+  let offset = 0, total = 0;
+  for (;;) {
+    const page = await db.execute(`${select} ORDER BY rowid LIMIT ${HYDRATE_PAGE_SIZE} OFFSET ${offset}`, [], true);
+    total += page.rows.length;
+    for (const row of page.rows) onRow(row);
+    if (page.rows.length < HYDRATE_PAGE_SIZE) break;
+    offset += page.rows.length;
+  }
+  return total;
+}
+
 async function exists(db: TursoHttpAdapter, table: string) {
   const r = await db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", [table], true);
   return r.rows.length > 0;
@@ -75,18 +94,17 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     const cols = await columns(db, table), idCol = cols.includes("id") ? "id" : cols.includes("user_id") ? "user_id" : undefined;
     if (!idCol) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "no user id column" }; continue; }
     const hasBody = cols.includes("body");
-    const result = await db.execute(`SELECT ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, [], true);
     let inserted = 0, skipped = 0;
-    for (const row of result.rows) {
+    const remote = await forEachHydratePage(db, `SELECT ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, (row) => {
       const id = String(row[0] ?? "");
-      if (!id) continue;
+      if (!id) return;
       const body = hasBody ? parseBody(row[1]) : undefined;
       if (body && typeof body.username === "string" && body.username.trim()) profileHints.set(id, body);
-      if (options.authority.getUser(id)) { skipped++; continue; }
+      if (options.authority.getUser(id)) { skipped++; return; }
       options.authority.putUser({ id, createdAt: typeof body?.createdAt === "string" ? body.createdAt : now() });
       inserted++;
-    }
-    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+    });
+    report.tables[table] = { remote, inserted, skipped };
     break;
   }
 
@@ -177,15 +195,19 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: `missing columns: ${missingColumns.join(", ")}` };
       continue;
     }
-    const result = await db.execute(hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, [], true);
+    // Capture the optional method while the outer `if (options.authority.appendXp)`
+    // guard still narrows it: the page callback is a separate closure, so the
+    // guard's narrowing does not reach inside it. Bind it: the store method
+    // reads this.db, so an unbound capture would throw on every event.
+    const appendXp = options.authority.appendXp.bind(options.authority);
     let inserted = 0, skipped = 0;
-    for (const row of result.rows) {
+    const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, (row) => {
       const id = String(row[0] ?? "");
-      if (!id) continue;
+      if (!id) return;
       let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
       if (hasBody) {
         const body = parseBody(row[1]);
-        if (!body) { skipped++; continue; }
+        if (!body) { skipped++; return; }
         event = { id, tenantId: String(body.tenantId ?? body.tenant_id ?? ""), userId: String(body.userId ?? body.user_id ?? ""), delta: Number(body.delta ?? 0), sourceAppId: String(body.sourceAppId ?? body.source_app_id ?? "spmt"), reason: String(body.reason ?? "imported"), idempotencyKey: String(body.idempotencyKey ?? body.idempotency_key ?? id), createdAt: String(body.createdAt ?? body.created_at ?? now()) };
         // Carry the optional event facets through the round trip: the local
         // store persists the whole event as its body and turso-sync mirrors
@@ -197,10 +219,10 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       } else {
         event = { id, tenantId: String(row[1] ?? ""), userId: String(row[2] ?? ""), delta: Number(row[3] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[4] ?? id), createdAt: now() };
       }
-      if (!event.tenantId || !event.userId) { skipped++; continue; }
-      try { options.authority.appendXp(event); inserted++; } catch { skipped++; }
-    }
-    report.tables[table] = { remote: result.rows.length, inserted, skipped };
+      if (!event.tenantId || !event.userId) { skipped++; return; }
+      try { appendXp(event); inserted++; } catch { skipped++; }
+    });
+    report.tables[table] = { remote, inserted, skipped };
     break;
   }
 
@@ -296,3 +318,4 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
   report.durationMs = Date.now() - started;
   return report;
 }
+

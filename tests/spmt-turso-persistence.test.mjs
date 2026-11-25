@@ -241,6 +241,50 @@ test("turso sync pages large local tables instead of materializing them", async 
   }
 });
 
+test("turso hydrate pages large remote tables instead of fetching them whole", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-paging-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  // More than two 2000-row pages: the promoted seed-era XP ledger is ~182k
+  // rows in one remote table, and the boot hydrate used to fetch it in a
+  // single ~110 MB response before the service ever listened.
+  const TOTAL = 4500;
+  const rows = new Map();
+  for (let i = 0; i < TOTAL; i++) {
+    const body = JSON.stringify({
+      id: `xp_page_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
+      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_page_key_${i}`, createdAt: NOW,
+    });
+    rows.set(JSON.stringify([`xp_page_${i}`]), new Map([
+      ["id", `xp_page_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
+      ["idempotency_key", `xp_page_key_${i}`], ["delta", 1], ["body", body],
+    ]));
+  }
+  fake.tables.set("spmt_xp_ledger", {
+    columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
+    pkCount: 1, rows,
+  });
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
+    const events = authority.listXp("tenant_bulk", "user_bulk");
+    assert.equal(events.length, TOTAL);
+    assert.equal(events[TOTAL - 1].id, `xp_page_${TOTAL - 1}`);
+  } finally {
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("turso sync and hydrate stay disabled without credentials", async () => {
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
   const previousShared = process.env.SHARED_TURSO_DATABASE_URL, previousNode = process.env.NODE1_TURSO_AUTH_TOKEN;
