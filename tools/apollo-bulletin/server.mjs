@@ -279,7 +279,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const cronState = state.cron || {};
         const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
         const cronExecutionConfirmed = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
-          lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
+          lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 300_000;
         const readiness = readinessStatus({
           browserRequired, browserStarted: browserInfrastructureReady,
           persistenceRequired, persistenceAvailable: Boolean(persistence),
