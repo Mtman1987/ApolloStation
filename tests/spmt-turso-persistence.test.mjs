@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { SqliteAuthorityStore } from "../packages/authority-sqlite/dist/index.js";
+import { SqlitePlatformDataStore } from "../packages/platform-data-sqlite/dist/index.js";
+import { AuthService } from "../packages/auth-core/dist/index.js";
+import { hydrateSpmtFromTurso } from "../apps/spmt-service/dist/turso-hydrate.js";
+import { syncSpmtToTurso } from "../apps/spmt-service/dist/turso-sync.js";
+
+// Minimal in-memory stand-in for the Turso HTTP (Hrana) endpoint: it stores
+// the statements the write-back sends and answers the hydrate's reads, so the
+// test proves the full local -> Turso -> local round trip with no network.
+function createFakeTurso() {
+  const tables = new Map();
+  const decode = (v) => !v || v.type === "null" ? null
+    : v.type === "integer" ? Number(v.value)
+    : v.type === "float" ? v.value
+    : v.type === "text" ? v.value
+    : Buffer.from(v.base64, "base64");
+  const encode = (v) => v === null || v === undefined ? { type: "null" }
+    : typeof v === "string" ? { type: "text", value: v }
+    : typeof v === "bigint" ? { type: "integer", value: v.toString() }
+    : typeof v === "number" ? (Number.isInteger(v) ? { type: "integer", value: String(v) } : { type: "float", value: v })
+    : { type: "blob", base64: Buffer.from(v).toString("base64") };
+  const ok = (cols, rows, affected = 0) => ({ type: "ok", response: { type: "execute", result: { cols: cols.map((name) => ({ name })), rows, affected_row_count: affected, last_insert_rowid: null } } });
+  const splitTopLevel = (text) => {
+    const parts = []; let depth = 0, start = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "(") depth++;
+      else if (text[i] === ")") depth--;
+      else if (text[i] === "," && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
+    }
+    parts.push(text.slice(start));
+    return parts;
+  };
+  function execute(stmt) {
+    const sql = stmt.sql.trim();
+    const args = (stmt.args ?? []).map(decode);
+    let m;
+    if ((m = sql.match(/^CREATE TABLE IF NOT EXISTS "([^"]+)" \(([\s\S]+)\)$/))) {
+      if (!tables.has(m[1])) {
+        const columns = []; let pkCount = 1;
+        for (const def of splitTopLevel(m[2])) {
+          const column = def.trim().match(/^"([^"]+)"/);
+          if (column) columns.push(column[1]);
+          const pk = def.match(/PRIMARY KEY \(([^)]+)\)/i);
+          if (pk) pkCount = pk[1].split(",").length;
+        }
+        tables.set(m[1], { columns, pkCount, rows: new Map() });
+      }
+      return ok([], []);
+    }
+    if ((m = sql.match(/^INSERT OR REPLACE INTO "([^"]+)" \(([^)]+)\) VALUES ([\s\S]+)$/))) {
+      const table = tables.get(m[1]);
+      if (!table) throw new Error(`no such table: ${m[1]}`);
+      const cols = m[2].split(",").map((s) => s.trim().replaceAll('"', ""));
+      const groups = (m[3].match(/\([^)]*\)/g) ?? []).length;
+      for (let g = 0; g < groups; g++) {
+        const row = new Map(cols.map((c, i) => [c, args[g * cols.length + i]]));
+        table.rows.set(JSON.stringify(cols.slice(0, table.pkCount).map((c) => row.get(c))), row);
+      }
+      return ok([], [], groups);
+    }
+    if (/^SELECT 1 FROM sqlite_master/.test(sql)) return ok(["1"], tables.has(args[0]) ? [[encode(1)]] : []);
+    if ((m = sql.match(/^PRAGMA table_info\("([^"]+)"\)$/))) {
+      const table = tables.get(m[1]);
+      return ok(["cid", "name", "type", "notnull", "dflt_value", "pk"], table ? table.columns.map((name, i) => [encode(i), encode(name), encode("TEXT"), encode(0), { type: "null" }, encode(i < table.pkCount ? 1 : 0)]) : []);
+    }
+    if ((m = sql.match(/^SELECT ([\s\S]+) FROM "([^"]+)"$/))) {
+      const table = tables.get(m[2]);
+      if (!table) throw new Error(`no such table: ${m[2]}`);
+      const cols = m[1].split(",").map((s) => s.trim().replaceAll('"', ""));
+      return ok(cols, [...table.rows.values()].map((row) => cols.map((c) => encode(row.get(c) ?? null))));
+    }
+    throw new Error(`fake turso: unsupported SQL: ${sql.slice(0, 120)}`);
+  }
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    const results = body.requests.map((request) => request.type === "close" ? { type: "ok", response: { type: "close" } } : execute(request.stmt));
+    return new Response(JSON.stringify({ baton: null, base_url: null, results }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  return { fetchImpl, tables };
+}
+
+const NOW = "2026-11-25T12:00:00.000Z";
+
+test("spmt identity state survives a local wipe through the Turso write-back and hydrate", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-roundtrip-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake.turso.local";
+  process.env.TURSO_AUTH_TOKEN = "test-token";
+  let authority, platform, authority2, platform2;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    authority.putUser({ id: "user_probe", createdAt: NOW });
+    authority.putTenant({ id: "tenant_probe", ownerUserId: "user_probe", status: "active", name: "Probe tenant", createdAt: NOW, updatedAt: NOW });
+    authority.putWorkspace({ tenantId: "tenant_probe", revision: 7, appearance: { theme: "dark" }, dockSlots: ["app-a", null, "app-c"], ttsSubscriptionIds: ["sub-1"], appThemes: { chat: "midnight" }, updatedAt: NOW });
+    authority.putProviderLink({ provider: "discord", providerUserId: "discord-1", userId: "user_probe", linkedAt: NOW });
+    platform.putUserProfile({ userId: "user_probe", username: "probeuser", displayName: "Probe User", tenantIds: ["tenant_probe"], createdAt: NOW, updatedAt: NOW });
+    platform.putUserCredential("user_probe", "salt123", "hash456");
+    authority.appendXp({ id: "xp_probe", tenantId: "tenant_probe", userId: "user_probe", delta: 42, sourceAppId: "spmt", reason: "roundtrip test", idempotencyKey: "xp_probe_key", createdAt: NOW });
+    const auth = new AuthService({ store: authority });
+    const issued = auth.issueHumanSession({ userId: "user_probe", scopes: ["profile:read"], tenantIds: ["tenant_probe"] });
+    assert.ok(issued.accessToken && issued.refreshToken);
+
+    const syncReport = await syncSpmtToTurso({ databasePath, fetchImpl: fake.fetchImpl });
+    assert.equal(syncReport.enabled, true);
+    for (const [table, stats] of Object.entries(syncReport.tables)) assert.equal(stats.error, undefined, `${table}: ${stats.error}`);
+    assert.equal(syncReport.tables.spmt_users.written, 1);
+    assert.equal(syncReport.tables.spmt_user_credentials.written, 1);
+    assert.equal(syncReport.tables.spmt_access_sessions.written, 1);
+    assert.equal(syncReport.tables.spmt_refresh_tokens.written, 1);
+    assert.equal(syncReport.tables.spmt_workspace_profiles.written, 1);
+
+    // Simulate the Hostless redeploy: the local database file is wiped.
+    authority.close(); platform.close(); authority = platform = undefined;
+    rmSync(databasePath, { force: true });
+    rmSync(`${databasePath}-wal`, { force: true });
+    rmSync(`${databasePath}-shm`, { force: true });
+
+    authority2 = new SqliteAuthorityStore(databasePath);
+    platform2 = new SqlitePlatformDataStore(databasePath);
+    assert.equal(authority2.getUser("user_probe"), undefined, "fresh store starts empty");
+
+    const hydrateReport = await hydrateSpmtFromTurso({ authority: authority2, platform: platform2, fetchImpl: fake.fetchImpl });
+    assert.equal(hydrateReport.enabled, true);
+    for (const [table, stats] of Object.entries(hydrateReport.tables)) assert.equal(stats.error, undefined, `${table}: ${stats.error}`);
+
+    assert.deepEqual(authority2.getUser("user_probe"), { id: "user_probe", createdAt: NOW });
+    assert.equal(authority2.getTenant("tenant_probe")?.ownerUserId, "user_probe");
+    const workspace = authority2.getWorkspace("tenant_probe");
+    assert.equal(workspace?.revision, 7);
+    assert.deepEqual(workspace?.dockSlots, ["app-a", null, "app-c"], "workspace restores losslessly, dock slots included");
+    assert.equal(workspace?.appearance.theme, "dark");
+    assert.equal(authority2.getProviderLink("discord", "discord-1")?.userId, "user_probe");
+    assert.equal(platform2.getUserProfile("user_probe")?.username, "probeuser");
+    assert.deepEqual(platform2.getUserCredential("user_probe"), { salt: "salt123", hash: "hash456" });
+    assert.equal(authority2.listXp("tenant_probe", "user_probe").length, 1);
+
+    const auth2 = new AuthService({ store: authority2 });
+    const principal = auth2.authenticateAccessToken(issued.accessToken);
+    assert.equal(principal?.actorId, "user_probe", "pre-wipe access token still authenticates after the restart");
+    const rotated = auth2.rotateHumanRefresh(issued.refreshToken);
+    assert.ok(rotated.accessToken, "pre-wipe refresh token still rotates after the restart");
+  } finally {
+    authority?.close(); platform?.close(); authority2?.close(); platform2?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("turso sync and hydrate stay disabled without credentials", async () => {
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  const previousShared = process.env.SHARED_TURSO_DATABASE_URL, previousNode = process.env.NODE1_TURSO_AUTH_TOKEN;
+  delete process.env.TURSO_DATABASE_URL; delete process.env.TURSO_AUTH_TOKEN;
+  delete process.env.SHARED_TURSO_DATABASE_URL; delete process.env.NODE1_TURSO_AUTH_TOKEN;
+  try {
+    const syncReport = await syncSpmtToTurso({ databasePath: join(tmpdir(), "never-opened.sqlite") });
+    assert.equal(syncReport.enabled, false);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority: {}, platform: {} });
+    assert.equal(hydrateReport.enabled, false);
+  } finally {
+    if (previousUrl !== undefined) process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken !== undefined) process.env.TURSO_AUTH_TOKEN = previousToken;
+    if (previousShared !== undefined) process.env.SHARED_TURSO_DATABASE_URL = previousShared;
+    if (previousNode !== undefined) process.env.NODE1_TURSO_AUTH_TOKEN = previousNode;
+  }
+});
