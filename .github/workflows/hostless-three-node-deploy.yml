@@ -257,10 +257,10 @@ jobs:
       group: apollo-hostless-${{ matrix.node }}
       cancel-in-progress: false
     strategy:
-      # Hostless queued Node 2 while Node 1 was building this same repository.
-      # Deploy Node 1 first, then Node 2; stop the matrix if Node 1 fails.
-      fail-fast: true
-      max-parallel: 1
+      # Node 1 and Node 2 are independent Hostless apps; build them concurrently.
+      # A node-scoped concurrency group above prevents duplicate builds of the same app.
+      fail-fast: false
+      max-parallel: 2
       matrix: ${{ fromJSON(needs.detect-deploy-targets.outputs.matrix) }}
     steps:
       - name: Check out the exact validated commit
