@@ -1073,8 +1073,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
       tursoSyncReport = await syncSpmtToTurso({ databasePath: options.databasePath, fetchImpl });
       if (tursoSyncReport.enabled) {
         const failed = Object.entries(tursoSyncReport.tables).filter(([, stats]) => stats.error);
-        const summary = Object.entries(tursoSyncReport.tables).map(([name, stats]) => `${name}:${stats.written}`).join(",") || "no-matching-tables";
-        const detail = `synced in ${tursoSyncReport.durationMs}ms (${summary})${failed.length ? `; errors: ${failed.map(([name]) => name).join(",")}` : ""}`;
+        const written = Object.values(tursoSyncReport.tables).reduce((total, stats) => total + stats.written, 0);
+        const detail = `synced in ${tursoSyncReport.durationMs}ms, ${written} rows written${failed.length ? `; errors: ${failed.map(([name]) => name).join(",")}` : ""}`;
         health.setDependency("turso-sync", failed.length ? "degraded" : "ready", detail.slice(0, 200));
       } else {
         health.setDependency("turso-sync", "degraded", tursoSyncReport.reason ?? "turso credentials not configured");
