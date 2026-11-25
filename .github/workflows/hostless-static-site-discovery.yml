@@ -88,6 +88,16 @@ jobs:
           const credential = await get("/api-keys/current");
           const projects = await get("/projects");
           const sites = await get("/sites");
+          const billingCycles = await get("/billing/cycles");
+          const billingBreakdown = await get("/billing/breakdown?startDate=2026-11-01&endDate=2026-11-30");
+          const summarize = (value, depth=0) => {
+            if (depth>5 || value==null) return value;
+            if (Array.isArray(value)) return value.slice(0,10).map(v=>summarize(v,depth+1));
+            if (typeof value!=="object") return value;
+            const out={};
+            for(const [k,v] of Object.entries(value)) if (/(status|state|overdue|paused|plan|dueDate|paidAt|cycle|invoice|creation)/i.test(k)) out[k]=summarize(v,depth+1);
+            return out;
+          };
           const projectRows = rows(projects.body, ["projects","items"]);
           const gitConnections = await Promise.all(projectRows.map(async p => {
             const id = p.id ?? p.projectId;
