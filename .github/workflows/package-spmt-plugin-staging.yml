@@ -21,11 +21,11 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Create ZIP archive
+      - name: Create Plugin Creator ZIP
         run: |
-          test -f plugin-release/spmt-ecosystem-0.3.1/plugin.json
-          cd plugin-release
-          zip -r ../spmt-ecosystem-plugin-0.3.1.zip spmt-ecosystem-0.3.1
+          cd plugin-release/spmt-ecosystem-0.3.1
+          test -f plugin.json
+          zip -r ../../spmt-ecosystem-plugin-0.3.1.zip .
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
