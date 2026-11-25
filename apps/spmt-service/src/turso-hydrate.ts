@@ -197,8 +197,9 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     }
     // Capture the optional method while the outer `if (options.authority.appendXp)`
     // guard still narrows it: the page callback is a separate closure, so the
-    // guard's narrowing does not reach inside it.
-    const appendXp = options.authority.appendXp;
+    // guard's narrowing does not reach inside it. Bind it: the store method
+    // reads this.db, so an unbound capture would throw on every event.
+    const appendXp = options.authority.appendXp.bind(options.authority);
     let inserted = 0, skipped = 0;
     const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, (row) => {
       const id = String(row[0] ?? "");
