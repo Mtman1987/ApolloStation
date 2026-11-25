@@ -285,6 +285,58 @@ test("turso hydrate pages large remote tables instead of fetching them whole", a
   }
 });
 
+test("turso hydrate retries a failed page fetch instead of aborting the boot", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-retry-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  // Two boots of the promoted ledger died with "[spmt] turso hydrate failed:
+  // fetch failed" after fetching most of the table: one stale keep-alive
+  // connection aborting a single page must not abort the whole hydrate.
+  const TOTAL = 4500;
+  const rows = new Map();
+  for (let i = 0; i < TOTAL; i++) {
+    const body = JSON.stringify({
+      id: `xp_retry_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
+      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_retry_key_${i}`, createdAt: NOW,
+    });
+    rows.set(JSON.stringify([`xp_retry_${i}`]), new Map([
+      ["id", `xp_retry_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
+      ["idempotency_key", `xp_retry_key_${i}`], ["delta", 1], ["body", body],
+    ]));
+  }
+  fake.tables.set("spmt_xp_ledger", {
+    columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
+    pkCount: 1, rows,
+  });
+  let failedPageAttempts = 0;
+  const flakyFetch = async (url, init) => {
+    const sql = JSON.parse(init.body).requests?.[0]?.stmt?.sql ?? "";
+    if (sql.includes("OFFSET 2000") && failedPageAttempts < 2) {
+      failedPageAttempts++;
+      throw new TypeError("fetch failed");
+    }
+    return fake.fetchImpl(url, init);
+  };
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: flakyFetch });
+    assert.equal(failedPageAttempts, 2, "the middle page's fetch fails twice before succeeding");
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
+    assert.equal(authority.listXp("tenant_bulk", "user_bulk").length, TOTAL);
+  } finally {
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("turso sync and hydrate stay disabled without credentials", async () => {
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
   const previousShared = process.env.SHARED_TURSO_DATABASE_URL, previousNode = process.env.NODE1_TURSO_AUTH_TOKEN;
