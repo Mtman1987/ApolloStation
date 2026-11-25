@@ -1,0 +1,31 @@
+{
+  "interface": {
+    "capabilities": [
+      "Code",
+      "Interactive"
+    ],
+    "category": "Developer Tools",
+    "defaultPrompt": [
+      "Use SPMT Ecosystem as the ApolloStation operating ally. Reuse existing approved credentials, preserve Node 1/2 topology and durable data, validate before deployment, and verify every claimed result."
+    ],
+    "developerName": "Carl Stodgel",
+    "displayName": "SPMT Ecosystem",
+    "longDescription": "Private operating ally for ApolloStation and connected projects.",
+    "shortDescription": "ApolloStation operating ally"
+  },
+  "name": "spmt",
+  "version": "0.3.1",
+  "description": "SPMT Ecosystem — proactive operating ally for ApolloStation and connected work.",
+  "author": {
+    "name": "Carl Stodgel",
+    "email": "mtman1987@gmail.com"
+  },
+  "keywords": [
+    "ApolloStation",
+    "SPMT",
+    "engineering",
+    "Hostless",
+    "GitHub Actions"
+  ],
+  "skills": "./skills"
+}
