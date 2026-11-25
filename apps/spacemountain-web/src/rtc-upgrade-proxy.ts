@@ -1,7 +1,17 @@
 import { request as httpRequest, type Server } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import type { Duplex } from 'node:stream';
 
 /** Same-origin ingress for the room's authenticated WebSocket, including audio. */
+export function validateHearMeOutRtcOrigin(originValue: string) {
+  const target = new URL(originValue);
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname);
+  if ((target.protocol !== 'https:' && !(target.protocol === 'http:' && loopback)) || target.username || target.password || target.pathname !== '/' || target.search || target.hash) {
+    throw new Error('HearMeOut RTC proxy target must be HTTPS or loopback HTTP and contain only an origin');
+  }
+  return target;
+}
+
 export function attachHearMeOutRtcProxy(server: Server, originValue?: string) {
   const sockets = new Set<Duplex>();
   server.on('upgrade', (request, socket, head) => {
@@ -11,9 +21,9 @@ export function attachHearMeOutRtcProxy(server: Server, originValue?: string) {
       if (!request.headers.origin || new URL(request.headers.origin).host !== request.headers.host) {
         socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return;
       }
-      const target = new URL(originValue);
-      if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname)) throw new Error('RTC proxy target must be loopback');
-      const upstream = httpRequest({ hostname: target.hostname.replace(/^\[|\]$/g, ''), port: Number(target.port || 80),
+      const target = validateHearMeOutRtcOrigin(originValue);
+      const requestUpstream = target.protocol === 'https:' ? httpsRequest : httpRequest;
+      const upstream = requestUpstream({ hostname: target.hostname.replace(/^\[|\]$/g, ''), port: Number(target.port || (target.protocol === 'https:' ? 443 : 80)),
         path: path.pathname + path.search, headers: { ...request.headers, host: target.host, origin: target.origin },
       });
       sockets.add(socket);

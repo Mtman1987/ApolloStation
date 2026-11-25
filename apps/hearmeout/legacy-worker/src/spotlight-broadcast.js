@@ -91,7 +91,7 @@ function createSpotlightBroadcast({ chromiumPath, chromium, spotlightEndpoint = 
       // The persistent source can be healthy before Twitch's embed reports READY.
       // Do not tear down Xvfb/PulseAudio/Chromium just because the Twitch script,
       // API poll, or player bootstrap takes longer than 30 seconds.
-      await page.waitForFunction(() => Boolean(window.spotlightSource), { timeout: 5000 });
+      await page.waitForFunction(() => Boolean(window.spotlightSource), null, { timeout: 5000 });
       const state = await page.evaluate(() => window.spotlightSource);
       if (!warningTimer) {
         warningTimer = setInterval(() => { if (activated) void clearContentWarning().catch(() => {}); }, 3000);
@@ -125,7 +125,7 @@ function createSpotlightBroadcast({ chromiumPath, chromium, spotlightEndpoint = 
     if (!activated) {
       if (!activationTask) activationTask = (async () => {
         await page.click('#start');
-        await page.waitForFunction(() => window.spotlightSource?.activated === true, { timeout: 10000 });
+        await page.waitForFunction(() => window.spotlightSource?.activated === true, null, { timeout: 10000 });
       })().finally(() => { activationTask = undefined; });
       await activationTask;
     }
