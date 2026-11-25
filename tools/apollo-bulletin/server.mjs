@@ -7,6 +7,7 @@ import { simulatedAiReply } from "./test-simulator.mjs";
 import { createApolloChatGptBrowserWorkerFromEnvironment, normalizeChatGptConversationUrl } from "./browser-worker.mjs";
 import { createTursoBulletinStoreFromEnvironment } from "./turso-store.mjs";
 import { readinessStatus } from "./readiness.mjs";
+import { resolveCronToken } from "./cron-auth.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
@@ -57,6 +58,24 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
     }
     state.tasks ||= []; state.activity ||= []; state.browserMessages ||= [];
+    if (!state.cron || typeof state.cron !== "object" || Array.isArray(state.cron)) state.cron = {};
+    state.cron.status ||= "never";
+    state.cron.inFlight = Boolean(state.cron.inFlight);
+    state.cron.completedTicks = Number.isFinite(Number(state.cron.completedTicks)) ? Number(state.cron.completedTicks) : 0;
+    state.cron.failedTicks = Number.isFinite(Number(state.cron.failedTicks)) ? Number(state.cron.failedTicks) : 0;
+    state.cron.lastTickStartedAt ??= null;
+    state.cron.lastTickCompletedAt ??= null;
+    state.cron.lastTickFailedAt ??= null;
+    state.cron.lastTickProcessed ??= null;
+    let recoveredCron = false;
+    if (state.cron.inFlight) {
+      state.cron.inFlight = false;
+      state.cron.status = "interrupted";
+      state.cron.lastTickFailedAt = now();
+      state.cron.failedTicks += 1;
+      log("hostless-cron-tick-interrupted", null);
+      recoveredCron = true;
+    }
     let recovered = 0;
     for (const task of state.tasks) {
       if (task.status !== "dispatching") continue;
@@ -68,16 +87,25 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       log("dispatch-interrupted-restart-no-retry", task.id, task.lastEvent);
       recovered += 1;
     }
-    if (recovered) await save();
+    if (recovered || recoveredCron) await save();
   }
   function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, ...visible } = task; return visible; }
+  function continuationPromptFor(task) { return "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
     let processed = 0;
+    let tickFailure;
     try {
-      if (source === "hostless-cron") { log("hostless-cron-tick-started", null); await save(); }
+      if (source === "hostless-cron") {
+        state.cron.inFlight = true;
+        state.cron.status = "running";
+        state.cron.lastTickStartedAt = now();
+        state.cron.lastTickProcessed = null;
+        log("hostless-cron-tick-started", null);
+        await save();
+      }
       for (const task of state.tasks) {
         if (task.status !== "scheduled" || !task.nextRunAt || task.nextRunAt > now()) continue;
         // Claim and persist before touching the browser. An uncertain send is never retried.
@@ -87,14 +115,58 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           log("browser-task-start", task.id, task.destination + " · " + (task.conversationUrl || "default target"));
           const result = await (dispatch ?? deliver)(task);
           log("browser-task-result", task.id, result?.reason || (result?.submitted ? "reply received" : "no reply confirmed"));
+          if (result?.submitted && (!result.receipt || typeof result.receipt.reply !== "string" || !result.receipt.reply.trim())) {
+            task.status = "dispatch-uncertain";
+            task.nextRunAt = null;
+            task.lastEvent = "Dispatch was reported submitted without a verified reply receipt; manual review required";
+            log("dispatch-receipt-missing-no-retry", task.id);
+          } else {
           if (result?.submitted && result.receipt) { task.simulatedRunCount = result.receipt.runNumber; task.receiptHistory ||= []; task.receiptHistory.push(result.receipt); task.receiptHistory = task.receiptHistory.slice(-100); }
-          if (result?.submitted && task.destination === "chatgpt") { task.cycles = (task.cycles || 0) + 1; const reply = String(result.receipt?.reply || ""); const complete = reply.split(/\r?\n/).some(line => line.trim() === task.completionMarker); const reviewRequested = reply.includes(task.reviewUrl) || /owner review required|blocked pending owner/i.test(reply); const continuationPrompt = "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; if (complete) { const occurrenceCycles = task.cycles; if (["interval","weekly","monthly"].includes(task.schedule?.type)) { const priorMarker = task.completionMarker, nextMarker = "APOLLO_BULLETIN_COMPLETE_" + randomUUID().replaceAll("-", "").slice(0, 16); task.completionMarker = nextMarker; task.basePrompt = String(task.basePrompt || task.prompt || "").replace(priorMarker, nextMarker); task.prompt = task.basePrompt; task.totalCycles = (task.totalCycles || 0) + occurrenceCycles; task.cycles = 0; task.nextRunAt = nextScheduledAt(task.schedule, now()); if (task.nextRunAt) { task.status = "scheduled"; task.lastEvent = "Occurrence completed after " + occurrenceCycles + " cycle(s); next recurrence scheduled"; log("recurrence-rearmed", task.id); } else { task.status = "completed"; task.lastEvent = "Occurrence completed; no next recurrence could be calculated"; log("task-completion-marker-observed", task.id); } } else { task.status = "completed"; task.nextRunAt = null; task.lastEvent = "Completion marker observed after " + task.cycles + " cycle(s)"; log("task-completion-marker-observed", task.id); } } else if (task.stopRequested) { task.status = "stopped"; task.nextRunAt = null; task.lastEvent = "Stopped after the current cycle"; log("task-stopped", task.id); } else if (task.pauseRequested) { task.prompt = continuationPrompt; task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Paused after the current cycle"; log("task-paused", task.id); } else if (reviewRequested || task.cycles >= task.maxCycles) { task.status = "awaiting_review"; task.nextRunAt = null; task.lastEvent = reviewRequested ? "ChatGPT requested owner review" : "Cycle limit reached without completion marker; owner review required"; log(reviewRequested ? "owner-review-requested" : "cycle-limit-owner-review", task.id); } else { task.prompt = continuationPrompt; task.status = "scheduled"; task.nextRunAt = now() + 60_000; task.lastEvent = "Cycle " + task.cycles + "/" + task.maxCycles + " returned without completion marker; continuation queued"; log("continuation-queued", task.id); } } else if (result?.submitted && task.stopRequested) { task.status = "stopped"; task.nextRunAt = null; task.lastEvent = "Stopped after the current cycle"; log("task-stopped", task.id); } else if (result?.submitted && task.pauseRequested) { task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Paused after the current cycle"; log("task-paused", task.id); } else if (result?.submitted && ["interval","weekly","monthly"].includes(task.schedule?.type)) { task.status = "scheduled"; task.nextRunAt = nextScheduledAt(task.schedule, now()); task.lastEvent = result?.reason || "Simulator receipt recorded; next occurrence scheduled"; log("recurrence-rearmed", task.id); } else if (result?.submitted) { task.status = "dispatched"; task.lastEvent = result?.reason || "Simulator receipt recorded"; } else if (String(result?.reason || "").startsWith("browser-dispatch-blocked:") || result?.reason === "dedicated-chromium-browser-not-ready") { task.status = "paused"; task.nextRunAt = null; task.lastEvent = result?.reason || "Dispatch blocked before sending; owner can correct the issue and resume"; log("dispatch-blocked-before-send", task.id, task.lastEvent); } else { task.status = "dispatch-uncertain"; task.lastEvent = result?.reason || "Send not confirmed; manual review required"; log(task.status, task.id); }
+          if (result?.submitted && task.destination === "chatgpt") { task.cycles = (task.cycles || 0) + 1; const reply = String(result.receipt?.reply || ""); const complete = reply.split(/\r?\n/).some(line => line.trim() === task.completionMarker); const reviewRequested = reply.includes(task.reviewUrl) || /owner review required|blocked pending owner/i.test(reply); const continuationPrompt = continuationPromptFor(task); if (complete) { const occurrenceCycles = task.cycles; if (["interval","weekly","monthly"].includes(task.schedule?.type)) { const priorMarker = task.completionMarker, nextMarker = "APOLLO_BULLETIN_COMPLETE_" + randomUUID().replaceAll("-", "").slice(0, 16); task.completionMarker = nextMarker; task.basePrompt = String(task.basePrompt || task.prompt || "").replace(priorMarker, nextMarker); task.prompt = task.basePrompt; task.totalCycles = (task.totalCycles || 0) + occurrenceCycles; task.cycles = 0; task.nextRunAt = nextScheduledAt(task.schedule, now()); if (task.nextRunAt) { task.status = "scheduled"; task.lastEvent = "Occurrence completed after " + occurrenceCycles + " cycle(s); next recurrence scheduled"; log("recurrence-rearmed", task.id); } else { task.status = "completed"; task.lastEvent = "Occurrence completed; no next recurrence could be calculated"; log("task-completion-marker-observed", task.id); } } else { task.status = "completed"; task.nextRunAt = null; task.lastEvent = "Completion marker observed after " + task.cycles + " cycle(s)"; log("task-completion-marker-observed", task.id); } } else if (task.stopRequested) { task.status = "stopped"; task.nextRunAt = null; task.lastEvent = "Stopped after the current cycle"; log("task-stopped", task.id); } else if (task.pauseRequested) { task.prompt = continuationPrompt; task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Paused after the current cycle"; log("task-paused", task.id); } else if (reviewRequested || task.cycles >= task.maxCycles) { task.status = "awaiting_review"; task.nextRunAt = null; task.lastEvent = reviewRequested ? "ChatGPT requested owner review" : "Cycle limit reached without completion marker; owner review required"; log(reviewRequested ? "owner-review-requested" : "cycle-limit-owner-review", task.id); } else { task.prompt = continuationPrompt; task.status = "scheduled"; task.nextRunAt = now() + 60_000; task.lastEvent = "Cycle " + task.cycles + "/" + task.maxCycles + " returned without completion marker; continuation queued"; log("continuation-queued", task.id); } } else if (result?.submitted && task.stopRequested) { task.status = "stopped"; task.nextRunAt = null; task.lastEvent = "Stopped after the current cycle"; log("task-stopped", task.id); } else if (result?.submitted && task.pauseRequested) { task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Paused after the current cycle"; log("task-paused", task.id); } else if (result?.submitted && ["interval","weekly","monthly"].includes(task.schedule?.type)) { task.status = "scheduled"; task.nextRunAt = nextScheduledAt(task.schedule, now()); task.lastEvent = result?.reason || "Simulator receipt recorded; next occurrence scheduled"; log("recurrence-rearmed", task.id); } else if (result?.submitted) { task.status = "dispatched"; task.lastEvent = result?.reason || "Simulator receipt recorded"; } else if (String(result?.reason || "").startsWith("browser-dispatch-blocked:") || result?.reason === "dedicated-chromium-browser-not-ready") { task.status = "paused"; task.nextRunAt = null; task.lastEvent = result?.reason || "Dispatch blocked before sending; owner can correct the issue and resume"; log("dispatch-blocked-before-send", task.id, task.lastEvent); } else { task.status = "dispatch-uncertain"; task.lastEvent = result?.reason || "Send not confirmed; manual review required"; log(task.status, task.id); }
+          }
         } catch (e) { task.status = "dispatch-uncertain"; task.lastEvent = String(e.message || e); log("dispatch-error-no-retry", task.id); }
         await save();
         processed += 1;
         break; // One bounded task per Hostless cron tick.
       }
-    } finally { busy = false; if (source === "hostless-cron") { log("hostless-cron-tick-completed", null, String(processed)); await save(); } }
+    } catch (error) {
+      tickFailure = error;
+      throw error;
+    } finally {
+      busy = false;
+      if (source === "hostless-cron") {
+        state.cron.inFlight = false;
+        state.cron.lastTickProcessed = processed;
+        const previousCron = {
+          lastTickCompletedAt: state.cron.lastTickCompletedAt,
+          completedTicks: state.cron.completedTicks,
+          failedTicks: state.cron.failedTicks,
+        };
+        if (tickFailure) {
+          state.cron.status = "failed";
+          state.cron.lastTickFailedAt = now();
+          state.cron.failedTicks += 1;
+          log("hostless-cron-tick-failed", null, String(processed));
+        } else {
+          state.cron.status = "completed";
+          state.cron.lastTickCompletedAt = now();
+          state.cron.completedTicks += 1;
+          log("hostless-cron-tick-completed", null, String(processed));
+        }
+        try { await save(); }
+        catch (persistError) {
+          state.cron.status = "failed";
+          state.cron.inFlight = false;
+          state.cron.lastTickCompletedAt = previousCron.lastTickCompletedAt ?? null;
+          state.cron.completedTicks = previousCron.completedTicks;
+          state.cron.lastTickFailedAt = now();
+          state.cron.failedTicks = previousCron.failedTicks + 1;
+          log("hostless-cron-tick-result-persistence-failed", null);
+          console.error("[apollo-bulletin] Could not persist cron tick result:", String(persistError?.message || persistError));
+          if (!tickFailure) throw persistError;
+        }
+      }
+    }
     return { processed, busy: false };
   }
   const server = createServer(async (req, res) => {
@@ -113,10 +185,20 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         return;
       }
     }
-    const body = async () => { let raw="", size=0; for await (const chunk of req) { size += Buffer.byteLength(chunk); if (size > 32*1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 }); raw += chunk; } return raw ? JSON.parse(raw) : {}; };
+    const body = async () => {
+      let raw = "", size = 0;
+      for await (const chunk of req) {
+        size += Buffer.byteLength(chunk);
+        if (size > 32 * 1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 });
+        raw += chunk;
+      }
+      if (!raw) return {};
+      try { return JSON.parse(raw); }
+      catch { throw Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }); }
+    };
     try {
       if (req.method === "POST" && url.pathname === "/api/cron/tick") {
-        const expected = process.env.APOLLO_BULLETIN_CRON_TOKEN || process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD;
+        const expected = resolveCronToken(process.env);
         if (!expected) return send(503, { error: "Bulletin cron authentication is not configured" });
         const authorization = req.headers.authorization || "";
         const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
@@ -152,10 +234,19 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const verb = action[2];
         if (verb === "run") { if (["dispatching","dispatched","awaiting_review","completed","dispatch-uncertain","stopped"].includes(task.status)) return send(409,{error:"This task has already been dispatched or is uncertain; do not resend automatically. Resolve it manually or create a new task."}); task.pauseRequested = false; task.status="scheduled";task.nextRunAt=now(); }
         if (verb === "pause") { if (["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; inspect it before changing its state."}); if (task.status === "dispatching") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; } else { task.status="paused";task.nextRunAt=null; } }
-        if (verb === "resume") { if (["dispatching","awaiting_review","dispatch-uncertain","dispatched","completed","stopped"].includes(task.status)) return send(409,{error:"This task requires owner review or is already resolved; it cannot be automatically resumed."});task.pauseRequested = false; task.status="scheduled";task.nextRunAt=now(); }
+        const resumedFromReview = verb === "resume" && task.status === "awaiting_review";
+        if (verb === "resume") {
+          if (["dispatching","dispatch-uncertain","dispatched","completed","stopped"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; inspect it before resuming."});
+          if (resumedFromReview) {
+            if (!String(task.prompt || "").startsWith("Continue the existing task in this exact conversation.")) task.prompt = continuationPromptFor(task);
+            task.totalCycles = (task.totalCycles || 0) + (task.cycles || 0);
+            task.cycles = 0;
+          }
+          task.pauseRequested = false; task.status="scheduled";task.nextRunAt=now();
+        }
         if (verb === "complete") { if (task.status === "dispatching") return send(409,{error:"The current cycle is still running; review its result before marking complete."}); task.status="completed";task.nextRunAt=null; }
         if (verb === "stop") { if (["dispatch-uncertain","dispatched","awaiting_review","completed"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; use manual completion only after inspection."}); if (task.status === "dispatching") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; } else { task.status="stopped";task.nextRunAt=null; } }
-        if (!["pause","stop"].includes(verb) || task.status !== "dispatching") task.lastEvent=verb;log("task-"+verb,task.id);await save();if (verb === "run" || verb === "resume") void tick();return send(200,{task:publicTask(task)});
+        if (!["pause","stop"].includes(verb) || task.status !== "dispatching") task.lastEvent=resumedFromReview ? "Resumed after owner review" : verb;log("task-"+verb,task.id);await save();if (verb === "run" || verb === "resume") void tick();return send(200,{task:publicTask(task)});
       }
       if (req.method === "GET" && url.pathname.startsWith("/review/")) {
         const key = url.pathname.slice("/review/".length); const task = state.tasks.find(t => t.reviewKey === key); if (!task) return send(404,"Review link not found","text/plain");
@@ -173,7 +264,41 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/api/browser/view") return send(200, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#212121;color:#eee;font:15px system-ui}.top{padding:13px;border-bottom:1px solid #444}.wrap{max-width:720px;margin:auto;padding:18px 14px 85px}.msg{padding:13px;border-radius:12px;margin:12px 0;white-space:pre-wrap;line-height:1.5}.user{background:#303030;margin-left:12%}.assistant{background:#292929;margin-right:12%}.bar{position:fixed;bottom:0;left:0;right:0;padding:12px;background:#212121}.form{max-width:720px;margin:auto;display:flex;gap:8px;background:#303030;padding:8px;border-radius:16px}textarea{flex:1;min-height:42px;resize:vertical;background:transparent;color:white;border:0;font:inherit}button{border:0;border-radius:12px;padding:0 16px}</style><div class="top">ChatGPT <b style="color:#8ee6b6">· SIMULATION</b></div><main class="wrap" id="messages"><div class="msg assistant">Hello! This is Apollo’s simulated ChatGPT browser. Send a message to test the flow. Nothing leaves Apollo.</div></main><div class="bar"><form class="form" id="send"><textarea id="prompt" placeholder="Message ChatGPT (simulated)"></textarea><button>Send</button></form></div><script>const box=document.querySelector("#messages"),input=document.querySelector("#prompt");function add(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;box.append(d)}document.querySelector("#send").onsubmit=async e=>{e.preventDefault();const prompt=input.value.trim();if(!prompt)return;input.value="";add("user",prompt);const r=await fetch("/bulletin/api/browser/send",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt})});const d=await r.json();add("assistant",d.reply||d.error||"No reply")};</script>', "text/html; charset=utf-8");
       if (req.method === "POST" && url.pathname === "/api/browser/send") { const input=await body(); if(typeof input.prompt!=="string"||!input.prompt.trim()) return send(400,{error:"Enter a message first"}); const prompt=input.prompt.trim().slice(0,4000); const id="browser-"+randomUUID(); const reply="SIMULATED CHATGPT REPLY: Apollo received your message in the browser proof of concept: "+prompt.slice(0,1000); state.browserMessages.push({id,at:now(),prompt,reply}); state.browserMessages=state.browserMessages.slice(-100); log("browser-message-sent",id,prompt.slice(0,240)); log("browser-simulated-reply",id,reply.slice(0,240)); await save(); return send(200,{id,reply,simulated:true}); }
       if (req.method === "GET" && url.pathname === "/api/browser/log") return send(200,{activity:state.activity.slice(-100).reverse()});
-      if (req.method === "GET" && url.pathname === "/health/ready") { const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1"; const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1"; const ownerActorConfigured = Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()); const readiness = readinessStatus({ browserRequired, browserStarted: Boolean(browserWorker), persistenceRequired, persistenceAvailable: Boolean(persistence) }); return send(readiness.statusCode, { ready: readiness.ready, browser: browserWorker ? "chromium-ready" : "browser-not-started", browserRequired, persistence: persistence ? "turso" : "local-fallback", persistenceRequired, ownerActorConfigured }); }
+      if (req.method === "GET" && url.pathname === "/health/ready") {
+        const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1";
+        const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1";
+        const ownerActorConfigured = Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim());
+        const cronRequired = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON === "1";
+        const cronAuthConfigured = Boolean(resolveCronToken(process.env));
+        const browserStatus = browserWorker ? await browserWorker.status().catch(() => null) : null;
+        const browserHealthy = Boolean(browserStatus?.healthy);
+        const browserSessionPersisted = Boolean(browserStatus?.sessionPersistenceReady);
+        const browserInfrastructureReady = browserHealthy && browserSessionPersisted;
+        const browserSessionReady = Boolean(browserInfrastructureReady && !browserStatus?.loginRequired);
+        const cronState = state.cron || {};
+        const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
+        const cronExecutionConfirmed = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
+          lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
+        const readiness = readinessStatus({
+          browserRequired, browserStarted: browserInfrastructureReady,
+          persistenceRequired, persistenceAvailable: Boolean(persistence),
+          cronRequired, cronAuthConfigured, cronExecutionConfirmed,
+        });
+        const cron = {
+          configured: cronAuthConfigured, hostlessMode: cronRequired, lastTickStatus: cronState.status || "never",
+          lastTickStartedAt: cronState.lastTickStartedAt ?? null, lastTickCompletedAt: cronState.lastTickCompletedAt ?? null,
+          lastTickFailedAt: cronState.lastTickFailedAt ?? null, lastTickProcessed: cronState.lastTickProcessed ?? null,
+          completedTicks: cronState.completedTicks || 0, failedTicks: cronState.failedTicks || 0, inFlight: Boolean(cronState.inFlight),
+        };
+        return send(readiness.statusCode, {
+          ready: readiness.ready,
+          browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserInfrastructureReady && browserStatus?.loginRequired ? "chromium-login-required" : browserHealthy && !browserSessionPersisted ? "chromium-session-persistence-not-ready" : "browser-not-ready") : "browser-not-started",
+          browserRequired, browserHealthy, browserSessionPersisted, browserSessionPersistedAt: browserStatus?.lastSessionPersistedAt ?? null,
+          browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
+          persistence: persistence ? "turso" : "local-fallback", persistenceRequired, ownerActorConfigured,
+          cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
+        });
+      }
       send(404,{error:"not_found"});
     } catch (error) { send(error.statusCode || 500,{error:error.message || String(error)}); }
   });
