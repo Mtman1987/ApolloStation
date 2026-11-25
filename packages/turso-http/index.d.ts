@@ -5,7 +5,7 @@ export interface TursoTransaction {
   execute(sql: string, args?: TursoValue[], wantRows?: boolean): Promise<TursoStatementResult>;
   pipeline(statements: TursoStatement[]): Promise<TursoStatementResult[]>;
 }
-export interface TursoHttpAdapterOptions { url: string; authToken: string; fetchImpl?: typeof fetch; }
+export interface TursoHttpAdapterOptions { url: string; authToken: string; fetchImpl?: typeof fetch; requestTimeoutMs?: number; }
 export declare function encodeHranaValue(value: TursoValue | undefined): Record<string, unknown>;
 export declare function decodeHranaValue(value: Record<string, unknown>): unknown;
 export declare function normalizeTursoUrl(value: string): string;

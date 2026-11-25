@@ -113,6 +113,42 @@ test("parallel transaction calls are serialized on the same Hrana stream", async
   assert.equal(calls[3].requests[0].stmt.sql, "COMMIT");
 });
 
+test("Turso requests carry an abort signal and complete within the default timeout", async () => {
+  let seenSignal;
+  const adapter = new TursoHttpAdapter({
+    url: "libsql://apollo.example.turso.io",
+    authToken: "test-only",
+    fetchImpl: async (_url, init) => {
+      seenSignal = init.signal;
+      return response(null, [ok()]);
+    },
+  });
+  await adapter.execute("SELECT 1");
+  assert.ok(seenSignal instanceof AbortSignal);
+  assert.equal(seenSignal.aborted, false);
+});
+
+test("a Turso request that never resolves times out instead of hanging forever", async () => {
+  const adapter = new TursoHttpAdapter({
+    url: "libsql://apollo.example.turso.io",
+    authToken: "test-only",
+    requestTimeoutMs: 25,
+    fetchImpl: (_url, init) => new Promise((_resolve, reject) => {
+      // A wedged connection: the promise settles only when the adapter's
+      // abort signal fires, like a real fetch would.
+      init.signal.addEventListener("abort", () => reject(init.signal.reason ?? new Error("aborted")), { once: true });
+    }),
+  });
+  await assert.rejects(adapter.execute("SELECT 1"), /Turso request timed out after 25ms/);
+});
+
+test("Turso adapter rejects a non-positive request timeout", async () => {
+  assert.throws(
+    () => new TursoHttpAdapter({ url: "libsql://apollo.example.turso.io", authToken: "test-only", requestTimeoutMs: 0 }),
+    /requestTimeoutMs must be a positive number/,
+  );
+});
+
 test("Turso pipeline requests close the connection so the next call dials fresh", async () => {
   const seenHeaders = [];
   const adapter = new TursoHttpAdapter({

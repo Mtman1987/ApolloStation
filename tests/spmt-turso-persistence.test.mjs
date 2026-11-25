@@ -337,6 +337,58 @@ test("turso hydrate retries a failed page fetch instead of aborting the boot", a
   }
 });
 
+test("turso hydrate logs page progress so a slow boot is visible in the runtime logs", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-progress-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  // Six 2000-row pages: progress must be logged mid-scan (page 5), not only
+  // when the whole hydrate finishes — a boot that paged ~92 ledger pages
+  // used to log nothing at all, so a hung boot looked identical to a dead
+  // container in the Hostless runtime logs.
+  const TOTAL = 11000;
+  const rows = new Map();
+  for (let i = 0; i < TOTAL; i++) {
+    const body = JSON.stringify({
+      id: `xp_progress_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
+      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_progress_key_${i}`, createdAt: NOW,
+    });
+    rows.set(JSON.stringify([`xp_progress_${i}`]), new Map([
+      ["id", `xp_progress_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
+      ["idempotency_key", `xp_progress_key_${i}`], ["delta", 1], ["body", body],
+    ]));
+  }
+  fake.tables.set("spmt_xp_ledger", {
+    columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
+    pkCount: 1, rows,
+  });
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  const logged = [];
+  const originalLog = console.log;
+  console.log = (...args) => { logged.push(args.join(" ")); };
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
+  } finally {
+    console.log = originalLog;
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+  const progress = logged.filter((line) => line.includes("turso hydrate progress"));
+  assert.equal(progress.length, 1);
+  assert.match(progress[0], /table=spmt_xp_ledger pages=5 rows=10000/);
+  const complete = logged.filter((line) => line.includes("turso hydrate scan complete"));
+  assert.equal(complete.length, 1);
+  assert.match(complete[0], /table=spmt_xp_ledger pages=6 rows=11000/);
+});
+
 test("turso sync and hydrate stay disabled without credentials", async () => {
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
   const previousShared = process.env.SHARED_TURSO_DATABASE_URL, previousNode = process.env.NODE1_TURSO_AUTH_TOKEN;
