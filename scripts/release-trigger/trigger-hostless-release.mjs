@@ -22,7 +22,7 @@ if (!token) {
 }
 
 const workflow = "hostless-three-node-deploy.yml";
-const reason = "Deploy current main after removing release-wide lock; retain per-node serialization and parallel Hostless builds";
+const reason = "Deploy current main after fixing supervisor shebang and parallel-release regression tests";
 const endpoint = `https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`;
 const response = await fetch(endpoint, {
   method: "POST",
