@@ -91,6 +91,8 @@ jobs:
       - run: npm run typecheck
       - name: Verify hosted AI fallback and Venice routing
         run: node --test tests/stellar-ai-chain.test.mjs
+      - name: Verify node-specific hybrid entrypoint
+        run: node --test tests/hostless-hybrid-entrypoints.test.mjs
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
       - name: Check dedicated browser worker syntax
