@@ -55,9 +55,15 @@ test("Node 2 ingress forwards HearMeOut app and health requests to its own servi
   assert.deepEqual(seen, ["/apps/hearmeout", "/health/ready?check=ready"]);
 });
 
-test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { timeout: 15000 }, async () => {
+test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { timeout: 10000 }, async () => {
   const upstream = createServer();
   const sockets = new WebSocketServer({ noServer: true });
+  const upstreamSockets = new Set();
+  const ingressSockets = new Set();
+  upstream.on("connection", socket => {
+    upstreamSockets.add(socket);
+    socket.on("close", () => upstreamSockets.delete(socket));
+  });
   upstream.on("upgrade", (req, socket, head) => {
     if (new URL(req.url, "http://localhost").pathname !== "/api/hearmeout/rtc") return socket.destroy();
     sockets.handleUpgrade(req, socket, head, ws => ws.send("rtc-through"));
@@ -65,6 +71,10 @@ test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { 
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
   const ingress = createNode2Ingress({ hearMeOutPort: upstream.address().port, streamweaverPort: 1, nebulaPort: 2 });
+  ingress.on("connection", socket => {
+    ingressSockets.add(socket);
+    socket.on("close", () => ingressSockets.delete(socket));
+  });
   ingress.listen(0, "127.0.0.1");
   await once(ingress, "listening");
   const origin = "http://127.0.0.1:" + ingress.address().port;
@@ -74,11 +84,11 @@ test("Node 2 ingress tunnels authenticated HearMeOut RTC WebSocket upgrades", { 
     const [message] = await once(client, "message");
     assert.equal(message.toString(), "rtc-through");
   } finally {
-    const closed = once(client, "close").catch(() => []);
     client.terminate();
-    await Promise.race([closed, new Promise(resolve => setTimeout(resolve, 1000))]);
-    await new Promise(resolve => ingress.close(resolve));
-    await new Promise(resolve => sockets.close(resolve));
-    await new Promise(resolve => upstream.close(resolve));
+    for (const socket of ingressSockets) socket.destroy();
+    for (const socket of upstreamSockets) socket.destroy();
+    ingress.close();
+    sockets.close();
+    upstream.close();
   }
 });
