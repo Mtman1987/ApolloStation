@@ -258,3 +258,33 @@ test("restart marks an interrupted persisted Hostless cron tick failed and not r
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("a running cron tick retains readiness only while its previous completed proof is fresh", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-running-test-token";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  let persisted = { tasks: [], activity: [], cron: { status: "running", inFlight: true, completedTicks: 3, failedTicks: 0, lastTickStartedAt: Date.now(), lastTickCompletedAt: Date.now() - 60_000, lastTickProcessed: null } };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/health/ready");
+    assert.equal(response.status, 200);
+    const proof = await response.json();
+    assert.equal(proof.ready, true);
+    assert.equal(proof.cronExecutionConfirmed, true);
+    assert.equal(proof.cron.lastTickStatus, "running");
+    assert.equal(proof.cron.inFlight, true);
+  } finally {
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
