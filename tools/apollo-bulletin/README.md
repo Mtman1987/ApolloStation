@@ -42,9 +42,15 @@ Set `APOLLO_BULLETIN_PUBLIC_URL` to the public Node 1 origin if it differs from 
 - ChatGPT tasks use a unique completion marker and a configurable 1–100 cycle limit (default 8). Incomplete responses schedule a continuation after 60 seconds. A completion marker ends the task; a cycle limit or explicit owner-review request pauses it for review. Uncertain sends are never retried automatically.
 - The simulator remains a separate safe test destination and does not exercise real ChatGPT delivery.
 - The existing repo documents the Apollo-native terminal backend as unfinished. No fake terminal frame or second terminal backend is introduced; the existing Mission Control/operations app frame is reusable, but a real terminal panel still needs the missing backend.
-- The open task review URL and task API remain private-development prototype surfaces and require hardening before public exposure.
+- The task API, review links, and browser console are private-development surfaces gated to the canonical SPMT platform-owner session; tenant members and other tenant owners are denied. The optional `APOLLO_BULLETIN_OWNER_ACTOR_ID` pin adds a second identity check but is not required for platform-owner enforcement.
 - AI response monitoring is limited to visible assistant-response completion and the unique task completion marker; no private ChatGPT endpoints are used.
 
+
+
+
+## Readiness and recovery proof
+
+The Node 1 readiness endpoint is deliberately stricter than process liveness. When production policy requires them, it verifies a healthy managed Chromium process, a successful browser storage-state save to Turso, the required Turso queue store, a configured existing cron credential, and a persisted Hostless cron tick completed within five minutes. A 202 response from the cron route is only an acknowledgement; it is not treated as proof that the tick finished. The deployment workflow checks these fields and confirms task, browser, and cron routes reject unauthenticated requests. ChatGPT login remains an explicit owner action in the phone-accessible browser console; infrastructure readiness reports login-required separately and does not pretend the ChatGPT account is already signed in.
 
 ## Dedicated ChatGPT browser console
 
