@@ -90,6 +90,10 @@ test("spmt identity state survives a local wipe through the Turso write-back and
   const root = mkdtempSync(join(tmpdir(), "spmt-turso-roundtrip-"));
   const databasePath = join(root, "apollo.sqlite");
   const fake = createFakeTurso();
+  // The production spmt_users table was created by the seed import with the
+  // recovered export's shape (keyed by user_id, not id). Pre-create that
+  // legacy shape so the test proves the write-back adapts to it.
+  fake.tables.set("spmt_users", { columns: ["user_id", "body"], pkCount: 1, rows: new Map() });
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
   process.env.TURSO_DATABASE_URL = "libsql://fake.turso.local";
   process.env.TURSO_AUTH_TOKEN = "test-token";
