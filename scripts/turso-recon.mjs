@@ -102,7 +102,8 @@ async function reconTarget(label, url, token) {
 
   const tablesResult = await run(
     "candidate_tables",
-    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('spmt_xp_ledger','xp_events','xp_ledger','spmt_workspace_profiles','workspaces','workspace_profiles','spmt_users','spmt_user_profiles','spmt_user_settings','spmt_app_state_records','spmt_access_sessions','spmt_refresh_tokens','apollo_recovered_json_stage_v1','apollo_async_json_records_v1') ORDER BY name",
+    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+    300,
   );
   const tables = tablesResult.ok ? tablesResult.rows.map((row) => String(row[0])) : [];
   target.tables = tables;
@@ -127,7 +128,8 @@ async function reconTarget(label, url, token) {
   for (const name of [
     "spmt_xp_ledger", "xp_events", "xp_ledger",
     "spmt_workspace_profiles", "workspaces", "workspace_profiles",
-    "spmt_users", "spmt_user_profiles",
+    "spmt_users", "users", "spmt_user_profiles", "spmt_tenants", "tenants",
+    "spmt_user_credentials", "spmt_provider_links",
     "spmt_access_sessions", "spmt_refresh_tokens",
     "apollo_recovered_json_stage_v1", "apollo_async_json_records_v1",
   ]) {
@@ -166,6 +168,45 @@ async function reconTarget(label, url, token) {
       entry.liveByExpiresAt = "no expires_at column";
     }
     target.sessions[key] = entry;
+  }
+
+  // ---- Step-1 battery: seed-era XP / workspace promotion groundwork ----
+  // Settles the 653-vs-12,419 users question (hydrate-identical row count
+  // vs COUNT(*)), identifies the tenants that exist, and measures how the
+  // legacy XP / workspace rows key back to users. Aggregates and opaque ids
+  // only: no emails, no user bodies, usernames only as a known-test-account
+  // boolean.
+  if (has("spmt_users")) {
+    await run("users:hydrate_rows", "SELECT id FROM spmt_users", 3);
+    if (cols("spmt_users").includes("username")) {
+      await run("users:aggregates", "SELECT COUNT(*) AS rows_total, COUNT(DISTINCT id) AS distinct_ids, SUM(CASE WHEN id IS NULL OR id = '' THEN 1 ELSE 0 END) AS empty_ids, SUM(CASE WHEN username IS NOT NULL THEN 1 ELSE 0 END) AS with_username, SUM(CASE WHEN email IS NOT NULL THEN 1 ELSE 0 END) AS with_email, SUM(CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END) AS with_password_hash FROM spmt_users");
+    }
+  }
+  if (has("spmt_user_profiles")) {
+    await run("profiles:detail", "SELECT user_id, (username IN ('athena', 'persistenceprobe')) AS is_known_test_account, json_extract(body, '$.createdAt') AS body_created_at, json_extract(body, '$.tenantIds[0]') AS tenant0, json_extract(body, '$.tenantIds[1]') AS tenant1, json_extract(body, '$.tenantIds[2]') AS tenant2 FROM spmt_user_profiles LIMIT 10", 10);
+  }
+  if (has("spmt_tenants")) {
+    await run("tenants:detail", "SELECT id, owner_user_id, status, json_extract(body, '$.name') AS name, json_extract(body, '$.displayName') AS display_name, json_extract(body, '$.slug') AS slug FROM spmt_tenants LIMIT 10", 10);
+  }
+  if (has("spmt_xp_ledger") && cols("spmt_xp_ledger").includes("metadata_json")) {
+    await run("xp:aggregates", "SELECT COUNT(*) AS rows_total, COALESCE(SUM(delta), 0) AS total_delta, COUNT(DISTINCT user_id) AS distinct_users, COUNT(DISTINCT id) AS distinct_ids, COUNT(DISTINCT idempotency_key) AS distinct_idem_keys, SUM(CASE WHEN idempotency_key IS NULL OR idempotency_key = '' THEN 1 ELSE 0 END) AS empty_idem_keys, SUM(CASE WHEN created_at IS NULL THEN 1 ELSE 0 END) AS null_created_at, MIN(created_at) AS first_created_at, MAX(created_at) AS last_created_at FROM spmt_xp_ledger");
+    await run("xp:by_source_app", "SELECT COALESCE(source_app, '(null)') AS source_app, COUNT(*) AS n, COALESCE(SUM(delta), 0) AS total_delta FROM spmt_xp_ledger GROUP BY source_app ORDER BY n DESC LIMIT 20", 20);
+    await run("xp:by_event_type", "SELECT COALESCE(event_type, '(null)') AS event_type, COUNT(*) AS n FROM spmt_xp_ledger GROUP BY event_type ORDER BY n DESC LIMIT 20", 20);
+    await run("xp:by_server", "SELECT COALESCE(json_extract(metadata_json, '$.serverId'), '(none)') AS server_id, COUNT(*) AS n, COUNT(DISTINCT user_id) AS users FROM spmt_xp_ledger GROUP BY server_id ORDER BY n DESC LIMIT 20", 20);
+    await run("xp:by_schema_version", "SELECT COALESCE(json_extract(metadata_json, '$.schemaVersion'), '(none)') AS schema_version, COUNT(*) AS n FROM spmt_xp_ledger GROUP BY schema_version ORDER BY n DESC LIMIT 10", 10);
+    if (has("spmt_users") && cols("spmt_users").includes("username")) {
+      await run("xp:user_id_match", "SELECT COUNT(*) AS rows_matched, COUNT(DISTINCT user_id) AS users_matched FROM spmt_xp_ledger WHERE user_id IN (SELECT id FROM spmt_users)");
+      await run("xp:metadata_username_match", "SELECT COUNT(*) AS rows_matched, COUNT(DISTINCT json_extract(metadata_json, '$.username')) AS usernames_matched FROM spmt_xp_ledger WHERE json_extract(metadata_json, '$.username') IN (SELECT username FROM spmt_users)");
+    }
+  }
+  if (has("spmt_workspace_profiles") && cols("spmt_workspace_profiles").includes("profile")) {
+    await run("workspaces:aggregates", "SELECT COUNT(*) AS rows_total, COUNT(DISTINCT user_id) AS distinct_users, MIN(revision) AS min_revision, MAX(revision) AS max_revision FROM spmt_workspace_profiles");
+    if (has("spmt_users")) {
+      await run("workspaces:user_match", "SELECT COUNT(*) AS rows_matched FROM spmt_workspace_profiles WHERE user_id IN (SELECT id FROM spmt_users)");
+    }
+    if (has("spmt_user_profiles")) {
+      await run("workspaces:profile_match", "SELECT COUNT(*) AS rows_matched FROM spmt_workspace_profiles WHERE user_id IN (SELECT user_id FROM spmt_user_profiles)");
+    }
   }
 
   return target;
