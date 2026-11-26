@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TursoHttpAdapter } from "../../packages/turso-http/index.mjs";
 
 const QUEUE_KEY = "apollo-bulletin:queue:v1";
@@ -80,6 +81,21 @@ export class TursoBulletinStore {
     }
     await this.write("apollo-bulletin:review-request:" + taskId, { requestedAt });
     return true;
+  }
+
+  async checkSignalPersistence() {
+    const probeId = "readiness-" + randomUUID();
+    try {
+      await this.requestTaskControl(probeId, "pause", Date.now());
+      const controls = await this.loadTaskControls();
+      const visibleControl = controls[probeId]?.action === "pause";
+      const consumedControl = await this.consumeTaskControl(probeId);
+      await this.requestReview(probeId, Date.now());
+      const consumedReview = await this.consumeReviewRequest(probeId);
+      return visibleControl && consumedControl?.action === "pause" && Number.isSafeInteger(consumedReview?.requestedAt);
+    } finally {
+      await Promise.allSettled([this.consumeTaskControl(probeId), this.consumeReviewRequest(probeId)]);
+    }
   }
 
   async requestTaskControl(taskId, action, requestedAt = Date.now()) {
