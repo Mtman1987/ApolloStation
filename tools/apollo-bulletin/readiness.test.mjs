@@ -33,3 +33,9 @@ test("release readiness requires the Bulletin boolean contract", () => {
   assert.equal(isReadinessResponseReady("/bulletin/health/ready", { state: "ready" }), false);
   assert.equal(isReadinessResponseReady("/bulletin/health/ready", { ready: false }), false);
 });
+
+test("readiness requires persistent review and pause/stop signal support when Turso is required", () => {
+  const base = { browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, cronAuthConfigured: true, cronExecutionConfirmed: true, dispatcherLeaseRequired: true, dispatcherLeaseAvailable: true, taskControlPersistenceRequired: true };
+  assert.deepEqual(readinessStatus({ ...base, taskControlPersistenceReady: false }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ ...base, taskControlPersistenceReady: true }), { ready: true, statusCode: 200 });
+});
