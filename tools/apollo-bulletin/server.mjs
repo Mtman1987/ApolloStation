@@ -7,7 +7,7 @@ import { simulatedAiReply } from "./test-simulator.mjs";
 import { createApolloChatGptBrowserWorkerFromEnvironment, normalizeChatGptConversationUrl } from "./browser-worker.mjs";
 import { createTursoBulletinStoreFromEnvironment } from "./turso-store.mjs";
 import { readinessStatus } from "./readiness.mjs";
-import { resolveCronToken } from "./cron-auth.mjs";
+import { resolveBrowserControlPassword, resolveCronToken } from "./cron-auth.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
 function bulletinWidgetHtml(kind) {
@@ -266,7 +266,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     const send = (status, value, type = "application/json; charset=utf-8") => { const body = type.startsWith("text/") ? value : JSON.stringify(value); res.writeHead(status, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
     const browserControlRoute = url.pathname === "/browser" || url.pathname.startsWith("/api/browser/");
     if (browserControlRoute) {
-      const password = [process.env.APOLLO_BROWSER_CONTROL_PASSWORD, process.env.APOLLO_PREVIEW_PASSWORD].find(value => typeof value === "string" && value.trim())?.trim() || "";
+      const password = resolveBrowserControlPassword(process.env);
       if (!password) { res.writeHead(503, { "cache-control": "no-store" }); res.end("Browser control is locked: configure APOLLO_BROWSER_CONTROL_PASSWORD or APOLLO_PREVIEW_PASSWORD."); return; }
       const authorization = req.headers.authorization || "";
       const supplied = authorization.startsWith("Basic ") ? Buffer.from(authorization.slice(6), "base64") : Buffer.alloc(0);
