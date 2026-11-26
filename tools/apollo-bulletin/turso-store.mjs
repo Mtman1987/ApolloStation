@@ -14,6 +14,9 @@ export class TursoBulletinStore {
     await this.adapter.execute(
       "CREATE TABLE IF NOT EXISTS apollo_bulletin_state (state_key TEXT PRIMARY KEY, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)",
     );
+    await this.adapter.execute(
+      "CREATE TABLE IF NOT EXISTS apollo_bulletin_leases (lease_key TEXT PRIMARY KEY, owner_id TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    );
     this.ready = true;
   }
 
@@ -35,6 +38,33 @@ export class TursoBulletinStore {
       "INSERT INTO apollo_bulletin_state (state_key, state_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(state_key) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at",
       [key, JSON.stringify(value), Date.now()],
     );
+  }
+
+  async acquireLease(key, ownerId, now = Date.now(), ttlMs = 600_000) {
+    if (typeof key !== "string" || !key.trim() || typeof ownerId !== "string" || !ownerId.trim()) {
+      throw new TypeError("Bulletin lease key and owner ID are required");
+    }
+    if (!Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(ttlMs) || ttlMs < 1) {
+      throw new TypeError("Bulletin lease time and duration must be positive safe integers");
+    }
+    await this.initialize();
+    const result = await this.adapter.execute(
+      "INSERT INTO apollo_bulletin_leases (lease_key, owner_id, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lease_key) DO UPDATE SET owner_id = excluded.owner_id, expires_at = excluded.expires_at, updated_at = excluded.updated_at WHERE apollo_bulletin_leases.expires_at <= ?",
+      [key, ownerId, now + ttlMs, now, now],
+    );
+    return Number(result.affectedRows ?? 0) > 0;
+  }
+
+  async releaseLease(key, ownerId, now = Date.now()) {
+    if (typeof key !== "string" || typeof ownerId !== "string" || !Number.isSafeInteger(now) || now < 0) {
+      throw new TypeError("Bulletin lease release requires a key, owner ID, and valid timestamp");
+    }
+    await this.initialize();
+    const result = await this.adapter.execute(
+      "UPDATE apollo_bulletin_leases SET expires_at = 0, updated_at = ? WHERE lease_key = ? AND owner_id = ?",
+      [now, key, ownerId],
+    );
+    return Number(result.affectedRows ?? 0) > 0;
   }
 
   loadQueue() { return this.read(QUEUE_KEY); }
