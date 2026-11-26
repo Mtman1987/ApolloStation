@@ -59,6 +59,14 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // pass a select whose first column is rowid; the helper consumes it as the
 // cursor and hands the full row through.
 const HYDRATE_PAGE_SIZE = 5000;
+// The XP ledger is the one huge scan (182,648 promoted rows): at the shared
+// page size it needs ~37 sequential requests, and per-request Turso latency
+// from the node container swings between sub-second and ~100s while Hostless
+// retires an unready container after ~15 min — the scan kept dying mid-flight
+// and restarting from zero. Fetch the ledger in 25,000-row pages (~8
+// requests) so the whole scan fits inside one container lifetime even in a
+// slow window. The other paged scan (users) keeps the shared size.
+const HYDRATE_XP_PAGE_SIZE = 25000;
 const HYDRATE_PAGE_ATTEMPTS = 3;
 const HYDRATE_PROGRESS_EVERY_PAGES = 5;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
@@ -94,7 +102,7 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: s
     if (lastRow) lastRowid = Number(lastRow[0] ?? 0);
     for (const row of page.rows) onRow(row);
     // Progress logging: a boot that pages a large table (the promoted XP
-    // ledger is ~37 pages) used to log nothing until the whole hydrate
+    // ledger is ~8 pages at its page size) used to log nothing until the whole hydrate
     // finished, so a slow or hung boot was indistinguishable from a dead
     // one in the runtime logs. Speak every few pages and once at the end.
     if (pages % HYDRATE_PROGRESS_EVERY_PAGES === 0) {
@@ -263,7 +271,7 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       }
       if (!event.tenantId || !event.userId) { skipped++; return; }
       try { appendXp(event); inserted++; } catch { skipped++; }
-    }, options.pageSize);
+    }, options.pageSize ?? HYDRATE_XP_PAGE_SIZE);
     report.tables[table] = { remote, inserted, skipped };
     break;
   }
