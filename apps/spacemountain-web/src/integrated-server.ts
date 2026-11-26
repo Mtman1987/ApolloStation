@@ -50,7 +50,7 @@ export async function authorizeBulletinRequest(
     if (identity.authenticated !== true || identity.platformOwner !== true || (allowedActor && identity.actorId !== allowedActor)) {
       return { authorized: false, status: 403, reason: "An authorized Apollo owner session is required" };
     }
-    return { authorized: true, status: 200, reason: "apollo-session" };
+    return { authorized: true, status: 200, reason: "apollo-owner-session" };
   } catch {
     return { authorized: false, status: 503, reason: "Apollo identity service is unavailable" };
   }
