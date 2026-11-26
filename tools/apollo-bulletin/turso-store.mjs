@@ -74,6 +74,29 @@ export class TursoBulletinStore {
     return true;
   }
 
+  async requestReview(taskId, requestedAt = Date.now()) {
+    if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId) || !Number.isSafeInteger(requestedAt) || requestedAt < 0) {
+      throw new TypeError("Bulletin review signal requires a valid task ID and timestamp");
+    }
+    await this.write("apollo-bulletin:review-request:" + taskId, { requestedAt });
+    return true;
+  }
+
+  async consumeReviewRequest(taskId) {
+    if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId)) {
+      throw new TypeError("Bulletin review signal requires a valid task ID");
+    }
+    await this.initialize();
+    const result = await this.adapter.execute(
+      "DELETE FROM apollo_bulletin_state WHERE state_key = ? RETURNING state_json",
+      ["apollo-bulletin:review-request:" + taskId],
+      true,
+    );
+    if (!result.rows.length) return null;
+    try { return JSON.parse(String(result.rows[0][0])); }
+    catch { throw new Error("Stored Apollo Bulletin review signal is invalid JSON"); }
+  }
+
   loadQueue() { return this.read(QUEUE_KEY); }
   saveQueue(state) { return this.write(QUEUE_KEY, state); }
   loadBrowserState() { return this.read(BROWSER_KEY); }
