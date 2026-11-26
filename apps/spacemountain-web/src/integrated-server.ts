@@ -12,7 +12,7 @@ const SPMT_API=/^\/v1(?:\/|$)/;
 const NEBULA_RUNTIME=/^(?:\/apps\/nebula-arcade(?:\/|$)|\/api\/nebula-arcade(?:\/|$)|\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula(?:-[^/]+|\/|$)|\/overlay\/game-mix\/)/;
 const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
 function firstNonBlankCredential(...values: Array<string | undefined>): string { for (const value of values) if (typeof value === "string" && value.trim()) return value.trim(); return ""; }
-function isBulletinReviewCapability(method: string | undefined, pathname: string): boolean { return (method ?? "GET") === "GET" && /^\\/bulletin\\/review\\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pathname); }
+function isBulletinReviewCapability(method: string | undefined, pathname: string): boolean { return (method ?? "GET") === "GET" && /^\/bulletin\/review\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pathname); }
 type GreenAppId=typeof GREEN_APP_IDS[number];
 
 export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpaceMountainWebHostOptions {
