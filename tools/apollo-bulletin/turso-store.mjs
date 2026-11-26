@@ -49,8 +49,8 @@ export class TursoBulletinStore {
     }
     await this.initialize();
     const result = await this.adapter.execute(
-      "INSERT INTO apollo_bulletin_leases (lease_key, owner_id, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lease_key) DO UPDATE SET owner_id = excluded.owner_id, expires_at = excluded.expires_at, updated_at = excluded.updated_at WHERE apollo_bulletin_leases.expires_at <= ?",
-      [key, ownerId, now + ttlMs, now, now],
+      "INSERT INTO apollo_bulletin_leases (lease_key, owner_id, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lease_key) DO UPDATE SET owner_id = excluded.owner_id, expires_at = excluded.expires_at, updated_at = excluded.updated_at WHERE apollo_bulletin_leases.expires_at <= ? OR apollo_bulletin_leases.owner_id = ?",
+      [key, ownerId, now + ttlMs, now, now, ownerId],
     );
     return Number(result.affectedRows ?? 0) > 0;
   }
