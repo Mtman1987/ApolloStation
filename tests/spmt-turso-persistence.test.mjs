@@ -68,6 +68,11 @@ function createFakeTurso() {
       const table = tables.get(m[1]);
       return ok(["cid", "name", "type", "notnull", "dflt_value", "pk"], table ? table.columns.map((name, i) => [encode(i), encode(name), encode("TEXT"), encode(0), { type: "null" }, encode(i < table.pkCount ? 1 : 0)]) : []);
     }
+    if ((m = sql.match(/^SELECT COUNT\(\*\) FROM "([^"]+)"$/))) {
+      const table = tables.get(m[1]);
+      if (!table) throw new Error(`no such table: ${m[1]}`);
+      return ok(["count"], [[encode(table.rows.size)]]);
+    }
     if ((m = sql.match(/^SELECT MIN\(rowid\), MAX\(rowid\), COUNT\(\*\) FROM "([^"]+)"$/))) {
       const table = tables.get(m[1]);
       if (!table) throw new Error(`no such table: ${m[1]}`);
@@ -143,6 +148,8 @@ test("spmt identity state survives a local wipe through the Turso write-back and
     assert.equal(authority2.getUser("user_probe"), undefined, "fresh store starts empty");
 
     const hydrateReport = await hydrateSpmtFromTurso({ authority: authority2, platform: platform2, fetchImpl: fake.fetchImpl });
+    // The XP ledger now fills in the background; settle it before asserting.
+    await hydrateReport.xpFill;
     assert.equal(hydrateReport.enabled, true);
     for (const [table, stats] of Object.entries(hydrateReport.tables)) assert.equal(stats.error, undefined, `${table}: ${stats.error}`);
 
@@ -199,6 +206,7 @@ test("hydrate preserves XP eventType and metadata so the sync round trip stays l
     authority = new SqliteAuthorityStore(databasePath);
     platform = new SqlitePlatformDataStore(databasePath);
     const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    await hydrateReport.xpFill;
     assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, 1);
     const events = authority.listXp("tenant_meta", "user_meta");
     assert.equal(events.length, 1);
@@ -348,39 +356,46 @@ test("turso hydrate retries a failed page fetch instead of aborting the boot", a
   }
 });
 
-test("turso hydrate fetches the XP ledger in parallel rowid ranges by default", async () => {
-  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-parallel-"));
+test("turso hydrate defers the XP ledger to a background fill by default", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-lazy-"));
   const databasePath = join(root, "apollo.sqlite");
   const fake = createFakeTurso();
-  // 26,000 rows: above the 5,000-row page size, so the default (no explicit
-  // pageSize) hydrate must take the parallel path — probe the rowid span,
-  // split it into 6 contiguous ranges, and page the lanes concurrently.
-  // Sequential paging kept dying against Hostless's ~15-minute unready
-  // container retirement; the lanes make the wall-clock the slowest lane,
-  // not the sum of every page.
+  // 26,000 rows: above the 5,000-row page size. The default (no explicit
+  // pageSize) hydrate must NOT page the ledger inline — the boot pass that
+  // listen() waits on kept losing to Hostless's ~15-minute retirement of
+  // unready containers. Instead the boot pass records the ledger as
+  // deferred (with its probed size) and the sequential keyset scan fills
+  // it in the background; the fill has no fuse because by then the
+  // container is already the live one.
   const TOTAL = 26000;
   const rows = new Map();
   for (let i = 0; i < TOTAL; i++) {
     const body = JSON.stringify({
-      id: `xp_par_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
-      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_par_key_${i}`, createdAt: NOW,
+      id: `xp_lazy_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
+      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_lazy_key_${i}`, createdAt: NOW,
     });
-    rows.set(JSON.stringify([`xp_par_${i}`]), new Map([
-      ["id", `xp_par_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
-      ["idempotency_key", `xp_par_key_${i}`], ["delta", 1], ["body", body],
+    rows.set(JSON.stringify([`xp_lazy_${i}`]), new Map([
+      ["id", `xp_lazy_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
+      ["idempotency_key", `xp_lazy_key_${i}`], ["delta", 1], ["body", body],
     ]));
   }
   fake.tables.set("spmt_xp_ledger", {
     columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
     pkCount: 1, rows,
   });
-  const laneBounds = [];
-  let probes = 0;
-  const recordingFetch = async (url, init) => {
+  const laneQueries = [];
+  let spanProbes = 0;
+  const slowLedgerFetch = async (url, init) => {
     const stmt = JSON.parse(init.body).requests?.[0]?.stmt;
     const sql = stmt?.sql ?? "";
-    if (sql.startsWith("SELECT MIN(rowid)")) probes++;
-    if (sql.includes("AND rowid <=")) laneBounds.push([Number(stmt.args[0].value), Number(stmt.args[1].value)]);
+    if (sql.startsWith("SELECT MIN(rowid)")) spanProbes++;
+    if (sql.includes("AND rowid <=")) laneQueries.push(sql);
+    // Slow only the ledger page fetches: at hydrate return the background
+    // fill cannot have landed its first page yet, which is what makes the
+    // "the boot pass did not wait for the ledger" assertion deterministic.
+    if (sql.includes('FROM "spmt_xp_ledger"') && sql.includes("ORDER BY rowid")) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     return fake.fetchImpl(url, init);
   };
   const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
@@ -390,19 +405,31 @@ test("turso hydrate fetches the XP ledger in parallel rowid ranges by default", 
   try {
     authority = new SqliteAuthorityStore(databasePath);
     platform = new SqlitePlatformDataStore(databasePath);
-    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: recordingFetch });
-    assert.equal(probes, 1, "the rowid span is probed exactly once");
-    assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
-    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
-    assert.equal(hydrateReport.tables.spmt_xp_ledger.skipped, 0);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: slowLedgerFetch });
+    const atReturn = hydrateReport.tables.spmt_xp_ledger;
+    assert.equal(atReturn.deferred, true, "the boot pass defers the ledger instead of paging it inline");
+    assert.equal(atReturn.remote, TOTAL, "the boot pass probes the ledger size for the report");
+    assert.equal(authority.listXp("tenant_bulk", "user_bulk").length, 0, "no ledger rows are local yet when the boot pass returns");
+    assert.equal(spanProbes, 0, "the retired parallel rowid-span probe is gone");
+    assert.equal(laneQueries.length, 0, "the background fill pages sequentially, not in rowid-range lanes");
+    await hydrateReport.xpFill;
+    const settled = hydrateReport.tables.spmt_xp_ledger;
+    assert.equal(settled.deferred, false);
+    assert.equal(settled.error, undefined);
+    assert.equal(settled.remote, TOTAL);
+    assert.equal(settled.inserted, TOTAL);
+    assert.equal(settled.skipped, 0);
     const events = authority.listXp("tenant_bulk", "user_bulk");
     assert.equal(events.length, TOTAL);
-    assert.equal(new Set(events.map((event) => event.id)).size, TOTAL, "every row lands exactly once — no lane duplicates");
-    // Lane boundaries: the distinct range caps partition the span into 6
-    // contiguous, non-overlapping ranges covering [1, TOTAL].
-    const caps = [...new Set(laneBounds.map(([, through]) => through))].sort((a, b) => a - b);
-    assert.deepEqual(caps, [4334, 8668, 13002, 17336, 21670, 26000]);
-    for (const [after, through] of laneBounds) assert.ok(after < through, `lane cursor ${after} stays below its cap ${through}`);
+    assert.equal(new Set(events.map((event) => event.id)).size, TOTAL, "every row lands exactly once");
+
+    // A second hydrate against the same stores: the fill is fill-missing,
+    // so it converges without duplicating a single event.
+    const secondReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    await secondReport.xpFill;
+    assert.equal(secondReport.tables.spmt_xp_ledger.inserted, 0);
+    assert.equal(secondReport.tables.spmt_xp_ledger.skipped, TOTAL);
+    assert.equal(authority.listXp("tenant_bulk", "user_bulk").length, TOTAL);
   } finally {
     authority?.close(); platform?.close();
     if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
