@@ -138,11 +138,25 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     ],
     activity: [],
   };
+  const leases = new Map();
   const store = {
     async loadQueue() { return structuredClone(persisted); },
     async saveQueue(value) { persisted = structuredClone(value); },
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
+    async ping() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
   };
   const app = createBulletinServer({ port: 0, store, dispatch: async task => ({ submitted: true, receipt: { reply: "simulated" }, reason: task.id }) });
   try {
@@ -160,6 +174,11 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     const firstActivity = await (await fetch("http://127.0.0.1:" + address.port + "/api/tasks")).json();
     assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-started"));
     assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-completed"));
+    const readiness = await (await fetch("http://127.0.0.1:" + address.port + "/health/ready")).json();
+    assert.equal(readiness.ready, true);
+    assert.equal(readiness.cronExecutionConfirmed, true);
+    assert.equal(readiness.dispatcherLeaseConfigured, true);
+    assert.equal(readiness.persistenceReachable, true);
     let secondBody;
     for (let attempt = 0; attempt < 30; attempt++) {
       const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
