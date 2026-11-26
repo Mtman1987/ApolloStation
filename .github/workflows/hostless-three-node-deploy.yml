@@ -431,14 +431,14 @@ jobs:
                   data.cronExecutionConfirmed === true &&
                   data.dispatcherLeaseConfigured === true &&
                   data.persistenceReachable === true &&
-                  data.browser?.healthy === true &&
-                  data.browser?.sessionPersistenceReady === true
+                  data.browserHealthy === true &&
+                  data.browserSessionPersisted === true
                 );
                 if (response.ok && isReadinessResponseReady(path, data) && bulletinChecksPass) {
                   console.log(JSON.stringify({
                     path, status: response.status, ready: true,
-                    browserHealthy: data.browser?.healthy ?? undefined,
-                    browserSessionPersisted: data.browser?.sessionPersistenceReady ?? undefined,
+                    browserHealthy: data.browserHealthy ?? undefined,
+                    browserSessionPersisted: data.browserSessionPersisted ?? undefined,
                     chatGptLoginRequired: data.browserSessionReady === false,
                     persistence: data.persistence ?? undefined,
                     cronExecutionConfirmed: data.cronExecutionConfirmed ?? undefined,
