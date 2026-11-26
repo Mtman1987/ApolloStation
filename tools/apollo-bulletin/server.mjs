@@ -139,7 +139,6 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
-    activeTick = true;
     activeTickDone = new Promise(resolve => { resolveActiveTickDone = resolve; });
     let processed = 0;
     let tickFailure;
@@ -170,6 +169,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         }, 60_000);
         leaseHeartbeatTimer.unref?.();
       }
+      activeTick = true;
       stateReloading = true;
       try {
         await saveTail;
