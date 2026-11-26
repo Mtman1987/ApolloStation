@@ -36,6 +36,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let saveTail = Promise.resolve();
   let stateReloading = false;
   let activeTickDone = Promise.resolve();
+  let mutationTail = Promise.resolve();
   let resolveActiveTickDone = null;
   const persistence = store ?? createTursoBulletinStoreFromEnvironment();
   if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires TURSO_DATABASE_URL or SHARED_TURSO_DATABASE_URL and TURSO_AUTH_TOKEN or NODE1_TURSO_AUTH_TOKEN");
@@ -96,6 +97,44 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, ...visible } = task; return visible; }
   function continuationPromptFor(task) { return "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
+  async function withQueueMutation(mutator) {
+    let releaseMutation;
+    const previousMutation = mutationTail;
+    mutationTail = new Promise(resolve => { releaseMutation = resolve; });
+    await previousMutation;
+    let ownsBusy = false;
+    let leaseOwnerId = null;
+    let leaseAcquired = false;
+    const leaseRequired = typeof persistence?.acquireLease === "function" && typeof persistence?.releaseLease === "function";
+    try {
+      if (busy) return { busy: true };
+      busy = true;
+      ownsBusy = true;
+      if (leaseRequired) {
+        leaseOwnerId = randomUUID();
+        leaseAcquired = await persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000);
+        if (!leaseAcquired) return { busy: true };
+      }
+      stateReloading = true;
+      await saveTail;
+      await load();
+      const result = await mutator();
+      await save();
+      return { busy: false, result };
+    } finally {
+      stateReloading = false;
+      if (leaseRequired && leaseAcquired && leaseOwnerId) {
+        try {
+          const released = await persistence.releaseLease("apollo-bulletin-dispatch", leaseOwnerId, now());
+          if (!released) console.warn("[apollo-bulletin] Queue mutation lease was not released by its owner");
+        } catch (releaseError) {
+          console.error("[apollo-bulletin] Queue mutation lease release failed:", String(releaseError?.message || releaseError));
+        }
+      }
+      if (ownsBusy) busy = false;
+      releaseMutation?.();
+    }
+  }
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
@@ -224,7 +263,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     const send = (status, value, type = "application/json; charset=utf-8") => { const body = type.startsWith("text/html") ? value : JSON.stringify(value); res.writeHead(status, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
     const browserControlRoute = url.pathname === "/browser" || url.pathname.startsWith("/api/browser/");
     if (browserControlRoute) {
-      const password = process.env.APOLLO_BROWSER_CONTROL_PASSWORD || process.env.APOLLO_PREVIEW_PASSWORD;
+      const password = [process.env.APOLLO_BROWSER_CONTROL_PASSWORD, process.env.APOLLO_PREVIEW_PASSWORD].find(value => typeof value === "string" && value.trim())?.trim() || "";
       if (!password) { res.writeHead(503, { "cache-control": "no-store" }); res.end("Browser control is locked: configure APOLLO_BROWSER_CONTROL_PASSWORD or APOLLO_PREVIEW_PASSWORD."); return; }
       const authorization = req.headers.authorization || "";
       const supplied = authorization.startsWith("Basic ") ? Buffer.from(authorization.slice(6), "base64") : Buffer.alloc(0);
@@ -235,7 +274,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         return;
       }
     }
-    const body = async () => { if (stateReloading) throw Object.assign(new Error("Bulletin state is refreshing; retry shortly"), { statusCode: 503 }); let raw="", size=0; for await (const chunk of req) { size += Buffer.byteLength(chunk); if (size > 32*1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 }); raw += chunk; } if (stateReloading) throw Object.assign(new Error("Bulletin state is refreshing; retry shortly"), { statusCode: 503 }); if (!raw) return {}; try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }); } };
+    const body = async () => { let raw="", size=0; for await (const chunk of req) { size += Buffer.byteLength(chunk); if (size > 32*1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 }); raw += chunk; } if (!raw) return {}; try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }); } };
     try {
       if (req.method === "POST" && url.pathname === "/api/cron/tick") {
         const expected = resolveCronToken(process.env);
@@ -252,7 +291,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       const widgetRoute = req.method === "GET" && url.pathname.match(/^\/widgets\/(tasks|active|reviews|activity|scheduler|history)$/);
       if (req.method === "GET" && url.pathname === "/widgets/proof") return send(200, `<!doctype html><meta name=\"viewport\" content=\"width=device-width\"><title>Apollo Scheduler Proof</title><body style=\"font:15px system-ui;background:#0b1220;color:#edf3ff;padding:18px;max-width:760px;margin:auto\"><h1>Scheduler delivery proof</h1><p>Isolated simulated receiver. This does not log into ChatGPT, send to a real AI, or launch a GitHub workflow.</p><label>Task name<input id=\"name\" value=\"5-minute scheduler proof\" style=\"display:block;width:100%;padding:8px;margin:8px 0\"></label><label>Prompt<textarea id=\"prompt\" style=\"display:block;width:100%;min-height:100px;padding:8px;margin:8px 0\">APOLLO SCHEDULE TEST: Respond with a receipt and summarize this prompt.</textarea></label><label>Repeat every <input id=\"every\" type=\"number\" min=\"1\" value=\"5\" style=\"width:90px;padding:8px\"> minutes</label><button id=\"create\" style=\"padding:10px;margin:12px 0\">Create scheduled test</button><p id=\"status\"></p><pre id=\"history\" style=\"white-space:pre-wrap;background:#111b30;padding:12px;border-radius:8px\"></pre><script>const status=document.querySelector(\"#status\"),history=document.querySelector(\"#history\");async function refresh(){const r=await fetch(\"/bulletin/api/tasks\",{cache:\"no-store\"}),d=await r.json();const t=d.tasks.filter(x=>x.destination===\"test-simulator\");history.textContent=t.map(x=>x.name+" — "+x.status+"\\nSchedule: "+(x.scheduleLabel||"")+"; next: "+(x.nextRunAt?new Date(x.nextRunAt).toLocaleString():"—")+"\\nLast result: "+(x.lastEvent||"—")+"\\nReceipts:\\n"+(x.receiptHistory||[]).map(q=>"Run #"+q.runNumber+" · "+new Date(q.receivedAt).toLocaleString()+"\\n"+q.reply).join("\\n\\n")).join("\\n\\n")||"No simulator tasks yet."; }document.querySelector(\"#create\").onclick=async()=>{const r=await fetch(\"/bulletin/api/tasks\",{method:\"POST\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({name:document.querySelector(\"#name\").value,prompt:document.querySelector(\"#prompt\").value,scheduleType:\"interval\",every:document.querySelector(\"#every\").value,unit:\"minutes\",destination:\"test-simulator\"})});const d=await r.json();status.textContent=r.ok?\"Scheduled. It will deliver automatically; pause or complete it from Task Queue.\":(d.error||\"Failed\");refresh();};refresh();setInterval(refresh,3000);</script></body>`, "text/html; charset=utf-8");
       if (widgetRoute) return send(200, bulletinWidgetHtml(widgetRoute[1]), "text/html; charset=utf-8");
-      if (req.method === "GET" && url.pathname === "/api/tasks") return send(200, { tasks: state.tasks.map(publicTask), activity: state.activity.slice(-100).reverse() });
+      if (req.method === "GET" && url.pathname === "/api/tasks") { if (stateReloading) return send(503, { error: "Bulletin state is refreshing; retry shortly" }); return send(200, { tasks: state.tasks.map(publicTask), activity: state.activity.slice(-100).reverse() }); }
       if (req.method === "POST" && url.pathname === "/api/tasks") {
         const input = await body(); if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 200 || typeof input.prompt !== "string" || !input.prompt.trim()) return send(400, { error: "Task name (1–200 characters) and prompt are required" }); if (input.prompt.length > 20000) return send(400, { error: "Task prompt must be 20,000 characters or fewer" });
         const destination = input.destination === "test-simulator" ? "test-simulator" : "chatgpt";
@@ -266,24 +305,40 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const completionMarker = "APOLLO_BULLETIN_COMPLETE_" + randomUUID().replaceAll("-", "").slice(0, 16);
         const basePrompt = input.prompt.trim() + "\n\nAPOLLO BULLETIN HANDOFF: Keep the task documentation, TODO/checkpoint, and handoff current. Report completed work, remaining work, validation evidence, and blockers. Do not claim completion without updating the handoff. If owner review is needed, open this task review URL once and stop; do not continue or resend: " + reviewUrl + "\n\nWhen (and only when) the requested work is genuinely complete, include this exact marker alone on its own line: " + completionMarker;
         const publicOrigin = process.env.APOLLO_BULLETIN_PUBLIC_URL || "https://apollo-node-1.hostless.app"; const task = { id, name: input.name.trim(), basePrompt, completionMarker, maxCycles, cycles: 0, prompt: basePrompt, conversationUrl: destination === "test-simulator" ? publicOrigin + "/bulletin/fake-chatgpt" : conversationUrl, schedule, scheduleLabel: scheduleLabel(schedule), destination, status: schedule.type === "manual" ? "paused" : "scheduled", nextRunAt: runAt, createdAt: now(), reviewUrl, lastEvent: "Created" };
-        task.reviewKey = reviewKey; state.tasks.push(task); log("task-created", task.id); await save(); return send(201, { task: publicTask(task) });
+        task.reviewKey = reviewKey; const mutation = await withQueueMutation(() => { state.tasks.push(task); log("task-created", task.id); return { status: 201, body: { task: publicTask(task) } }; }); if (mutation.busy) return send(503, { error: "Bulletin queue is busy; retry shortly" }); return send(mutation.result.status, mutation.result.body);
       }
       const action = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(run|pause|resume|complete|stop)$/);
       if (req.method === "POST" && action) {
-        const task = state.tasks.find(t => t.id === action[1]); if (!task) return send(404, { error: "Task not found" });
         const verb = action[2];
-        const resumedFromReview = verb === "resume" && task.status === "awaiting_review";
-        if (verb === "run") { if (["dispatching","dispatched","awaiting_review","completed","dispatch-uncertain","stopped"].includes(task.status)) return send(409,{error:"This task has already been dispatched or is uncertain; do not resend automatically. Resolve it manually or create a new task."}); task.pauseRequested = false; task.status="scheduled";task.nextRunAt=now(); }
-        if (verb === "pause") { if (["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; inspect it before changing its state."}); if (task.status === "dispatching") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; } else { task.status="paused";task.nextRunAt=null; } }
-        if (verb === "resume") { if (["dispatching","dispatch-uncertain","dispatched","completed","stopped"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; inspect it before resuming."}); if (resumedFromReview) { if (!String(task.prompt || "").startsWith("Continue the existing task in this exact conversation.")) task.prompt = continuationPromptFor(task); task.totalCycles = (task.totalCycles || 0) + (task.cycles || 0); task.cycles = 0; } task.pauseRequested = false; task.status="scheduled";task.nextRunAt=now(); }
-        if (verb === "complete") { if (task.status === "dispatching") return send(409,{error:"The current cycle is still running; review its result before marking complete."}); task.status="completed";task.nextRunAt=null; }
-        if (verb === "stop") { if (["dispatch-uncertain","dispatched","awaiting_review","completed"].includes(task.status)) return send(409,{error:"This task has an unresolved send or is already resolved; use manual completion only after inspection."}); if (task.status === "dispatching") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; } else { task.status="stopped";task.nextRunAt=null; } }
-        if (!["pause","stop"].includes(verb) || task.status !== "dispatching") task.lastEvent=resumedFromReview ? "Resumed after owner review" : verb;log("task-"+verb,task.id);await save();if (verb === "run" || verb === "resume") void tick();return send(200,{task:publicTask(task)});
+        const mutation = await withQueueMutation(() => {
+          const task = state.tasks.find(t => t.id === action[1]);
+          if (!task) return { status: 404, body: { error: "Task not found" } };
+          const resumedFromReview = verb === "resume" && task.status === "awaiting_review";
+          if (verb === "run") { if (["dispatching","dispatched","awaiting_review","completed","dispatch-uncertain","stopped"].includes(task.status)) return { status: 409, body: { error: "This task has already been dispatched or is uncertain; do not resend automatically. Resolve it manually or create a new task." } }; task.pauseRequested = false; task.status = "scheduled"; task.nextRunAt = now(); }
+          if (verb === "pause") { if (["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) return { status: 409, body: { error: "This task has an unresolved send or is already resolved; inspect it before changing its state." } }; if (task.status === "dispatching") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; } else { task.status = "paused"; task.nextRunAt = null; } }
+          if (verb === "resume") { if (["dispatching","dispatch-uncertain","dispatched","completed","stopped"].includes(task.status)) return { status: 409, body: { error: "This task has an unresolved send or is already resolved; inspect it before resuming." } }; if (resumedFromReview) { if (!String(task.prompt || "").startsWith("Continue the existing task in this exact conversation.")) task.prompt = continuationPromptFor(task); task.totalCycles = (task.totalCycles || 0) + (task.cycles || 0); task.cycles = 0; } task.pauseRequested = false; task.status = "scheduled"; task.nextRunAt = now(); }
+          if (verb === "complete") { if (task.status === "dispatching") return { status: 409, body: { error: "The current cycle is still running; review its result before marking complete." } }; task.status = "completed"; task.nextRunAt = null; }
+          if (verb === "stop") { if (["dispatch-uncertain","dispatched","awaiting_review","completed"].includes(task.status)) return { status: 409, body: { error: "This task has an unresolved send or is already resolved; use manual completion only after inspection." } }; if (task.status === "dispatching") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; } else { task.status = "stopped"; task.nextRunAt = null; } }
+          if (!["pause","stop"].includes(verb) || task.status !== "dispatching") task.lastEvent = resumedFromReview ? "Resumed after owner review" : verb;
+          log("task-" + verb, task.id);
+          return { status: 200, body: { task: publicTask(task) }, runNow: verb === "run" || verb === "resume" };
+        });
+        if (mutation.busy) return send(503, { error: "Bulletin queue is busy; retry shortly" });
+        if (mutation.result.runNow) void tick();
+        return send(mutation.result.status, mutation.result.body);
       }
       if (req.method === "GET" && url.pathname.startsWith("/review/")) {
-        const key = url.pathname.slice("/review/".length); const task = state.tasks.find(t => t.reviewKey === key); if (!task) return send(404,"Review link not found","text/plain");
-        if (task.status !== "awaiting_review") { task.status="awaiting_review";task.nextRunAt=null;task.lastEvent="AI requested owner review";log("awaiting-review",task.id);await save(); }
-        return send(200, `<!doctype html><meta name="viewport" content="width=device-width"><title>Review requested</title><body style="font:16px system-ui;background:#0b1220;color:#eef;padding:28px"><h1>Owner review requested</h1><p>${task.name.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}</p><p>This task is paused. Open Apollo Bulletin to inspect its handoff and logs, then explicitly resume or mark complete.</p><a style="color:#8bd" href="/">Return to Bulletin</a></body>`, "text/html; charset=utf-8");
+        const key = url.pathname.slice("/review/".length);
+        const mutation = await withQueueMutation(() => {
+          const task = state.tasks.find(t => t.reviewKey === key);
+          if (!task) return { status: 404, type: "text/plain", body: "Review link not found" };
+          if (task.status !== "awaiting_review") { task.status = "awaiting_review"; task.nextRunAt = null; task.lastEvent = "AI requested owner review"; log("awaiting-review", task.id); }
+          const safeName = task.name.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+          const html = `<!doctype html><meta name="viewport" content="width=device-width"><title>Review requested</title><body style="font:16px system-ui;background:#0b1220;color:#eef;padding:28px"><h1>Owner review requested</h1><p>${safeName}</p><p>This task is paused. Open Apollo Bulletin to inspect its handoff and logs, then explicitly resume or mark complete.</p><a style="color:#8bd" href="/">Return to Bulletin</a></body>`;
+          return { status: 200, type: "text/html; charset=utf-8", body: html };
+        });
+        if (mutation.busy) return send(503, { error: "Bulletin queue is busy; retry shortly" });
+        return send(mutation.result.status, mutation.result.body, mutation.result.type || "application/json; charset=utf-8");
       }
       if (req.method === "GET" && url.pathname === "/fake-chatgpt") return send(200, "<!doctype html><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ChatGPT · Apollo Simulation</title><body style=\"margin:0;background:#212121;color:#eee;font:16px system-ui\"><header style=\"padding:15px;border-bottom:1px solid #555\">ChatGPT · APOLLO SIMULATION</header><main id=\"messages\" style=\"max-width:760px;margin:auto;padding:24px 16px 100px\"><div data-message-author-role=\"assistant\" style=\"background:#303030;padding:14px;border-radius:12px\">Hello! This is the simulated ChatGPT page. Apollo uses a real Chromium browser to interact with this page; only the AI reply is simulated.</div></main><form id=\"form\" style=\"position:fixed;bottom:0;left:0;right:0;padding:12px;background:#222;display:flex;gap:8px\"><textarea id=\"prompt-textarea\" placeholder=\"Message ChatGPT\" style=\"flex:1;min-height:48px;background:#333;color:white;border:0;padding:10px\"></textarea><button aria-label=\"Send message\">Send</button></form><script>const f=document.querySelector(\"#form\"),p=document.querySelector(\"#prompt-textarea\"),m=document.querySelector(\"#messages\");f.onsubmit=e=>{e.preventDefault();const v=p.value.trim();if(!v)return;const u=document.createElement(\"div\");u.dataset.messageAuthorRole=\"user\";u.textContent=v;u.style.cssText=\"background:#444;padding:14px;margin:12px 0;border-radius:12px\";m.append(u);p.value=\"\";setTimeout(()=>{const a=document.createElement(\"div\");a.dataset.messageAuthorRole=\"assistant\";a.textContent=\"SIMULATED CHATGPT REPLY: I received your prompt through Apollo Chromium: \"+v;a.style.cssText=\"background:#303030;padding:14px;margin:12px 0;border-radius:12px\";m.append(a)},300)};</script>", "text/html; charset=utf-8");
       if (req.method === "GET" && url.pathname === "/browser") return send(200, `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apollo dedicated ChatGPT browser</title><style>body{margin:0;padding:12px;background:#09111f;color:#edf3ff;font:14px system-ui}input,button,textarea{font:inherit;padding:10px;border-radius:8px;border:1px solid #405577;background:#101c31;color:#fff}button{background:#234879}input{width:100%;box-sizing:border-box}#screen{width:100%;max-height:72vh;object-fit:contain;background:#111;touch-action:none;border:1px solid #405577;border-radius:8px}#screen:focus-visible{outline:3px solid #8bd;outline-offset:3px}form{display:flex;gap:8px;margin:8px 0}form input{flex:1;min-width:0}#status{color:#9fd7b4}small{color:#9eacc8}</style><h2>Dedicated ChatGPT browser</h2><p>Sign in to ChatGPT in this isolated Apollo browser. Its session is separate from Lounge and other apps.</p><p id="status" aria-live="polite">Connecting…</p><form id="nav"><input id="url" value="https://chatgpt.com/" aria-label="Browser URL"><button>Go</button></form><img id="screen" alt="Live browser screen; focus and press Enter or Space to click the center" role="button" tabindex="0"><form id="type"><input id="text" placeholder="Type into the focused browser field" aria-label="Text to type into the focused browser field" autocomplete="off"><button>Type</button><button type="button" id="enter">Enter</button></form><small>Tap the browser image to click at that position. Or focus it and press Enter or Space to click the center. Use the text field to type into the focused page.</small><pre id="log"></pre><script>const screen=document.querySelector("#screen"),status=document.querySelector("#status");async function api(path,data){const r=await fetch("/bulletin/api/browser/"+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data||{})});const d=await r.json();if(!r.ok)throw Error(d.error||r.statusText);return d}async function refresh(){try{const s=await fetch("/bulletin/api/browser/status",{cache:"no-store"}).then(r=>r.json());status.textContent="Browser: "+(s.healthy?"READY":"NOT READY")+" · "+(s.loginRequired?"Sign in required":(s.healthy?"Session available":"No active session"))+" · "+(s.title||s.reason||s.url||"");screen.src="/bulletin/api/browser/screenshot?t="+Date.now();}catch(e){status.textContent=e.message}}document.querySelector("#nav").onsubmit=async e=>{e.preventDefault();try{await api("navigate",{url:document.querySelector("#url").value});await refresh()}catch(x){status.textContent=x.message}};screen.onclick=async e=>{const r=screen.getBoundingClientRect();try{await api("click",{x:(e.clientX-r.left)/r.width*1440,y:(e.clientY-r.top)/r.height*1000});await refresh()}catch(x){status.textContent=x.message}};screen.addEventListener("keydown",async e=>{if(e.key!=="Enter"&&e.key!==" ")return;e.preventDefault();try{await api("click",{x:720,y:500});await refresh()}catch(x){status.textContent=x.message}});document.querySelector("#type").onsubmit=async e=>{e.preventDefault();const t=document.querySelector("#text");try{await api("type",{text:t.value});t.value="";await refresh()}catch(x){status.textContent=x.message}};document.querySelector("#enter").onclick=async()=>{try{await api("press",{key:"Enter"});await refresh()}catch(x){status.textContent=x.message}};refresh();setInterval(refresh,1800);</script>`, "text/html; charset=utf-8");
@@ -294,8 +349,8 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/api/browser/status") return browserWorker ? send(200,{...(await browserWorker.status()),mode:"chromium",externalService:false}) : send(503,{connected:false,mode:"chromium",reason:"browser-not-started"});
       if (req.method === "GET" && url.pathname === "/api/browser/screenshot") { if (!browserWorker) return send(503,{error:"browser-not-started"}); const shot=await browserWorker.screenshot(); res.writeHead(200,{"content-type":"image/png","cache-control":"no-store"}); res.end(shot); return; }
       if (req.method === "GET" && url.pathname === "/api/browser/view") return send(200, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#212121;color:#eee;font:15px system-ui}.top{padding:13px;border-bottom:1px solid #444}.wrap{max-width:720px;margin:auto;padding:18px 14px 85px}.msg{padding:13px;border-radius:12px;margin:12px 0;white-space:pre-wrap;line-height:1.5}.user{background:#303030;margin-left:12%}.assistant{background:#292929;margin-right:12%}.bar{position:fixed;bottom:0;left:0;right:0;padding:12px;background:#212121}.form{max-width:720px;margin:auto;display:flex;gap:8px;background:#303030;padding:8px;border-radius:16px}textarea{flex:1;min-height:42px;resize:vertical;background:transparent;color:white;border:0;font:inherit}button{border:0;border-radius:12px;padding:0 16px}</style><div class="top">ChatGPT <b style="color:#8ee6b6">· SIMULATION</b></div><main class="wrap" id="messages"><div class="msg assistant">Hello! This is Apollo’s simulated ChatGPT browser. Send a message to test the flow. Nothing leaves Apollo.</div></main><div class="bar"><form class="form" id="send"><textarea id="prompt" placeholder="Message ChatGPT (simulated)"></textarea><button>Send</button></form></div><script>const box=document.querySelector("#messages"),input=document.querySelector("#prompt");function add(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;box.append(d)}document.querySelector("#send").onsubmit=async e=>{e.preventDefault();const prompt=input.value.trim();if(!prompt)return;input.value="";add("user",prompt);const r=await fetch("/bulletin/api/browser/send",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt})});const d=await r.json();add("assistant",d.reply||d.error||"No reply")};</script>', "text/html; charset=utf-8");
-      if (req.method === "POST" && url.pathname === "/api/browser/send") { const input=await body(); if(typeof input.prompt!=="string"||!input.prompt.trim()) return send(400,{error:"Enter a message first"}); const prompt=input.prompt.trim().slice(0,4000); const id="browser-"+randomUUID(); const reply="SIMULATED CHATGPT REPLY: Apollo received your message in the browser proof of concept: "+prompt.slice(0,1000); state.browserMessages.push({id,at:now(),prompt,reply}); state.browserMessages=state.browserMessages.slice(-100); log("browser-message-sent",id,prompt.slice(0,240)); log("browser-simulated-reply",id,reply.slice(0,240)); await save(); return send(200,{id,reply,simulated:true}); }
-      if (req.method === "GET" && url.pathname === "/api/browser/log") return send(200,{activity:state.activity.slice(-100).reverse()});
+      if (req.method === "POST" && url.pathname === "/api/browser/send") { const input=await body(); if(typeof input.prompt!=="string"||!input.prompt.trim()) return send(400,{error:"Enter a message first"}); const prompt=input.prompt.trim().slice(0,4000); const mutation=await withQueueMutation(()=>{const id="browser-"+randomUUID();const reply="SIMULATED CHATGPT REPLY: Apollo received your message in the browser proof of concept: "+prompt.slice(0,1000);state.browserMessages.push({id,at:now(),prompt,reply});state.browserMessages=state.browserMessages.slice(-100);log("browser-message-sent",id,prompt.slice(0,240));log("browser-simulated-reply",id,reply.slice(0,240));return {id,reply,simulated:true};});if(mutation.busy)return send(503,{error:"Bulletin queue is busy; retry shortly"});return send(200,mutation.result); }
+      if (req.method === "GET" && url.pathname === "/api/browser/log") { if (stateReloading) return send(503,{error:"Bulletin state is refreshing; retry shortly"}); return send(200,{activity:state.activity.slice(-100).reverse()}); }
       if (req.method === "GET" && url.pathname === "/health/ready") {
         const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1";
         const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1";
@@ -319,12 +374,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         }
         const cronState = persistedQueue?.cron && typeof persistedQueue.cron === "object" ? persistedQueue.cron : state.cron || {};
         const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
-        const lastTickStartedAt = Number(cronState.lastTickStartedAt);
         const completedTickFresh = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
           lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
-        const inFlightTickFresh = Boolean(cronState.inFlight) && Number.isFinite(lastTickStartedAt) &&
-          lastTickStartedAt > 0 && lastTickStartedAt <= now() && now() - lastTickStartedAt <= 600_000;
-        const cronExecutionConfirmed = completedTickFresh || inFlightTickFresh;
+        const cronExecutionConfirmed = completedTickFresh;
         const readiness = readinessStatus({
           browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
