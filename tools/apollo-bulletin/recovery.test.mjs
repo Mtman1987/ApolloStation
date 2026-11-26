@@ -131,11 +131,25 @@ test("Hostless cron readiness requires a persisted completed tick, not only a co
   process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
   delete process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID;
   let persisted = { tasks: [], activity: [] };
+  const leases = new Map();
   const store = {
     async loadQueue() { return structuredClone(persisted); },
     async saveQueue(value) { persisted = structuredClone(value); },
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
+    async ping() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
   };
   const app = createBulletinServer({ port: 0, store });
   try {
