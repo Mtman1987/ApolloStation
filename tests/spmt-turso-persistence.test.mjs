@@ -68,13 +68,20 @@ function createFakeTurso() {
       const table = tables.get(m[1]);
       return ok(["cid", "name", "type", "notnull", "dflt_value", "pk"], table ? table.columns.map((name, i) => [encode(i), encode(name), encode("TEXT"), encode(0), { type: "null" }, encode(i < table.pkCount ? 1 : 0)]) : []);
     }
-    if ((m = sql.match(/^SELECT ([\s\S]+?) FROM "([^"]+)"(?: WHERE rowid > \?)?(?: ORDER BY rowid LIMIT (\d+)(?: OFFSET (\d+))?)?$/))) {
+    if ((m = sql.match(/^SELECT MIN\(rowid\), MAX\(rowid\), COUNT\(\*\) FROM "([^"]+)"$/))) {
+      const table = tables.get(m[1]);
+      if (!table) throw new Error(`no such table: ${m[1]}`);
+      const count = table.rows.size;
+      return ok(["min", "max", "count"], count === 0 ? [[{ type: "null" }, { type: "null" }, encode(0)]] : [[encode(1), encode(count), encode(count)]]);
+    }
+    if ((m = sql.match(/^SELECT ([\s\S]+?) FROM "([^"]+)"(?: WHERE rowid > \?(?: AND rowid <= \?)?)?(?: ORDER BY rowid LIMIT (\d+)(?: OFFSET (\d+))?)?$/))) {
       const table = tables.get(m[2]);
       if (!table) throw new Error(`no such table: ${m[2]}`);
       const cols = m[1].split(",").map((s) => s.trim().replaceAll('"', ""));
       // Synthetic rowids follow insertion order, like the real tables.
       let rows = [...table.rows.values()].map((row, i) => ({ row, rowid: i + 1 }));
       if (sql.includes("WHERE rowid >")) rows = rows.filter((entry) => entry.rowid > Number(args[0]));
+      if (sql.includes("AND rowid <=")) rows = rows.filter((entry) => entry.rowid <= Number(args[1]));
       if (m[3] !== undefined) rows = rows.slice(Number(m[4] ?? 0), Number(m[4] ?? 0) + Number(m[3]));
       return ok(cols, rows.map(({ row, rowid }) => cols.map((c) => encode(c === "rowid" ? rowid : row.get(c) ?? null))));
     }
@@ -333,6 +340,69 @@ test("turso hydrate retries a failed page fetch instead of aborting the boot", a
     assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
     assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
     assert.equal(authority.listXp("tenant_bulk", "user_bulk").length, TOTAL);
+  } finally {
+    authority?.close(); platform?.close();
+    if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.TURSO_AUTH_TOKEN; else process.env.TURSO_AUTH_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("turso hydrate fetches the XP ledger in parallel rowid ranges by default", async () => {
+  const root = mkdtempSync(join(tmpdir(), "spmt-turso-hydrate-parallel-"));
+  const databasePath = join(root, "apollo.sqlite");
+  const fake = createFakeTurso();
+  // 26,000 rows: above the 5,000-row page size, so the default (no explicit
+  // pageSize) hydrate must take the parallel path — probe the rowid span,
+  // split it into 6 contiguous ranges, and page the lanes concurrently.
+  // Sequential paging kept dying against Hostless's ~15-minute unready
+  // container retirement; the lanes make the wall-clock the slowest lane,
+  // not the sum of every page.
+  const TOTAL = 26000;
+  const rows = new Map();
+  for (let i = 0; i < TOTAL; i++) {
+    const body = JSON.stringify({
+      id: `xp_par_${i}`, tenantId: "tenant_bulk", userId: "user_bulk", delta: 1,
+      sourceAppId: "spmt", reason: "bulk", idempotencyKey: `xp_par_key_${i}`, createdAt: NOW,
+    });
+    rows.set(JSON.stringify([`xp_par_${i}`]), new Map([
+      ["id", `xp_par_${i}`], ["tenant_id", "tenant_bulk"], ["user_id", "user_bulk"],
+      ["idempotency_key", `xp_par_key_${i}`], ["delta", 1], ["body", body],
+    ]));
+  }
+  fake.tables.set("spmt_xp_ledger", {
+    columns: ["id", "tenant_id", "user_id", "idempotency_key", "delta", "body"],
+    pkCount: 1, rows,
+  });
+  const laneBounds = [];
+  let probes = 0;
+  const recordingFetch = async (url, init) => {
+    const stmt = JSON.parse(init.body).requests?.[0]?.stmt;
+    const sql = stmt?.sql ?? "";
+    if (sql.startsWith("SELECT MIN(rowid)")) probes++;
+    if (sql.includes("AND rowid <=")) laneBounds.push([Number(stmt.args[0].value), Number(stmt.args[1].value)]);
+    return fake.fetchImpl(url, init);
+  };
+  const previousUrl = process.env.TURSO_DATABASE_URL, previousToken = process.env.TURSO_AUTH_TOKEN;
+  process.env.TURSO_DATABASE_URL = "libsql://fake-turso.invalid";
+  process.env.TURSO_AUTH_TOKEN = "fake-token";
+  let authority, platform;
+  try {
+    authority = new SqliteAuthorityStore(databasePath);
+    platform = new SqlitePlatformDataStore(databasePath);
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: recordingFetch });
+    assert.equal(probes, 1, "the rowid span is probed exactly once");
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
+    assert.equal(hydrateReport.tables.spmt_xp_ledger.skipped, 0);
+    const events = authority.listXp("tenant_bulk", "user_bulk");
+    assert.equal(events.length, TOTAL);
+    assert.equal(new Set(events.map((event) => event.id)).size, TOTAL, "every row lands exactly once — no lane duplicates");
+    // Lane boundaries: the distinct range caps partition the span into 6
+    // contiguous, non-overlapping ranges covering [1, TOTAL].
+    const caps = [...new Set(laneBounds.map(([, through]) => through))].sort((a, b) => a - b);
+    assert.deepEqual(caps, [4334, 8668, 13002, 17336, 21670, 26000]);
+    for (const [after, through] of laneBounds) assert.ok(after < through, `lane cursor ${after} stays below its cap ${through}`);
   } finally {
     authority?.close(); platform?.close();
     if (previousUrl === undefined) delete process.env.TURSO_DATABASE_URL; else process.env.TURSO_DATABASE_URL = previousUrl;
