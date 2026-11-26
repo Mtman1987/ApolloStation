@@ -306,3 +306,29 @@ test("an in-flight cron tick is not execution proof until its result is persiste
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("unknown task destinations are rejected instead of silently targeting live ChatGPT", async () => {
+  const directory = await (await import("node:fs/promises")).mkdtemp(join((await import("node:os")).tmpdir(), "apollo-bulletin-destination-"));
+  let persisted = { tasks: [], activity: [] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ statePath: join(directory, "state.json"), port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Typo target", prompt: "Must not be sent to a live service", destination: "chatgpt-simualtor", scheduleType: "manual" }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Destination must be chatgpt or test-simulator/);
+    assert.equal(persisted.tasks.length, 0);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
