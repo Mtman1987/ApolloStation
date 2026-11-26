@@ -12,3 +12,10 @@ export function assertCronTickResponse(value) {
   }
   throw new Error("Apollo Bulletin cron endpoint did not confirm an accepted or busy tick");
 }
+
+export function resolveBrowserControlPassword(env = process.env) {
+  for (const candidate of [env.APOLLO_BROWSER_CONTROL_PASSWORD, env.APOLLO_PREVIEW_PASSWORD]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return "";
+}
