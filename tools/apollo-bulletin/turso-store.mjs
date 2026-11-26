@@ -67,6 +67,13 @@ export class TursoBulletinStore {
     return Number(result.affectedRows ?? 0) > 0;
   }
 
+  async ping() {
+    await this.initialize();
+    const result = await this.adapter.execute("SELECT 1 AS ready", [], true);
+    if (Number(result.rows?.[0]?.[0]) !== 1) throw new Error("Turso Bulletin health probe returned an unexpected result");
+    return true;
+  }
+
   loadQueue() { return this.read(QUEUE_KEY); }
   saveQueue(state) { return this.write(QUEUE_KEY, state); }
   loadBrowserState() { return this.read(BROWSER_KEY); }
