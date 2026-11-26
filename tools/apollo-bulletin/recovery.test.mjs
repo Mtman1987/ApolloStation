@@ -308,6 +308,11 @@ test("an in-flight cron tick is not execution proof until its result is persiste
 });
 
 test("unknown task destinations are rejected instead of silently targeting live ChatGPT", async () => {
+  const keys = ["APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
+  delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
   const directory = await (await import("node:fs/promises")).mkdtemp(join((await import("node:os")).tmpdir(), "apollo-bulletin-destination-"));
   let persisted = { tasks: [], activity: [] };
   const store = {
@@ -330,5 +335,6 @@ test("unknown task destinations are rejected instead of silently targeting live 
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
