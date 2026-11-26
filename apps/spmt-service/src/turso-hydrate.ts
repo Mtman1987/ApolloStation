@@ -60,18 +60,24 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // cursor and hands the full row through.
 const HYDRATE_PAGE_SIZE = 5000;
 // The XP ledger is the one huge scan (182,648 promoted rows): at the shared
-// page size it needs ~37 sequential requests, and per-request Turso latency
-// from the node container swings between sub-second and ~100s while Hostless
-// retires an unready container after ~15 min — the scan kept dying mid-flight
-// and restarting from zero. Fetch the ledger in 25,000-row pages (~8
-// requests) so the whole scan fits inside one container lifetime even in a
-// slow window. The other paged scan (users) keeps the shared size.
-const HYDRATE_XP_PAGE_SIZE = 25000;
+// page size it needs ~37 requests, and per-request Turso latency from the
+// node container swings between sub-second and ~100s while Hostless retires
+// an unready container after ~15 min. Run sequentially, the scan kept dying
+// mid-flight and restarting from zero (best boot: 68.5% in ~12 min). Fatter
+// pages backfired — a 25,000-row page is ~15 MB and cannot finish
+// transferring inside a slow window — so the binding constraint is
+// per-request COMPLETION, not request count. The ledger is therefore fetched
+// in parallel rowid-range lanes at the shared page size (see
+// forEachHydratePageParallel): the concurrency is network-side, local
+// inserts still serialize on the single JS thread. The other paged scan
+// (users) keeps the sequential helper.
+const HYDRATE_XP_LANES = 6;
+const HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS = 25000;
 const HYDRATE_PAGE_ATTEMPTS = 3;
 const HYDRATE_PROGRESS_EVERY_PAGES = 5;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
-async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: string, onRow: (row: HydrateRow) => void, pageSize: number = HYDRATE_PAGE_SIZE): Promise<number> {
-  let total = 0, pages = 0, lastRowid: number | null = null;
+async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: string, onRow: (row: HydrateRow) => void, pageSize: number = HYDRATE_PAGE_SIZE, range?: { after: number; through: number }): Promise<number> {
+  let total = 0, pages = 0, lastRowid: number | null = range ? range.after : null;
   const started = Date.now();
   for (;;) {
     // One failed page fetch used to abort the whole boot hydrate: the paged
@@ -79,10 +85,12 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: s
     // connection (undici surfaces it as "fetch failed") killed two boots
     // after they had already fetched most of the ledger. Retry each page in
     // place; rows already fetched are never repeated.
-    const sql = lastRowid === null
-      ? `${select} ORDER BY rowid LIMIT ${pageSize}`
-      : `${select} WHERE rowid > ? ORDER BY rowid LIMIT ${pageSize}`;
-    const args = lastRowid === null ? [] : [lastRowid];
+    const sql = range
+      ? `${select} WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ${pageSize}`
+      : lastRowid === null
+        ? `${select} ORDER BY rowid LIMIT ${pageSize}`
+        : `${select} WHERE rowid > ? ORDER BY rowid LIMIT ${pageSize}`;
+    const args = range ? [lastRowid ?? range.after, range.through] : lastRowid === null ? [] : [lastRowid];
     let page: Awaited<ReturnType<TursoHttpAdapter["execute"]>> | undefined;
     for (let attempt = 1; attempt <= HYDRATE_PAGE_ATTEMPTS; attempt++) {
       try {
@@ -101,16 +109,55 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: s
     const lastRow = page.rows[page.rows.length - 1];
     if (lastRow) lastRowid = Number(lastRow[0] ?? 0);
     for (const row of page.rows) onRow(row);
-    // Progress logging: a boot that pages a large table (the promoted XP
-    // ledger is ~8 pages at its page size) used to log nothing until the whole hydrate
-    // finished, so a slow or hung boot was indistinguishable from a dead
-    // one in the runtime logs. Speak every few pages and once at the end.
+    // Progress logging: a boot that pages a large table used to log nothing
+    // until the whole hydrate finished, so a slow or hung boot was
+    // indistinguishable from a dead one in the runtime logs. Speak every
+    // few pages and once at the end.
     if (pages % HYDRATE_PROGRESS_EVERY_PAGES === 0) {
       console.log(`[spmt] turso hydrate progress table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
     }
     if (page.rows.length < pageSize) break;
+    if (range && lastRowid !== null && lastRowid >= range.through) break;
   }
   console.log(`[spmt] turso hydrate scan complete table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
+  return total;
+}
+
+// Parallel variant of the paged scan for the one table big enough to need
+// it: probe the rowid span once, split it into HYDRATE_XP_LANES contiguous
+// ranges, and keyset-page all lanes concurrently. Each lane's rows are
+// disjoint by construction (rowid > laneStart AND rowid <= laneEnd), so the
+// caller's insert path sees every row exactly once, and a stalled request
+// only stalls its own lane. Any probe failure or a small table falls back
+// to the sequential helper unchanged.
+async function forEachHydratePageParallel(db: TursoHttpAdapter, select: string, table: string, onRow: (row: HydrateRow) => void, pageSize: number): Promise<number> {
+  let min = Number.NaN, max = Number.NaN, count = Number.NaN;
+  try {
+    const probe = await db.execute(`SELECT MIN(rowid), MAX(rowid), COUNT(*) FROM ${ident(table)}`, [], true);
+    const row = probe.rows[0];
+    if (row) { min = Number(row[0]); max = Number(row[1]); count = Number(row[2]); }
+  } catch { /* fall through to the sequential scan */ }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(count) || count <= pageSize) {
+    return forEachHydratePage(db, select, table, onRow, pageSize);
+  }
+  const started = Date.now();
+  let delivered = 0, nextLogAt = HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS;
+  const countingRow = (row: HydrateRow) => {
+    onRow(row);
+    delivered++;
+    if (delivered >= nextLogAt) {
+      console.log(`[spmt] turso hydrate parallel progress table=${table} rows=${delivered} of=${count} elapsedMs=${Date.now() - started}`);
+      nextLogAt += HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS;
+    }
+  };
+  const chunk = Math.ceil((max - min + 1) / HYDRATE_XP_LANES);
+  const lanes: Promise<number>[] = [];
+  for (let start = min; start <= max; start += chunk) {
+    lanes.push(forEachHydratePage(db, select, table, countingRow, pageSize, { after: start - 1, through: Math.min(start + chunk - 1, max) }));
+  }
+  const totals = await Promise.all(lanes);
+  const total = totals.reduce((sum, laneTotal) => sum + laneTotal, 0);
+  console.log(`[spmt] turso hydrate parallel scan complete table=${table} lanes=${lanes.length} rows=${total} elapsedMs=${Date.now() - started}`);
   return total;
 }
 
@@ -251,7 +298,8 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     // reads this.db, so an unbound capture would throw on every event.
     const appendXp = options.authority.appendXp.bind(options.authority);
     let inserted = 0, skipped = 0;
-    const remote = await forEachHydratePage(db, hasBody ? `SELECT rowid, id, body FROM ${ident(table)}` : `SELECT rowid, id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, table, (row) => {
+    const xpSelect = hasBody ? `SELECT rowid, id, body FROM ${ident(table)}` : `SELECT rowid, id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`;
+    const onXpRow = (row: HydrateRow) => {
       const id = String(row[1] ?? "");
       if (!id) return;
       let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
@@ -271,7 +319,13 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       }
       if (!event.tenantId || !event.userId) { skipped++; return; }
       try { appendXp(event); inserted++; } catch { skipped++; }
-    }, options.pageSize ?? HYDRATE_XP_PAGE_SIZE);
+    };
+    // An explicit page size (tests pin the sequential helper's behavior)
+    // keeps the plain sequential scan; production takes the parallel
+    // rowid-range scan at the shared page size.
+    const remote = options.pageSize !== undefined
+      ? await forEachHydratePage(db, xpSelect, table, onXpRow, options.pageSize)
+      : await forEachHydratePageParallel(db, xpSelect, table, onXpRow, HYDRATE_PAGE_SIZE);
     report.tables[table] = { remote, inserted, skipped };
     break;
   }
