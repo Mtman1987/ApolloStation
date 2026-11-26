@@ -22,10 +22,11 @@ test("release readiness accepts the SPMT root state contract", () => {
   assert.equal(isReadinessResponseReady("/health/ready", { ready: false, live: true, state: "ready" }), false);
 });
 test("readiness requires configured Hostless cron authentication and persisted execution proof", () => {
-  const base = { browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true };
-  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: false, cronExecutionConfirmed: false }), { ready: false, statusCode: 503 });
-  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: true, cronExecutionConfirmed: false }), { ready: false, statusCode: 503 });
-  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: true, cronExecutionConfirmed: true }), { ready: true, statusCode: 200 });
+  const base = { browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, dispatcherLeaseRequired: true };
+  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: false, cronExecutionConfirmed: false, dispatcherLeaseAvailable: false }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: true, cronExecutionConfirmed: false, dispatcherLeaseAvailable: true }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: true, cronExecutionConfirmed: true, dispatcherLeaseAvailable: false }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ ...base, cronAuthConfigured: true, cronExecutionConfirmed: true, dispatcherLeaseAvailable: true }), { ready: true, statusCode: 200 });
 });
 test("release readiness requires the Bulletin boolean contract", () => {
   assert.equal(isReadinessResponseReady("/bulletin/health/ready", { ready: true }), true);
