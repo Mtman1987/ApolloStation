@@ -238,3 +238,71 @@ test("submitted dispatch without a verified reply receipt is uncertain and never
     if (priorRequireTurso === undefined) delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO; else process.env.APOLLO_BULLETIN_REQUIRE_TURSO = priorRequireTurso;
   }
 });
+
+test("an in-flight cron tick is not execution proof until its result is persisted", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO", "APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-inflight-proof-token";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  let persisted = {
+    tasks: [{ id: "inflight-proof", name: "In-flight proof", prompt: "Run once", destination: "test-simulator", status: "scheduled", nextRunAt: Date.now() - 1_000, schedule: { type: "manual" } }],
+    activity: [],
+  };
+  const leases = new Map();
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
+  };
+  let releaseDispatch;
+  let dispatchEntered = false;
+  const dispatchGate = new Promise(resolve => { releaseDispatch = resolve; });
+  const app = createBulletinServer({ port: 0, store, dispatch: async () => {
+    dispatchEntered = true;
+    await dispatchGate;
+    return { submitted: true, receipt: { reply: "simulated receipt" } };
+  } });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const wake = await fetch(origin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer cron-inflight-proof-token" } });
+    assert.equal(wake.status, 202);
+    for (let attempt = 0; attempt < 50 && !dispatchEntered; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dispatchEntered, true, "the test tick must reach the delivery path");
+    assert.equal(persisted.cron.status, "running");
+    assert.equal(persisted.cron.inFlight, true);
+    const inFlight = await fetch(origin + "/health/ready");
+    assert.equal(inFlight.status, 503);
+    const inFlightProof = await inFlight.json();
+    assert.equal(inFlightProof.cronExecutionConfirmed, false);
+    assert.equal(inFlightProof.cron.lastTickStatus, "running");
+    releaseDispatch();
+    for (let attempt = 0; attempt < 50 && persisted.cron?.status !== "completed"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(persisted.cron.status, "completed");
+    const completed = await fetch(origin + "/health/ready");
+    assert.equal(completed.status, 200);
+    const completedProof = await completed.json();
+    assert.equal(completedProof.cronExecutionConfirmed, true);
+    assert.equal(completedProof.cron.lastTickStatus, "completed");
+  } finally {
+    releaseDispatch();
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
