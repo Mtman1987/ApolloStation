@@ -17,6 +17,10 @@ function memoryAdapter() {
         const value = rows.get(args[0]);
         return { rows: value === undefined ? [] : [[value]], affectedRows: 0 };
       }
+      if (sql.startsWith("SELECT state_key, state_json")) {
+        const prefix = String(args[0]).replace(/%$/, "");
+        return { rows: [...rows.entries()].filter(([key]) => key.startsWith(prefix)), affectedRows: 0 };
+      }
       if (sql.startsWith("INSERT INTO apollo_bulletin_state")) {
         rows.set(args[0], args[1]);
         return { rows: [], affectedRows: 1 };
@@ -123,4 +127,16 @@ test("Turso review-link signals are independent of the queue and consumed once",
   assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
   assert.deepEqual(await store.consumeReviewRequest("task-1"), { requestedAt: 123456 });
   assert.equal(await store.consumeReviewRequest("task-1"), null);
+});
+
+
+test("Turso pause and stop commands are queryable and consumed once without queue-row overwrites", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  await store.saveQueue({ tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  await store.requestTaskControl("task-1", "pause", 123456);
+  assert.deepEqual(await store.loadTaskControls(), { "task-1": { action: "pause", requestedAt: 123456 } });
+  assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  assert.deepEqual(await store.consumeTaskControl("task-1"), { action: "pause", requestedAt: 123456 });
+  assert.equal(await store.consumeTaskControl("task-1"), null);
 });
