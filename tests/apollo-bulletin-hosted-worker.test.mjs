@@ -535,3 +535,23 @@ test("Hostless cron proxy skips blank credentials and never falls back to the re
   assert.equal(bossOnly.authorized, false);
   assert.equal(bossOnly.status, 503);
 });
+
+test("review capability links allow only the exact unguessable GET route without an Apollo cookie", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const key = "123e4567-e89b-42d3-a456-426614174000";
+  const allowed = await authorizeBulletinRequest(
+    { headers: {}, method: "GET" },
+    "/bulletin/review/" + key,
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("review capability must not require an Apollo session lookup"); },
+    {},
+  );
+  assert.equal(allowed.authorized, true);
+  assert.equal(allowed.reason, "review-capability-link");
+  const post = await authorizeBulletinRequest({ headers: {}, method: "POST" }, "/bulletin/review/" + key, "http://127.0.0.1:3000", async () => { throw new Error("no cookie should be denied before identity lookup"); }, {});
+  assert.equal(post.authorized, false);
+  assert.equal(post.status, 401);
+  const malformed = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/review/not-a-uuid", "http://127.0.0.1:3000", async () => { throw new Error("malformed review paths must not bypass auth"); }, {});
+  assert.equal(malformed.authorized, false);
+  assert.equal(malformed.status, 401);
+});
