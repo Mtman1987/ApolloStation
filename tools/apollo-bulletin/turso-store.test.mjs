@@ -12,6 +12,7 @@ function memoryAdapter() {
     async execute(sql, args = []) {
       if (sql.startsWith("CREATE TABLE IF NOT EXISTS apollo_bulletin_state")) { stateCreates += 1; return { rows: [], affectedRows: 0 }; }
       if (sql.startsWith("CREATE TABLE IF NOT EXISTS apollo_bulletin_leases")) { leaseCreates += 1; return { rows: [], affectedRows: 0 }; }
+      if (sql.startsWith("SELECT 1 AS ready")) return { rows: [[1]], affectedRows: 0 };
       if (sql.startsWith("SELECT state_json")) {
         const value = rows.get(args[0]);
         return { rows: value === undefined ? [] : [[value]], affectedRows: 0 };
@@ -53,6 +54,12 @@ test("Turso Bulletin store restores queue and browser state through a new store 
   assert.deepEqual(await restarted.loadQueue(), queue);
   assert.deepEqual(await restarted.loadBrowserState(), browser);
   assert.equal(adapter.creates, 4, "each store instance initializes both state and lease tables");
+});
+
+test("Turso Bulletin store health ping verifies the database round-trip", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.equal(await store.ping(), true);
 });
 
 test("Turso Bulletin store refuses to replace corrupt persisted state with an empty queue", async () => {
