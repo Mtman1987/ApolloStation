@@ -8,8 +8,13 @@ import { TursoHttpAdapter } from "@spmt/turso-http";
 export type TursoHydrateReport = {
   enabled: boolean;
   reason?: string;
-  tables: Record<string, { remote: number; inserted: number; skipped: number; error?: string }>;
+  tables: Record<string, { remote: number; inserted: number; skipped: number; error?: string; deferred?: boolean }>;
   durationMs: number;
+  // When the XP ledger fill is deferred (the production default), this
+  // promise resolves once the background fill settles — success or final
+  // failure. It never rejects. Absent when the ledger was filled inline
+  // (an explicit page size, the test seam) or there was nothing to fill.
+  xpFill?: Promise<void>;
 };
 
 type AuthorityLike = {
@@ -59,20 +64,26 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // pass a select whose first column is rowid; the helper consumes it as the
 // cursor and hands the full row through.
 const HYDRATE_PAGE_SIZE = 5000;
-// The XP ledger is the one huge scan (182,648 promoted rows): at the shared
-// page size it needs ~37 requests, and per-request Turso latency from the
-// node container swings between sub-second and ~100s while Hostless retires
-// an unready container after ~15 min. Run sequentially, the scan kept dying
-// mid-flight and restarting from zero (best boot: 68.5% in ~12 min). Fatter
-// pages backfired — a 25,000-row page is ~15 MB and cannot finish
-// transferring inside a slow window — so the binding constraint is
-// per-request COMPLETION, not request count. The ledger is therefore fetched
-// in parallel rowid-range lanes at the shared page size (see
-// forEachHydratePageParallel): the concurrency is network-side, local
-// inserts still serialize on the single JS thread. The other paged scan
-// (users) keeps the sequential helper.
-const HYDRATE_XP_LANES = 6;
-const HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS = 25000;
+// The XP ledger is the one huge scan (182,648 promoted rows), and it is no
+// longer a boot gate. Run inline, the scan kept losing to Hostless's
+// ~15-minute retirement of unready containers: per-request Turso latency
+// from the node container swings between sub-second and ~100s, so the
+// sequential scan died mid-flight and restarted from zero (best boot:
+// 68.5% in ~12 min); fatter pages backfired (a 25,000-row page is ~15 MB
+// and cannot finish transferring inside a slow window); parallel rowid
+// lanes never confirmed a single landed row. The binding constraint is
+// per-request COMPLETION against a hard fuse — and the scan only has a
+// fuse at all because listen() waits for hydrate to return. So the boot
+// pass loads every small table, records the ledger's size, starts the
+// sequential keyset scan as an in-process background fill, and returns,
+// letting the service listen and turn ready. The fill then has no fuse —
+// the container is already the live one — and pages the whole ledger in
+// behind traffic, updating its report entry as it goes. Inserts keep the
+// fill-missing semantics (conflicts skip), so the fill is idempotent and
+// safe to rerun after a failure. A user whose events have not landed yet
+// simply sees them arrive as the fill reaches them; users who never show
+// up cost the boot nothing.
+const HYDRATE_XP_FILL_RETRY_DELAY_MS = 60_000;
 const HYDRATE_PAGE_ATTEMPTS = 3;
 const HYDRATE_PROGRESS_EVERY_PAGES = 5;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
@@ -120,44 +131,6 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: s
     if (range && lastRowid !== null && lastRowid >= range.through) break;
   }
   console.log(`[spmt] turso hydrate scan complete table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
-  return total;
-}
-
-// Parallel variant of the paged scan for the one table big enough to need
-// it: probe the rowid span once, split it into HYDRATE_XP_LANES contiguous
-// ranges, and keyset-page all lanes concurrently. Each lane's rows are
-// disjoint by construction (rowid > laneStart AND rowid <= laneEnd), so the
-// caller's insert path sees every row exactly once, and a stalled request
-// only stalls its own lane. Any probe failure or a small table falls back
-// to the sequential helper unchanged.
-async function forEachHydratePageParallel(db: TursoHttpAdapter, select: string, table: string, onRow: (row: HydrateRow) => void, pageSize: number): Promise<number> {
-  let min = Number.NaN, max = Number.NaN, count = Number.NaN;
-  try {
-    const probe = await db.execute(`SELECT MIN(rowid), MAX(rowid), COUNT(*) FROM ${ident(table)}`, [], true);
-    const row = probe.rows[0];
-    if (row) { min = Number(row[0]); max = Number(row[1]); count = Number(row[2]); }
-  } catch { /* fall through to the sequential scan */ }
-  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(count) || count <= pageSize) {
-    return forEachHydratePage(db, select, table, onRow, pageSize);
-  }
-  const started = Date.now();
-  let delivered = 0, nextLogAt = HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS;
-  const countingRow = (row: HydrateRow) => {
-    onRow(row);
-    delivered++;
-    if (delivered >= nextLogAt) {
-      console.log(`[spmt] turso hydrate parallel progress table=${table} rows=${delivered} of=${count} elapsedMs=${Date.now() - started}`);
-      nextLogAt += HYDRATE_PARALLEL_PROGRESS_EVERY_ROWS;
-    }
-  };
-  const chunk = Math.ceil((max - min + 1) / HYDRATE_XP_LANES);
-  const lanes: Promise<number>[] = [];
-  for (let start = min; start <= max; start += chunk) {
-    lanes.push(forEachHydratePage(db, select, table, countingRow, pageSize, { after: start - 1, through: Math.min(start + chunk - 1, max) }));
-  }
-  const totals = await Promise.all(lanes);
-  const total = totals.reduce((sum, laneTotal) => sum + laneTotal, 0);
-  console.log(`[spmt] turso hydrate parallel scan complete table=${table} lanes=${lanes.length} rows=${total} elapsedMs=${Date.now() - started}`);
   return total;
 }
 
@@ -297,15 +270,16 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     // guard's narrowing does not reach inside it. Bind it: the store method
     // reads this.db, so an unbound capture would throw on every event.
     const appendXp = options.authority.appendXp.bind(options.authority);
-    let inserted = 0, skipped = 0;
     const xpSelect = hasBody ? `SELECT rowid, id, body FROM ${ident(table)}` : `SELECT rowid, id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`;
+    const counters = { fetched: 0, inserted: 0, skipped: 0 };
     const onXpRow = (row: HydrateRow) => {
+      counters.fetched++;
       const id = String(row[1] ?? "");
       if (!id) return;
       let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
       if (hasBody) {
         const body = parseBody(row[2]);
-        if (!body) { skipped++; return; }
+        if (!body) { counters.skipped++; return; }
         event = { id, tenantId: String(body.tenantId ?? body.tenant_id ?? ""), userId: String(body.userId ?? body.user_id ?? ""), delta: Number(body.delta ?? 0), sourceAppId: String(body.sourceAppId ?? body.source_app_id ?? "spmt"), reason: String(body.reason ?? "imported"), idempotencyKey: String(body.idempotencyKey ?? body.idempotency_key ?? id), createdAt: String(body.createdAt ?? body.created_at ?? now()) };
         // Carry the optional event facets through the round trip: the local
         // store persists the whole event as its body and turso-sync mirrors
@@ -317,16 +291,64 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
       } else {
         event = { id, tenantId: String(row[2] ?? ""), userId: String(row[3] ?? ""), delta: Number(row[4] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[5] ?? id), createdAt: now() };
       }
-      if (!event.tenantId || !event.userId) { skipped++; return; }
-      try { appendXp(event); inserted++; } catch { skipped++; }
+      if (!event.tenantId || !event.userId) { counters.skipped++; return; }
+      try { appendXp(event); counters.inserted++; } catch { counters.skipped++; }
     };
     // An explicit page size (tests pin the sequential helper's behavior)
-    // keeps the plain sequential scan; production takes the parallel
-    // rowid-range scan at the shared page size.
-    const remote = options.pageSize !== undefined
-      ? await forEachHydratePage(db, xpSelect, table, onXpRow, options.pageSize)
-      : await forEachHydratePageParallel(db, xpSelect, table, onXpRow, HYDRATE_PAGE_SIZE);
-    report.tables[table] = { remote, inserted, skipped };
+    // keeps the plain inline sequential scan.
+    if (options.pageSize !== undefined) {
+      const remote = await forEachHydratePage(db, xpSelect, table, onXpRow, options.pageSize);
+      report.tables[table] = { remote, inserted: counters.inserted, skipped: counters.skipped };
+      break;
+    }
+    // Production: the ledger is not a boot gate (see the note at
+    // HYDRATE_PAGE_SIZE). Probe its size with a single cheap request so the
+    // report — and the health summary listen() builds from it — shows the
+    // real denominator from the moment the service starts listening, then
+    // start the sequential keyset scan as a background fill and move on.
+    // The fill keeps updating this same entry object, which the caller
+    // holds as its hydrate report, so progress stays observable.
+    let probedTotal = 0;
+    try {
+      const probe = await db.execute(`SELECT COUNT(*) FROM ${ident(table)}`, [], true);
+      probedTotal = Number(probe.rows[0]?.[0] ?? 0) || 0;
+    } catch { /* observability only — the fill reports the true total as it pages */ }
+    const entry: TursoHydrateReport["tables"][string] = { remote: probedTotal, inserted: 0, skipped: 0, deferred: true };
+    report.tables[table] = entry;
+    const fillStarted = Date.now();
+    const runFill = async () => {
+      const remote = await forEachHydratePage(db, xpSelect, table, (row) => {
+        onXpRow(row);
+        entry.remote = Math.max(entry.remote, counters.fetched);
+        entry.inserted = counters.inserted;
+        entry.skipped = counters.skipped;
+      }, HYDRATE_PAGE_SIZE);
+      entry.remote = remote;
+      entry.inserted = counters.inserted;
+      entry.skipped = counters.skipped;
+      entry.deferred = false;
+      console.log(`[spmt] turso hydrate xp background fill complete table=${table} rows=${remote} inserted=${counters.inserted} skipped=${counters.skipped} elapsedMs=${Date.now() - fillStarted}`);
+    };
+    report.xpFill = (async () => {
+      try {
+        await runFill();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        entry.error = `background fill failed: ${message}`.slice(0, 200);
+        console.error(`[spmt] turso hydrate xp background fill failed table=${table}: ${message}; retrying once in ${HYDRATE_XP_FILL_RETRY_DELAY_MS}ms`);
+        // One delayed retry. A rerun re-pages the ledger, but every
+        // already-local row conflict-skips at insert, so it converges
+        // without duplicating a single event.
+        const timer = setTimeout(() => {
+          runFill().then(() => { delete entry.error; }).catch((retryError) => {
+            const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+            entry.error = `background fill failed after retry: ${retryMessage}`.slice(0, 200);
+            console.error(`[spmt] turso hydrate xp background fill failed after retry table=${table}: ${retryMessage}`);
+          });
+        }, HYDRATE_XP_FILL_RETRY_DELAY_MS);
+        timer.unref();
+      }
+    })();
     break;
   }
 
