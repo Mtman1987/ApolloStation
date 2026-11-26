@@ -90,7 +90,8 @@ async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: s
     if (!page) throw new Error("turso hydrate page fetch returned no result");
     pages++;
     total += page.rows.length;
-    if (page.rows.length) lastRowid = Number(page.rows[page.rows.length - 1][0]);
+    const lastRow = page.rows[page.rows.length - 1];
+    if (lastRow) lastRowid = Number(lastRow[0] ?? 0);
     for (const row of page.rows) onRow(row);
     // Progress logging: a boot that pages a large table (the promoted XP
     // ledger is ~37 pages) used to log nothing until the whole hydrate
