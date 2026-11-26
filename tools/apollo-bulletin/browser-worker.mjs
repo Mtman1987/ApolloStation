@@ -26,6 +26,8 @@ export class ApolloChatGptBrowserWorker {
     this.busy = false;
     this.lastReceipt = undefined;
     this.sessionStore = sessionStore;
+    this.sessionPersistedAt = null;
+    this.sessionPersistenceFailed = false;
   }
 
   async start() {
@@ -52,21 +54,35 @@ export class ApolloChatGptBrowserWorker {
     return this.status();
   }
 
+  async isHealthy() {
+    if (!this.context || !this.page) return false;
+    try {
+      if (this.page.isClosed()) return false;
+      const browser = this.context.browser?.();
+      if (!browser || typeof browser.isConnected !== "function" || !browser.isConnected()) return false;
+      const host = new URL(this.page.url()).hostname.toLowerCase();
+      return ["chatgpt.com", "auth.openai.com", "openai.com"].some(domain => host === domain || host.endsWith("." + domain));
+    } catch {
+      return false;
+    }
+  }
+
   async status() {
-    const page = this.#requirePage();
-    const url = page.url();
-    const title = await page.title().catch(() => "");
-    const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
-      await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
-    return {
-      connected: /^https:\/\/(?:chatgpt\.com|auth\.openai\.com|openai\.com)(?:\/|$)/i.test(url),
-      loginRequired,
-      url,
-      title,
-      busy: this.busy,
-      lastReceipt: this.lastReceipt,
-      profilePath: this.profilePath,
-    };
+    const healthy = await this.isHealthy();
+    const sessionPersistenceReady = Boolean(this.sessionStore?.saveBrowserState && this.sessionPersistedAt !== null && !this.sessionPersistenceFailed);
+    const page = this.page;
+    if (!page || page.isClosed()) {
+      return { connected: false, healthy: false, loginRequired: null, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
+    try {
+      const url = page.url();
+      const title = await page.title().catch(() => "");
+      const loginRequired = /\/auth\/(?:log-?in|sign-?in)|\/(?:log-?in|sign-?in)/i.test(url) ||
+        await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      return { connected: healthy, healthy, loginRequired, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    } catch {
+      return { connected: false, healthy: false, loginRequired: null, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
   }
 
   async navigate(targetUrl) {
@@ -113,9 +129,9 @@ export class ApolloChatGptBrowserWorker {
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("Task prompt is missing");
     const targetUrl = normalizeChatGptConversationUrl(task.conversationUrl);
     this.busy = true;
-    const page = this.#requirePage();
     let clickAttempted = false;
     try {
+      const page = this.#requirePage();
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("ChatGPT redirected away from the exact target conversation; refusing to send");
@@ -183,8 +199,15 @@ export class ApolloChatGptBrowserWorker {
 
   async #persistSession() {
     if (!this.sessionStore?.saveBrowserState || !this.context) return;
-    const state = await this.context.storageState({ indexedDB: true });
-    await this.sessionStore.saveBrowserState(state);
+    try {
+      const state = await this.context.storageState({ indexedDB: true });
+      await this.sessionStore.saveBrowserState(state);
+      this.sessionPersistedAt = this.now();
+      this.sessionPersistenceFailed = false;
+    } catch (error) {
+      this.sessionPersistenceFailed = true;
+      throw error;
+    }
   }
 
   #requirePage() {
