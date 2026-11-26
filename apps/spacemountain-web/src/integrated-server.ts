@@ -11,6 +11,7 @@ const SPMT_OVERLAY=/^\/v1\/overlay(?:\/|$)/;
 const SPMT_API=/^\/v1(?:\/|$)/;
 const NEBULA_RUNTIME=/^(?:\/apps\/nebula-arcade(?:\/|$)|\/api\/nebula-arcade(?:\/|$)|\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula(?:-[^/]+|\/|$)|\/overlay\/game-mix\/)/;
 const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
+function firstNonBlankCredential(...values: Array<string | undefined>): string { for (const value of values) if (typeof value === "string" && value.trim()) return value.trim(); return ""; }
 type GreenAppId=typeof GREEN_APP_IDS[number];
 
 export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpaceMountainWebHostOptions {
@@ -27,7 +28,7 @@ export async function authorizeBulletinRequest(
 ): Promise<{ authorized: boolean; status: number; reason: string }> {
   if (pathname === "/bulletin/health/ready" && (request.method ?? "GET") === "GET") return { authorized: true, status: 200, reason: "public-readiness" };
   if (pathname === "/bulletin/api/cron/tick") {
-    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD;
+    const expected = firstNonBlankCredential(environment.APOLLO_BULLETIN_CRON_TOKEN, environment.APOLLO_BROWSER_CONTROL_PASSWORD, environment.APOLLO_PREVIEW_PASSWORD);
     if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
     const authorization = request.headers.authorization || "";
     const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
