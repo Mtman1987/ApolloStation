@@ -31,6 +31,7 @@ function bulletinWidgetHtml(kind) {
 export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_STATE_PATH || "/tmp/apollo-bulletin/state.json", port = Number(process.env.APOLLO_BULLETIN_PORT || 3210), dispatch, store, now = () => Date.now() } = {}) {
   let state;
   let busy = false;
+  let activeTick = false;
   let browserWorker;
   let timer;
   let saveTail = Promise.resolve();
@@ -138,6 +139,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
+    activeTick = true;
     activeTickDone = new Promise(resolve => { resolveActiveTickDone = resolve; });
     let processed = 0;
     let tickFailure;
@@ -251,6 +253,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
             console.error("[apollo-bulletin] Dispatcher lease release failed:", String(releaseError?.message || releaseError));
           }
         }
+        activeTick = false;
         busy = false;
         resolveActiveTickDone?.();
         resolveActiveTickDone = null;
@@ -260,7 +263,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://bulletin.local");
-    const send = (status, value, type = "application/json; charset=utf-8") => { const body = type.startsWith("text/html") ? value : JSON.stringify(value); res.writeHead(status, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
+    const send = (status, value, type = "application/json; charset=utf-8") => { const body = type.startsWith("text/") ? value : JSON.stringify(value); res.writeHead(status, { "content-type": type, "cache-control": "no-store" }); res.end(body); };
     const browserControlRoute = url.pathname === "/browser" || url.pathname.startsWith("/api/browser/");
     if (browserControlRoute) {
       const password = [process.env.APOLLO_BROWSER_CONTROL_PASSWORD, process.env.APOLLO_PREVIEW_PASSWORD].find(value => typeof value === "string" && value.trim())?.trim() || "";
@@ -310,6 +313,22 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       const action = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(run|pause|resume|complete|stop)$/);
       if (req.method === "POST" && action) {
         const verb = action[2];
+        if (busy && activeTick && !stateReloading && (verb === "pause" || verb === "stop")) {
+          const task = state.tasks.find(t => t.id === action[1]);
+          if (!task) return send(404, { error: "Task not found" });
+          if (verb === "pause") {
+            if (["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) return send(409, { error: "This task has an unresolved send or is already resolved; inspect it before changing its state." });
+            if (task.status === "dispatching") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; }
+            else { task.status = "paused"; task.nextRunAt = null; }
+          } else {
+            if (["dispatch-uncertain","dispatched","awaiting_review","completed"].includes(task.status)) return send(409, { error: "This task has an unresolved send or is already resolved; use manual completion only after inspection." });
+            if (task.status === "dispatching") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; }
+            else { task.status = "stopped"; task.nextRunAt = null; }
+          }
+          log("task-" + verb, task.id);
+          await save();
+          return send(200, { task: publicTask(task) });
+        }
         const mutation = await withQueueMutation(() => {
           const task = state.tasks.find(t => t.id === action[1]);
           if (!task) return { status: 404, body: { error: "Task not found" } };
