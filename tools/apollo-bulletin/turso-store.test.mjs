@@ -22,9 +22,9 @@ function memoryAdapter() {
         return { rows: [], affectedRows: 1 };
       }
       if (sql.startsWith("INSERT INTO apollo_bulletin_leases")) {
-        const [key, ownerId, expiresAt, updatedAt, now] = args;
+        const [key, ownerId, expiresAt, updatedAt, now, renewalOwnerId] = args;
         const current = leases.get(key);
-        if (!current || current.expiresAt <= now) {
+        if (!current || current.expiresAt <= now || current.ownerId === renewalOwnerId) {
           leases.set(key, { ownerId, expiresAt, updatedAt });
           return { rows: [], affectedRows: 1 };
         }
@@ -86,6 +86,16 @@ test("Turso cron lease is exclusive across store instances and only its owner ca
   const ownerStore = firstWon ? first : second;
   assert.equal(await ownerStore.releaseLease("hostless-cron", owner, 2_002), true);
   assert.equal(await other.acquireLease("hostless-cron", "worker-c", 2_003, 5_000), true);
+});
+
+test("Turso cron lease renews for its current owner without admitting another worker", async () => {
+  const adapter = memoryAdapter();
+  const owner = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const other = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.equal(await owner.acquireLease("dispatcher", "worker-a", 1_000, 5_000), true);
+  assert.equal(await owner.acquireLease("dispatcher", "worker-a", 2_000, 5_000), true);
+  assert.equal(adapter.leases.get("dispatcher").expiresAt, 7_000);
+  assert.equal(await other.acquireLease("dispatcher", "worker-b", 3_000, 5_000), false);
 });
 
 test("Turso cron lease can be claimed after expiry", async () => {
