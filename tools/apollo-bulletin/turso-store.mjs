@@ -82,6 +82,49 @@ export class TursoBulletinStore {
     return true;
   }
 
+  async requestTaskControl(taskId, action, requestedAt = Date.now()) {
+    if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId) || !["pause", "stop"].includes(action) || !Number.isSafeInteger(requestedAt) || requestedAt < 0) {
+      throw new TypeError("Bulletin task control requires a valid task ID, action, and timestamp");
+    }
+    await this.write("apollo-bulletin:task-control:" + taskId, { action, requestedAt });
+    return true;
+  }
+
+  async loadTaskControls() {
+    await this.initialize();
+    const prefix = "apollo-bulletin:task-control:";
+    const result = await this.adapter.execute(
+      "SELECT state_key, state_json FROM apollo_bulletin_state WHERE state_key LIKE ?",
+      [prefix + "%"],
+      true,
+    );
+    const controls = {};
+    for (const row of result.rows || []) {
+      const key = String(row[0] || "");
+      if (!key.startsWith(prefix)) continue;
+      try { controls[key.slice(prefix.length)] = JSON.parse(String(row[1])); }
+      catch { throw new Error("Stored Apollo Bulletin task control is invalid JSON"); }
+    }
+    return controls;
+  }
+
+  async consumeTaskControl(taskId) {
+    if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId)) {
+      throw new TypeError("Bulletin task control requires a valid task ID");
+    }
+    await this.initialize();
+    const result = await this.adapter.execute(
+      "DELETE FROM apollo_bulletin_state WHERE state_key = ? RETURNING state_json",
+      ["apollo-bulletin:task-control:" + taskId],
+      true,
+    );
+    if (!result.rows.length) return null;
+    try {
+      const control = JSON.parse(String(result.rows[0][0]));
+      return ["pause", "stop"].includes(control.action) ? control : null;
+    } catch { throw new Error("Stored Apollo Bulletin task control is invalid JSON"); }
+  }
+
   async consumeReviewRequest(taskId) {
     if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId)) {
       throw new TypeError("Bulletin review signal requires a valid task ID");
