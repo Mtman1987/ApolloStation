@@ -205,18 +205,28 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
     async (url, options) => {
       assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
       seenCookie = options.headers.cookie;
-      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", platformOwner: true }), { status: 200 });
     },
     {},
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "actor pin is optional until configured");
+  assert.equal(allowed.authorized, true, "the canonical SPMT platform-owner flag is required even without an optional actor pin");
+  assert.equal(allowed.reason, "apollo-owner-session");
+  const nonOwner = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user", platformOwner: false }), { status: 200 }),
+    {},
+  );
+  assert.equal(nonOwner.authorized, false);
+  assert.equal(nonOwner.status, 403);
   const wrongOwner = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=other-session" } },
     "/bulletin/api/tasks",
     "http://127.0.0.1:3000",
-    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user" }), { status: 200 }),
-    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", platformOwner: true }), { status: 200 }),
+    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "different-owner" },
   );
   assert.equal(wrongOwner.authorized, false);
   assert.equal(wrongOwner.status, 403);
