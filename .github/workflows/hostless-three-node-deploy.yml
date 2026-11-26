@@ -454,6 +454,18 @@ jobs:
             }
             if (last) throw new Error("Live readiness failed for " + path + ": " + JSON.stringify(last));
           }
+          const probes = [
+            { path: "/bulletin/api/tasks", method: "GET", expected: 401 },
+            { path: "/bulletin/browser", method: "GET", expected: 401 },
+            { path: "/bulletin/api/browser/status", method: "GET", expected: 401 },
+            { path: "/bulletin/api/cron/tick", method: "POST", expected: 401 },
+            { path: "/bulletin/review/123e4567-e89b-42d3-a456-426614174000", method: "GET", expected: 404 }
+          ];
+          for (const probe of probes) {
+            const response = await fetch(base + probe.path, { method: probe.method, cache: "no-store", signal: AbortSignal.timeout(8000) });
+            if (response.status !== probe.expected) throw new Error("Unexpected live Bulletin route status: " + JSON.stringify({ path: probe.path, method: probe.method, status: response.status, expected: probe.expected }));
+            console.log(JSON.stringify({ path: probe.path, method: probe.method, status: response.status, expected: probe.expected }));
+          }
           NODE
   # Live log snapshot per node, uploaded as an Actions artifact after every
   # release attempt (success or failure). Uses the existing Hostless node tokens.
