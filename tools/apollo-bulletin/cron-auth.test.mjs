@@ -24,5 +24,5 @@ test("browser control password skips blank values and never uses the retired Bos
   const { resolveBrowserControlPassword } = await import("./cron-auth.mjs");
   assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: " browser-secret ", APOLLO_PREVIEW_PASSWORD: "preview-secret" }), "browser-secret");
   assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: "  ", APOLLO_PREVIEW_PASSWORD: " preview-secret " }), "preview-secret");
-  assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: "\\t", BOSS_KEY: "legacy-key" }), "");
+  assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: "\t", BOSS_KEY: "legacy-key" }), "");
 });
