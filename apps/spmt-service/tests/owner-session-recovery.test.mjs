@@ -68,6 +68,13 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
       ownerUserId: "another-user",
       displayName: "Another Workspace",
     });
+    service.data.registerUser({
+      userId: "another-user",
+      username: "another-user",
+      displayName: "Another User",
+      password: "another-user-test-password-12345",
+      tenantIds: ["another-users-tenant"],
+    });
     service.authority.getOrCreateWorkspace("another-users-tenant");
 
     await service.listen();
@@ -84,6 +91,29 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
     assert.deepEqual(body.tenantIds, ["recovered-owner-tenant"]);
     assert.deepEqual(service.data.getProfile("owner-existing").tenantIds, ["recovered-owner-tenant"]);
     assert.equal(body.tenantIds.includes("another-users-tenant"), false);
+
+    const ownerCookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
+    assert.match(ownerCookie, /^spmt_token=/);
+    const ownerIdentityResponse = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/check`, { headers: { cookie: ownerCookie } });
+    assert.equal(ownerIdentityResponse.status, 200);
+    const ownerIdentity = await ownerIdentityResponse.json();
+    assert.equal(ownerIdentity.platformOwner, true);
+    assert.equal(ownerIdentity.actorId, "owner-existing");
+
+    const otherLogin = await fetch(`http://127.0.0.1:${address.port}/v1/auth/browser-login`, {
+      method: "POST",
+      headers: { origin: "https://spacemountain.live", "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "another-user", password: "another-user-test-password-12345" }).toString(),
+      redirect: "manual",
+    });
+    assert.equal(otherLogin.status, 303);
+    const otherCookie = otherLogin.headers.get("set-cookie")?.split(";")[0] ?? "";
+    assert.match(otherCookie, /^spmt_token=/);
+    const otherIdentityResponse = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/check`, { headers: { cookie: otherCookie } });
+    assert.equal(otherIdentityResponse.status, 200);
+    const otherIdentity = await otherIdentityResponse.json();
+    assert.equal(otherIdentity.platformOwner, false);
+    assert.equal(otherIdentity.actorId, "another-user");
   } finally {
     await service.close().catch(() => undefined);
     rmSync(directory, { recursive: true, force: true });
