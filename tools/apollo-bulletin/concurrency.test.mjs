@@ -260,3 +260,56 @@ test("ChatGPT review capability works during dispatch and signals the queue with
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("pause from a second instance is persisted as a control signal and applied after dispatch", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cross-instance-pause-token";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  let persisted = {
+    tasks: [{ id: "cross-pause", name: "Cross-instance pause", prompt: "Finish this cycle", destination: "test-simulator", status: "scheduled", nextRunAt: Date.now() - 1_000, schedule: { type: "manual" } }],
+    activity: [],
+  };
+  const leases = new Map(), controls = new Map();
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async acquireLease(key, ownerId, at, ttlMs) { const current = leases.get(key); if (current && current.expiresAt > at && current.ownerId !== ownerId) return false; leases.set(key, { ownerId, expiresAt: at + ttlMs }); return true; },
+    async releaseLease(key, ownerId) { const current = leases.get(key); if (!current || current.ownerId !== ownerId) return false; leases.set(key, { ...current, expiresAt: 0 }); return true; },
+    async requestTaskControl(taskId, action, requestedAt) { controls.set(taskId, { action, requestedAt }); return true; },
+    async loadTaskControls() { return Object.fromEntries(controls); },
+    async consumeTaskControl(taskId) { const control = controls.get(taskId) ?? null; controls.delete(taskId); return control; },
+  };
+  let releaseDispatch, dispatchEntered = false;
+  const dispatchGate = new Promise(resolve => { releaseDispatch = resolve; });
+  const dispatch = async () => { dispatchEntered = true; await dispatchGate; return { submitted: true, receipt: { reply: "delivered" } }; };
+  const first = createBulletinServer({ port: 0, store, dispatch });
+  const second = createBulletinServer({ port: 0, store, dispatch });
+  try {
+    const firstAddress = await first.listen(), secondAddress = await second.listen();
+    const firstOrigin = "http://127.0.0.1:" + firstAddress.port, secondOrigin = "http://127.0.0.1:" + secondAddress.port;
+    const wake = await fetch(firstOrigin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer cross-instance-pause-token" } });
+    assert.equal(wake.status, 202);
+    for (let attempt = 0; attempt < 50 && !dispatchEntered; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dispatchEntered, true);
+    const pause = await fetch(secondOrigin + "/api/tasks/cross-pause/pause", { method: "POST" });
+    assert.equal(pause.status, 202);
+    const response = await pause.json();
+    assert.equal(response.controlRequested, "pause");
+    assert.equal(response.task.pendingControl, "pause");
+    const visible = await fetch(secondOrigin + "/api/tasks");
+    assert.equal((await visible.json()).tasks[0].pendingControl, "pause");
+    releaseDispatch();
+    for (let attempt = 0; attempt < 50 && persisted.tasks[0].status !== "paused"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(persisted.tasks[0].status, "paused");
+    assert.equal(persisted.tasks[0].lastEvent, "Paused after the current cycle");
+    assert.equal(controls.has("cross-pause"), false);
+  } finally {
+    releaseDispatch();
+    await Promise.all([first.close(), second.close()]);
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
