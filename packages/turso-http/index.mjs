@@ -51,7 +51,7 @@ function decodeStatementResult(item) {
  * that stream. Network/commit errors are surfaced, never automatically replayed.
  */
 export class TursoHttpAdapter {
-  constructor({ url, authToken, fetchImpl = fetch, requestTimeoutMs = 30_000 }) {
+  constructor({ url, authToken, fetchImpl = fetch, requestTimeoutMs = 10_000 }) {
     if (!url || !authToken) throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required");
     if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) throw new Error("Turso requestTimeoutMs must be a positive number");
     this.endpoint = normalizeTursoUrl(url);
