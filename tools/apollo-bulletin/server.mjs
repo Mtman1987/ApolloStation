@@ -34,6 +34,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let browserWorker;
   let timer;
   let saveTail = Promise.resolve();
+  let stateReloading = false;
+  let activeTickDone = Promise.resolve();
+  let resolveActiveTickDone = null;
   const persistence = store ?? createTursoBulletinStoreFromEnvironment();
   if (process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1" && !persistence) throw new Error("Apollo Bulletin requires TURSO_DATABASE_URL or SHARED_TURSO_DATABASE_URL and TURSO_AUTH_TOKEN or NODE1_TURSO_AUTH_TOKEN");
   async function deliver(task) {
@@ -96,9 +99,42 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
+    activeTickDone = new Promise(resolve => { resolveActiveTickDone = resolve; });
     let processed = 0;
     let tickFailure;
+    const leaseRequired = typeof persistence?.acquireLease === "function" && typeof persistence?.releaseLease === "function";
+    let leaseAcquired = !leaseRequired;
+    const leaseOwnerId = leaseRequired ? randomUUID() : null;
+    let leaseHeartbeatTimer = null;
+    let leaseLost = false;
     try {
+      if (leaseRequired) {
+        leaseAcquired = await persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000);
+        if (!leaseAcquired) {
+          log("dispatch-lease-busy", null, source);
+          return { processed: 0, busy: true, leaseBusy: true };
+        }
+        leaseHeartbeatTimer = setInterval(() => {
+          void persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000)
+            .then(renewed => {
+              if (!renewed) {
+                leaseLost = true;
+                if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
+                log("dispatch-lease-lost", null, source);
+              }
+            })
+            .catch(error => console.warn("[apollo-bulletin] Dispatcher lease renewal failed:", String(error?.message || error)));
+        }, 60_000);
+        leaseHeartbeatTimer.unref?.();
+      }
+      stateReloading = true;
+      try {
+        await saveTail;
+        await load();
+      } finally {
+        stateReloading = false;
+      }
+      if (leaseLost) throw new Error("Dispatcher lease was lost before task dispatch");
       if (source === "hostless-cron") {
         state.cron.inFlight = true;
         state.cron.status = "running";
@@ -129,38 +165,52 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       tickFailure = error;
       throw error;
     } finally {
-      busy = false;
-      if (source === "hostless-cron") {
-        state.cron.inFlight = false;
-        state.cron.lastTickProcessed = processed;
-        const previousCron = {
-          lastTickCompletedAt: state.cron.lastTickCompletedAt,
-          completedTicks: state.cron.completedTicks,
-          failedTicks: state.cron.failedTicks,
-        };
-        if (tickFailure) {
-          state.cron.status = "failed";
-          state.cron.lastTickFailedAt = now();
-          state.cron.failedTicks += 1;
-          log("hostless-cron-tick-failed", null, String(processed));
-        } else {
-          state.cron.status = "completed";
-          state.cron.lastTickCompletedAt = now();
-          state.cron.completedTicks += 1;
-          log("hostless-cron-tick-completed", null, String(processed));
-        }
-        try { await save(); }
-        catch (persistError) {
-          state.cron.status = "failed";
+      try {
+        if (source === "hostless-cron" && (leaseAcquired || !leaseRequired)) {
           state.cron.inFlight = false;
-          state.cron.lastTickCompletedAt = previousCron.lastTickCompletedAt ?? null;
-          state.cron.completedTicks = previousCron.completedTicks;
-          state.cron.lastTickFailedAt = now();
-          state.cron.failedTicks = previousCron.failedTicks + 1;
-          log("hostless-cron-tick-result-persistence-failed", null);
-          console.error("[apollo-bulletin] Could not persist cron tick result:", String(persistError?.message || persistError));
-          if (!tickFailure) throw persistError;
+          state.cron.lastTickProcessed = processed;
+          const previousCron = {
+            lastTickCompletedAt: state.cron.lastTickCompletedAt,
+            completedTicks: state.cron.completedTicks,
+            failedTicks: state.cron.failedTicks,
+          };
+          if (tickFailure) {
+            state.cron.status = "failed";
+            state.cron.lastTickFailedAt = now();
+            state.cron.failedTicks += 1;
+            log("hostless-cron-tick-failed", null, String(processed));
+          } else {
+            state.cron.status = "completed";
+            state.cron.lastTickCompletedAt = now();
+            state.cron.completedTicks += 1;
+            log("hostless-cron-tick-completed", null, String(processed));
+          }
+          try { await save(); }
+          catch (persistError) {
+            state.cron.status = "failed";
+            state.cron.inFlight = false;
+            state.cron.lastTickCompletedAt = previousCron.lastTickCompletedAt ?? null;
+            state.cron.completedTicks = previousCron.completedTicks;
+            state.cron.lastTickFailedAt = now();
+            state.cron.failedTicks = previousCron.failedTicks + 1;
+            log("hostless-cron-tick-result-persistence-failed", null);
+            console.error("[apollo-bulletin] Could not persist cron tick result:", String(persistError?.message || persistError));
+            if (!tickFailure) throw persistError;
+          }
         }
+      } finally {
+        if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
+        if (leaseAcquired && leaseOwnerId) {
+          try {
+            const released = await persistence.releaseLease("apollo-bulletin-dispatch", leaseOwnerId, now());
+            if (!released) console.warn("[apollo-bulletin] Dispatcher lease was not released by its owner");
+          } catch (releaseError) {
+            console.error("[apollo-bulletin] Dispatcher lease release failed:", String(releaseError?.message || releaseError));
+          }
+        }
+        busy = false;
+        resolveActiveTickDone?.();
+        resolveActiveTickDone = null;
       }
     }
     return { processed, busy: false };
@@ -181,7 +231,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         return;
       }
     }
-    const body = async () => { let raw="", size=0; for await (const chunk of req) { size += Buffer.byteLength(chunk); if (size > 32*1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 }); raw += chunk; } if (!raw) return {}; try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }); } };
+    const body = async () => { if (stateReloading) throw Object.assign(new Error("Bulletin state is refreshing; retry shortly"), { statusCode: 503 }); let raw="", size=0; for await (const chunk of req) { size += Buffer.byteLength(chunk); if (size > 32*1024) throw Object.assign(new Error("Request body exceeds 32 KB"), { statusCode: 413 }); raw += chunk; } if (stateReloading) throw Object.assign(new Error("Bulletin state is refreshing; retry shortly"), { statusCode: 503 }); if (!raw) return {}; try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }); } };
     try {
       if (req.method === "POST" && url.pathname === "/api/cron/tick") {
         const expected = resolveCronToken(process.env);
@@ -245,21 +295,36 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       if (req.method === "GET" && url.pathname === "/health/ready") {
         const browserRequired = process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1";
         const persistenceRequired = process.env.APOLLO_BULLETIN_REQUIRE_TURSO === "1";
-        const ownerActorConfigured = Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim());
         const cronRequired = process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON === "1";
         const cronAuthConfigured = Boolean(resolveCronToken(process.env));
+        const dispatcherLeaseConfigured = typeof persistence?.acquireLease === "function" && typeof persistence?.releaseLease === "function";
         const browserStatus = browserWorker ? await browserWorker.status().catch(() => null) : null;
         const browserHealthy = Boolean(browserStatus?.healthy);
         const browserSessionPersisted = Boolean(browserStatus?.sessionPersistenceReady);
         const browserInfrastructureReady = browserHealthy && browserSessionPersisted;
         const browserSessionReady = Boolean(browserInfrastructureReady && !browserStatus?.loginRequired);
-        const cronState = state.cron || {};
+        let persistenceAvailable = Boolean(persistence);
+        let persistedQueue = null;
+        if (persistence) {
+          try {
+            if (typeof persistence.ping === "function") await persistence.ping();
+            persistedQueue = await persistence.loadQueue();
+          } catch {
+            persistenceAvailable = false;
+          }
+        }
+        const cronState = persistedQueue?.cron && typeof persistedQueue.cron === "object" ? persistedQueue.cron : state.cron || {};
         const lastTickCompletedAt = Number(cronState.lastTickCompletedAt);
-        const cronExecutionConfirmed = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
+        const lastTickStartedAt = Number(cronState.lastTickStartedAt);
+        const completedTickFresh = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
           lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
+        const inFlightTickFresh = Boolean(cronState.inFlight) && Number.isFinite(lastTickStartedAt) &&
+          lastTickStartedAt > 0 && lastTickStartedAt <= now() && now() - lastTickStartedAt <= 600_000;
+        const cronExecutionConfirmed = completedTickFresh || inFlightTickFresh;
         const readiness = readinessStatus({
-          browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable: Boolean(persistence),
+          browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
+          dispatcherLeaseRequired: cronRequired, dispatcherLeaseAvailable: dispatcherLeaseConfigured && persistenceAvailable,
         });
         const cron = {
           configured: cronAuthConfigured, hostlessMode: cronRequired, lastTickStatus: cronState.status || "never",
@@ -271,14 +336,16 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           ready: readiness.ready, browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserInfrastructureReady && browserStatus?.loginRequired ? "chromium-login-required" : browserHealthy && !browserSessionPersisted ? "chromium-session-persistence-not-ready" : "browser-not-ready") : "browser-not-started",
           browserRequired, browserHealthy, browserSessionPersisted, browserSessionPersistedAt: browserStatus?.lastSessionPersistedAt ?? null,
           browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
-          persistence: persistence ? "turso" : "local-fallback", persistenceRequired, ownerActorConfigured,
+          persistence: persistenceAvailable ? "turso" : persistenceRequired ? "unavailable" : "local-fallback", persistenceRequired, persistenceReachable: persistenceAvailable,
+          ownerAuthorizationPolicy: "platform-owner-session", ownerActorPinConfigured: Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()),
+          dispatcherLeaseConfigured,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
         });
       }
       send(404,{error:"not_found"});
     } catch (error) { send(error.statusCode || 500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(process.env,{sessionStore:persistence}); browserWorker=browser.worker; await browserWorker.openLogin(); log("browser-started",null,"Dedicated Chromium opened ChatGPT sign-in"); await save(); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); log("browser-start-failed",null,String(error?.message||error).slice(0,300)); await save(); } } if (process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON !== "1") { timer=setInterval(()=>void tick(),1000); timer.unref(); void tick(); } return server.address(); }, async close(){ if(timer) clearInterval(timer); if(browserWorker) await browserWorker.close(); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); } };
+  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(process.env,{sessionStore:persistence}); browserWorker=browser.worker; await browserWorker.openLogin(); log("browser-started",null,"Dedicated Chromium opened ChatGPT sign-in"); await save(); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); log("browser-start-failed",null,String(error?.message||error).slice(0,300)); await save(); } } if (process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON !== "1") { timer=setInterval(()=>void tick(),1000); timer.unref(); void tick(); } return server.address(); }, async close(){ if(timer) clearInterval(timer); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); await activeTickDone; if(browserWorker) await browserWorker.close(); await saveTail; } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
