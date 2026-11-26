@@ -509,3 +509,29 @@ test("pre-send browser blocks pause recoverably and require owner resume, not an
     assert.equal(dispatchCalls,2,"blocked send remains paused after second attempt");
   } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
 });
+
+test("Hostless cron proxy skips blank credentials and never falls back to the retired Boss Key", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const authorize = (token, environment) => authorizeBulletinRequest(
+    { headers: { authorization: "Bearer " + token } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    environment,
+  );
+  const browserFallback = await authorize("browser-fallback-token", {
+    APOLLO_BULLETIN_CRON_TOKEN: "  \n ",
+    APOLLO_BROWSER_CONTROL_PASSWORD: " browser-fallback-token ",
+    APOLLO_PREVIEW_PASSWORD: "preview-token",
+  });
+  assert.equal(browserFallback.authorized, true);
+  const previewFallback = await authorize("preview-fallback-token", {
+    APOLLO_BULLETIN_CRON_TOKEN: " ",
+    APOLLO_BROWSER_CONTROL_PASSWORD: "\t",
+    APOLLO_PREVIEW_PASSWORD: " preview-fallback-token ",
+  });
+  assert.equal(previewFallback.authorized, true);
+  const bossOnly = await authorize("legacy-boss-key", { BOSS_KEY: "legacy-boss-key" });
+  assert.equal(bossOnly.authorized, false);
+  assert.equal(bossOnly.status, 503);
+});
