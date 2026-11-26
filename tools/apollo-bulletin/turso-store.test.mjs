@@ -21,6 +21,7 @@ function memoryAdapter() {
         rows.set(args[0], args[1]);
         return { rows: [], affectedRows: 1 };
       }
+      if (sql.startsWith("DELETE FROM apollo_bulletin_state")) { const value = rows.get(args[0]); rows.delete(args[0]); return { rows: value === undefined ? [] : [[value]], affectedRows: value === undefined ? 0 : 1 }; }
       if (sql.startsWith("INSERT INTO apollo_bulletin_leases")) {
         const [key, ownerId, expiresAt, updatedAt, now, renewalOwnerId] = args;
         const current = leases.get(key);
@@ -111,4 +112,15 @@ test("Turso Bulletin store is created only when an existing database URL and tok
   assert.equal(createTursoBulletinStoreFromEnvironment({}), null);
   const store = createTursoBulletinStoreFromEnvironment({ TURSO_DATABASE_URL: "libsql://test.invalid", NODE1_TURSO_AUTH_TOKEN: "test-only" });
   assert.ok(store instanceof TursoBulletinStore);
+});
+
+
+test("Turso review-link signals are independent of the queue and consumed once", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  await store.saveQueue({ tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  await store.requestReview("task-1", 123456);
+  assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  assert.deepEqual(await store.consumeReviewRequest("task-1"), { requestedAt: 123456 });
+  assert.equal(await store.consumeReviewRequest("task-1"), null);
 });
