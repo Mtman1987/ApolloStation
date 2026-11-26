@@ -106,6 +106,8 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     let leaseAcquired = !leaseRequired;
     const leaseOwnerId = leaseRequired ? randomUUID() : null;
     let leaseHeartbeatTimer = null;
+    let leaseHeartbeatInFlight = Promise.resolve();
+    let leaseClosing = false;
     let leaseLost = false;
     try {
       if (leaseRequired) {
@@ -115,15 +117,15 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           return { processed: 0, busy: true, leaseBusy: true };
         }
         leaseHeartbeatTimer = setInterval(() => {
-          void persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000)
-            .then(renewed => {
-              if (!renewed) {
-                leaseLost = true;
-                if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
-                log("dispatch-lease-lost", null, source);
-              }
-            })
-            .catch(error => console.warn("[apollo-bulletin] Dispatcher lease renewal failed:", String(error?.message || error)));
+          leaseHeartbeatInFlight = leaseHeartbeatInFlight.then(async () => {
+            if (leaseClosing) return;
+            const renewed = await persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000);
+            if (!renewed) {
+              leaseLost = true;
+              if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
+              log("dispatch-lease-lost", null, source);
+            }
+          }).catch(error => console.warn("[apollo-bulletin] Dispatcher lease renewal failed:", String(error?.message || error)));
         }, 60_000);
         leaseHeartbeatTimer.unref?.();
       }
@@ -199,7 +201,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           }
         }
       } finally {
+        leaseClosing = true;
         if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
+        await leaseHeartbeatInFlight;
         if (leaseAcquired && leaseOwnerId) {
           try {
             const released = await persistence.releaseLease("apollo-bulletin-dispatch", leaseOwnerId, now());
