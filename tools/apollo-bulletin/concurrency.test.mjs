@@ -205,3 +205,58 @@ test("owner can request pause during the active dispatch and the current cycle s
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("ChatGPT review capability works during dispatch and signals the queue without overwriting it", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "review-capability-test-token";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  const reviewKey = "123e4567-e89b-42d3-a456-426614174000";
+  const task = {
+    id: "review-signal-task", name: "Review signal task", prompt: "Continue carefully",
+    destination: "chatgpt", conversationUrl: "https://chatgpt.com/c/review-signal",
+    status: "scheduled", nextRunAt: Date.now() - 1_000, schedule: { type: "manual" },
+    reviewKey, reviewUrl: "https://apollo-node-1.hostless.app/bulletin/review/" + reviewKey,
+    completionMarker: "APOLLO_BULLETIN_COMPLETE_REVIEW_SIGNAL", maxCycles: 3, cycles: 0,
+  };
+  let persisted = { tasks: [task], activity: [] };
+  const leases = new Map(), reviewSignals = new Map();
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async acquireLease(key, ownerId, at, ttlMs) { const current = leases.get(key); if (current && current.expiresAt > at && current.ownerId !== ownerId) return false; leases.set(key, { ownerId, expiresAt: at + ttlMs }); return true; },
+    async releaseLease(key, ownerId) { const current = leases.get(key); if (!current || current.ownerId !== ownerId) return false; leases.set(key, { ...current, expiresAt: 0 }); return true; },
+    async requestReview(taskId, requestedAt) { reviewSignals.set(taskId, { requestedAt }); return true; },
+    async consumeReviewRequest(taskId) { const value = reviewSignals.get(taskId) ?? null; reviewSignals.delete(taskId); return value; },
+  };
+  let releaseDispatch, dispatchEntered = false;
+  const dispatchGate = new Promise(resolve => { releaseDispatch = resolve; });
+  const dispatch = async () => { dispatchEntered = true; await dispatchGate; return { submitted: true, receipt: { reply: "I need owner input before proceeding." } }; };
+  const first = createBulletinServer({ port: 0, store, dispatch });
+  const second = createBulletinServer({ port: 0, store, dispatch });
+  try {
+    const firstAddress = await first.listen(), secondAddress = await second.listen();
+    const firstOrigin = "http://127.0.0.1:" + firstAddress.port, secondOrigin = "http://127.0.0.1:" + secondAddress.port;
+    const wake = await fetch(firstOrigin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer review-capability-test-token" } });
+    assert.equal(wake.status, 202);
+    for (let attempt = 0; attempt < 50 && !dispatchEntered; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dispatchEntered, true);
+    const review = await fetch(secondOrigin + "/review/" + reviewKey);
+    assert.equal(review.status, 200);
+    assert.match(await review.text(), /Owner review requested/);
+    assert.equal(persisted.tasks[0].status, "dispatching", "the public capability route must not overwrite the active queue row");
+    assert.ok(reviewSignals.has(task.id), "the review request is stored separately from the dispatch queue");
+    releaseDispatch();
+    for (let attempt = 0; attempt < 50 && persisted.tasks[0].status !== "awaiting_review"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(persisted.tasks[0].status, "awaiting_review");
+    assert.equal(persisted.tasks[0].lastEvent, "ChatGPT requested owner review");
+    assert.equal(reviewSignals.has(task.id), false, "the active dispatcher consumes the one-shot review signal");
+  } finally {
+    releaseDispatch();
+    await Promise.all([first.close(), second.close()]);
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
