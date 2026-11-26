@@ -68,13 +68,15 @@ function createFakeTurso() {
       const table = tables.get(m[1]);
       return ok(["cid", "name", "type", "notnull", "dflt_value", "pk"], table ? table.columns.map((name, i) => [encode(i), encode(name), encode("TEXT"), encode(0), { type: "null" }, encode(i < table.pkCount ? 1 : 0)]) : []);
     }
-    if ((m = sql.match(/^SELECT ([\s\S]+?) FROM "([^"]+)"(?: ORDER BY rowid LIMIT (\d+) OFFSET (\d+))?$/))) {
+    if ((m = sql.match(/^SELECT ([\s\S]+?) FROM "([^"]+)"(?: WHERE rowid > \?)?(?: ORDER BY rowid LIMIT (\d+)(?: OFFSET (\d+))?)?$/))) {
       const table = tables.get(m[2]);
       if (!table) throw new Error(`no such table: ${m[2]}`);
       const cols = m[1].split(",").map((s) => s.trim().replaceAll('"', ""));
-      let rows = [...table.rows.values()];
-      if (m[3] !== undefined) rows = rows.slice(Number(m[4]), Number(m[4]) + Number(m[3]));
-      return ok(cols, rows.map((row) => cols.map((c) => encode(row.get(c) ?? null))));
+      // Synthetic rowids follow insertion order, like the real tables.
+      let rows = [...table.rows.values()].map((row, i) => ({ row, rowid: i + 1 }));
+      if (sql.includes("WHERE rowid >")) rows = rows.filter((entry) => entry.rowid > Number(args[0]));
+      if (m[3] !== undefined) rows = rows.slice(Number(m[4] ?? 0), Number(m[4] ?? 0) + Number(m[3]));
+      return ok(cols, rows.map(({ row, rowid }) => cols.map((c) => encode(c === "rowid" ? rowid : row.get(c) ?? null))));
     }
     throw new Error(`fake turso: unsupported SQL: ${sql.slice(0, 120)}`);
   }
@@ -271,7 +273,7 @@ test("turso hydrate pages large remote tables instead of fetching them whole", a
   try {
     authority = new SqliteAuthorityStore(databasePath);
     platform = new SqlitePlatformDataStore(databasePath);
-    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl, pageSize: 2000 });
     assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
     assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
     const events = authority.listXp("tenant_bulk", "user_bulk");
@@ -310,8 +312,10 @@ test("turso hydrate retries a failed page fetch instead of aborting the boot", a
   });
   let failedPageAttempts = 0;
   const flakyFetch = async (url, init) => {
-    const sql = JSON.parse(init.body).requests?.[0]?.stmt?.sql ?? "";
-    if (sql.includes("OFFSET 2000") && failedPageAttempts < 2) {
+    const stmt = JSON.parse(init.body).requests?.[0]?.stmt;
+    const sql = stmt?.sql ?? "";
+    // The second page is the first cursor fetch (rowid > 2000 at pageSize 2000).
+    if (sql.includes("WHERE rowid >") && stmt?.args?.[0]?.value === "2000" && failedPageAttempts < 2) {
       failedPageAttempts++;
       throw new TypeError("fetch failed");
     }
@@ -324,7 +328,7 @@ test("turso hydrate retries a failed page fetch instead of aborting the boot", a
   try {
     authority = new SqliteAuthorityStore(databasePath);
     platform = new SqlitePlatformDataStore(databasePath);
-    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: flakyFetch });
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: flakyFetch, pageSize: 2000 });
     assert.equal(failedPageAttempts, 2, "the middle page's fetch fails twice before succeeding");
     assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
     assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
@@ -371,7 +375,7 @@ test("turso hydrate logs page progress so a slow boot is visible in the runtime 
   try {
     authority = new SqliteAuthorityStore(databasePath);
     platform = new SqlitePlatformDataStore(databasePath);
-    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl });
+    const hydrateReport = await hydrateSpmtFromTurso({ authority, platform, fetchImpl: fake.fetchImpl, pageSize: 2000 });
     assert.equal(hydrateReport.tables.spmt_xp_ledger.remote, TOTAL);
     assert.equal(hydrateReport.tables.spmt_xp_ledger.inserted, TOTAL);
   } finally {

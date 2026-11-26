@@ -50,44 +50,57 @@ const ident = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 // ~110 MB) can spike the boot process's memory before it ever listens. Page
 // the big reads so only one page is in flight at a time; the caller still
 // sees every row, in rowid order, and the per-table totals are unchanged.
-const HYDRATE_PAGE_SIZE = 2000;
+//
+// Pages are fetched by rowid cursor (keyset), not OFFSET: the production
+// boot logs showed OFFSET page latency growing with depth (~1s/page early,
+// ~48s/page by page 25 of the ledger) because Turso must scan and discard
+// every skipped row server-side — the whole scan is O(rows^2) in row visits.
+// A cursor page is an index range scan of one page, at any depth. Callers
+// pass a select whose first column is rowid; the helper consumes it as the
+// cursor and hands the full row through.
+const HYDRATE_PAGE_SIZE = 5000;
 const HYDRATE_PAGE_ATTEMPTS = 3;
 const HYDRATE_PROGRESS_EVERY_PAGES = 5;
 type HydrateRow = Awaited<ReturnType<TursoHttpAdapter["execute"]>>["rows"][number];
-async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: string, onRow: (row: HydrateRow) => void): Promise<number> {
-  let offset = 0, total = 0, pages = 0;
+async function forEachHydratePage(db: TursoHttpAdapter, select: string, label: string, onRow: (row: HydrateRow) => void, pageSize: number = HYDRATE_PAGE_SIZE): Promise<number> {
+  let total = 0, pages = 0, lastRowid: number | null = null;
   const started = Date.now();
   for (;;) {
     // One failed page fetch used to abort the whole boot hydrate: the paged
-    // reads make ~120 sequential requests, and a single stale keep-alive
+    // reads make many sequential requests, and a single stale keep-alive
     // connection (undici surfaces it as "fetch failed") killed two boots
     // after they had already fetched most of the ledger. Retry each page in
     // place; rows already fetched are never repeated.
+    const sql = lastRowid === null
+      ? `${select} ORDER BY rowid LIMIT ${pageSize}`
+      : `${select} WHERE rowid > ? ORDER BY rowid LIMIT ${pageSize}`;
+    const args = lastRowid === null ? [] : [lastRowid];
     let page: Awaited<ReturnType<TursoHttpAdapter["execute"]>> | undefined;
     for (let attempt = 1; attempt <= HYDRATE_PAGE_ATTEMPTS; attempt++) {
       try {
-        page = await db.execute(`${select} ORDER BY rowid LIMIT ${HYDRATE_PAGE_SIZE} OFFSET ${offset}`, [], true);
+        page = await db.execute(sql, args, true);
         break;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (attempt === HYDRATE_PAGE_ATTEMPTS) throw error;
-        console.warn(`[spmt] turso hydrate page retry offset=${offset} attempt=${attempt} error=${message}`);
+        console.warn(`[spmt] turso hydrate page retry afterRowid=${lastRowid ?? 0} attempt=${attempt} error=${message}`);
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       }
     }
     if (!page) throw new Error("turso hydrate page fetch returned no result");
     pages++;
     total += page.rows.length;
+    const lastRow = page.rows[page.rows.length - 1];
+    if (lastRow) lastRowid = Number(lastRow[0] ?? 0);
     for (const row of page.rows) onRow(row);
     // Progress logging: a boot that pages a large table (the promoted XP
-    // ledger is ~92 pages) used to log nothing until the whole hydrate
+    // ledger is ~37 pages) used to log nothing until the whole hydrate
     // finished, so a slow or hung boot was indistinguishable from a dead
     // one in the runtime logs. Speak every few pages and once at the end.
     if (pages % HYDRATE_PROGRESS_EVERY_PAGES === 0) {
       console.log(`[spmt] turso hydrate progress table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
     }
-    if (page.rows.length < HYDRATE_PAGE_SIZE) break;
-    offset += page.rows.length;
+    if (page.rows.length < pageSize) break;
   }
   console.log(`[spmt] turso hydrate scan complete table=${label} pages=${pages} rows=${total} elapsedMs=${Date.now() - started}`);
   return total;
@@ -102,7 +115,7 @@ async function columns(db: TursoHttpAdapter, table: string) {
   return r.rows.map(row => String(row[1] ?? ""));
 }
 
-export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; platform: PlatformLike; now?: () => string; fetchImpl?: typeof fetch }): Promise<TursoHydrateReport> {
+export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; platform: PlatformLike; now?: () => string; fetchImpl?: typeof fetch; pageSize?: number }): Promise<TursoHydrateReport> {
   const started = Date.now();
   const report: TursoHydrateReport = { enabled: false, tables: {}, durationMs: 0 };
   const url = dbUrl(), token = authToken();
@@ -124,15 +137,15 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     if (!idCol) { report.tables[table] = { remote: 0, inserted: 0, skipped: 0, error: "no user id column" }; continue; }
     const hasBody = cols.includes("body");
     let inserted = 0, skipped = 0;
-    const remote = await forEachHydratePage(db, `SELECT ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, table, (row) => {
-      const id = String(row[0] ?? "");
+    const remote = await forEachHydratePage(db, `SELECT rowid, ${ident(idCol)}${hasBody ? ", body" : ""} FROM ${ident(table)}`, table, (row) => {
+      const id = String(row[1] ?? "");
       if (!id) return;
-      const body = hasBody ? parseBody(row[1]) : undefined;
+      const body = hasBody ? parseBody(row[2]) : undefined;
       if (body && typeof body.username === "string" && body.username.trim()) profileHints.set(id, body);
       if (options.authority.getUser(id)) { skipped++; return; }
       options.authority.putUser({ id, createdAt: typeof body?.createdAt === "string" ? body.createdAt : now() });
       inserted++;
-    });
+    }, options.pageSize);
     report.tables[table] = { remote, inserted, skipped };
     break;
   }
@@ -230,12 +243,12 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
     // reads this.db, so an unbound capture would throw on every event.
     const appendXp = options.authority.appendXp.bind(options.authority);
     let inserted = 0, skipped = 0;
-    const remote = await forEachHydratePage(db, hasBody ? `SELECT id, body FROM ${ident(table)}` : `SELECT id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, table, (row) => {
-      const id = String(row[0] ?? "");
+    const remote = await forEachHydratePage(db, hasBody ? `SELECT rowid, id, body FROM ${ident(table)}` : `SELECT rowid, id, tenant_id, user_id, delta, idempotency_key FROM ${ident(table)}`, table, (row) => {
+      const id = String(row[1] ?? "");
       if (!id) return;
       let event: { id: string; tenantId: string; userId: string; delta: number; sourceAppId: string; reason: string; idempotencyKey: string; createdAt: string; eventType?: string; metadata?: Record<string, unknown> };
       if (hasBody) {
-        const body = parseBody(row[1]);
+        const body = parseBody(row[2]);
         if (!body) { skipped++; return; }
         event = { id, tenantId: String(body.tenantId ?? body.tenant_id ?? ""), userId: String(body.userId ?? body.user_id ?? ""), delta: Number(body.delta ?? 0), sourceAppId: String(body.sourceAppId ?? body.source_app_id ?? "spmt"), reason: String(body.reason ?? "imported"), idempotencyKey: String(body.idempotencyKey ?? body.idempotency_key ?? id), createdAt: String(body.createdAt ?? body.created_at ?? now()) };
         // Carry the optional event facets through the round trip: the local
@@ -246,11 +259,11 @@ export async function hydrateSpmtFromTurso(options: { authority: AuthorityLike; 
         if (typeof body.eventType === "string" && body.eventType) event.eventType = body.eventType;
         if (body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)) event.metadata = body.metadata as Record<string, unknown>;
       } else {
-        event = { id, tenantId: String(row[1] ?? ""), userId: String(row[2] ?? ""), delta: Number(row[3] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[4] ?? id), createdAt: now() };
+        event = { id, tenantId: String(row[2] ?? ""), userId: String(row[3] ?? ""), delta: Number(row[4] ?? 0), sourceAppId: "spmt", reason: "imported", idempotencyKey: String(row[5] ?? id), createdAt: now() };
       }
       if (!event.tenantId || !event.userId) { skipped++; return; }
       try { appendXp(event); inserted++; } catch { skipped++; }
-    });
+    }, options.pageSize);
     report.tables[table] = { remote, inserted, skipped };
     break;
   }
