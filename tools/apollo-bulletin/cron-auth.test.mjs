@@ -19,3 +19,10 @@ test("cron dispatcher requires an explicit accepted or busy response", () => {
     assert.throws(() => assertCronTickResponse(value), /did not confirm an accepted or busy tick/);
   }
 });
+
+test("browser control password skips blank values and never uses the retired Boss Key", async () => {
+  const { resolveBrowserControlPassword } = await import("./cron-auth.mjs");
+  assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: " browser-secret ", APOLLO_PREVIEW_PASSWORD: "preview-secret" }), "browser-secret");
+  assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: "  ", APOLLO_PREVIEW_PASSWORD: " preview-secret " }), "preview-secret");
+  assert.equal(resolveBrowserControlPassword({ APOLLO_BROWSER_CONTROL_PASSWORD: "\\t", BOSS_KEY: "legacy-key" }), "");
+});
