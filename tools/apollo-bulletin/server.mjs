@@ -95,7 +95,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     }
     if (recovered || recoveredCron) await save();
   }
-  function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, ...visible } = task; return visible; }
+  function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, reviewRequested, ...visible } = task; return visible; }
   function continuationPromptFor(task) { return "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; }
   function log(event, taskId, detail) { state.activity.push({ at: now(), event, taskId, ...(detail ? { detail } : {}) }); state.activity = state.activity.slice(-300); }
   async function withQueueMutation(mutator) {
@@ -174,6 +174,25 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       try {
         await saveTail;
         await load();
+        if (typeof persistence?.loadTaskControls === "function") {
+          const pendingControls = await persistence.loadTaskControls();
+          let controlsChanged = false;
+          for (const task of state.tasks) {
+            const control = pendingControls[task.id];
+            if (!control) continue;
+            if (control.action === "pause" && !["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) {
+              if (task.status === "dispatching") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; }
+              else { task.status = "paused"; task.nextRunAt = null; task.lastEvent = "pause"; }
+            } else if (control.action === "stop" && !["dispatch-uncertain","dispatched","awaiting_review","completed"].includes(task.status)) {
+              if (task.status === "dispatching") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; }
+              else { task.status = "stopped"; task.nextRunAt = null; task.lastEvent = "stop"; }
+            }
+            await persistence.consumeTaskControl(task.id);
+            log("task-control-applied", task.id, control.action);
+            controlsChanged = true;
+          }
+          if (controlsChanged) await save();
+        }
       } finally {
         stateReloading = false;
       }
@@ -194,6 +213,15 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         try {
           log("browser-task-start", task.id, task.destination + " · " + (task.conversationUrl || "default target"));
           const result = await (dispatch ?? deliver)(task);
+          if (typeof persistence?.consumeTaskControl === "function") {
+            try {
+              const control = await persistence.consumeTaskControl(task.id);
+              if (control?.action === "pause") { task.pauseRequested = true; task.lastEvent = "Pause requested; current cycle will finish first"; log("task-control-applied", task.id, "pause"); }
+              if (control?.action === "stop") { task.stopRequested = true; task.lastEvent = "Stop requested; current cycle will finish first"; log("task-control-applied", task.id, "stop"); }
+            } catch (controlError) {
+              console.warn("[apollo-bulletin] Could not consume task control:", String(controlError?.message || controlError));
+            }
+          }
           log("browser-task-result", task.id, result?.reason || (result?.submitted ? "reply received" : "no reply confirmed"));
           if (result?.submitted && (!result.receipt || typeof result.receipt.reply !== "string" || !result.receipt.reply.trim())) { task.status = "dispatch-uncertain"; task.nextRunAt = null; task.lastEvent = "Dispatch was reported submitted without a verified reply receipt; manual review required"; log("dispatch-receipt-missing-no-retry", task.id); } else {
           if (result?.submitted && result.receipt) { task.simulatedRunCount = result.receipt.runNumber; task.receiptHistory ||= []; task.receiptHistory.push(result.receipt); task.receiptHistory = task.receiptHistory.slice(-100); }
@@ -294,7 +322,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       const widgetRoute = req.method === "GET" && url.pathname.match(/^\/widgets\/(tasks|active|reviews|activity|scheduler|history)$/);
       if (req.method === "GET" && url.pathname === "/widgets/proof") return send(200, `<!doctype html><meta name=\"viewport\" content=\"width=device-width\"><title>Apollo Scheduler Proof</title><body style=\"font:15px system-ui;background:#0b1220;color:#edf3ff;padding:18px;max-width:760px;margin:auto\"><h1>Scheduler delivery proof</h1><p>Isolated simulated receiver. This does not log into ChatGPT, send to a real AI, or launch a GitHub workflow.</p><label>Task name<input id=\"name\" value=\"5-minute scheduler proof\" style=\"display:block;width:100%;padding:8px;margin:8px 0\"></label><label>Prompt<textarea id=\"prompt\" style=\"display:block;width:100%;min-height:100px;padding:8px;margin:8px 0\">APOLLO SCHEDULE TEST: Respond with a receipt and summarize this prompt.</textarea></label><label>Repeat every <input id=\"every\" type=\"number\" min=\"1\" value=\"5\" style=\"width:90px;padding:8px\"> minutes</label><button id=\"create\" style=\"padding:10px;margin:12px 0\">Create scheduled test</button><p id=\"status\"></p><pre id=\"history\" style=\"white-space:pre-wrap;background:#111b30;padding:12px;border-radius:8px\"></pre><script>const status=document.querySelector(\"#status\"),history=document.querySelector(\"#history\");async function refresh(){const r=await fetch(\"/bulletin/api/tasks\",{cache:\"no-store\"}),d=await r.json();const t=d.tasks.filter(x=>x.destination===\"test-simulator\");history.textContent=t.map(x=>x.name+" — "+x.status+"\\nSchedule: "+(x.scheduleLabel||"")+"; next: "+(x.nextRunAt?new Date(x.nextRunAt).toLocaleString():"—")+"\\nLast result: "+(x.lastEvent||"—")+"\\nReceipts:\\n"+(x.receiptHistory||[]).map(q=>"Run #"+q.runNumber+" · "+new Date(q.receivedAt).toLocaleString()+"\\n"+q.reply).join("\\n\\n")).join("\\n\\n")||"No simulator tasks yet."; }document.querySelector(\"#create\").onclick=async()=>{const r=await fetch(\"/bulletin/api/tasks\",{method:\"POST\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({name:document.querySelector(\"#name\").value,prompt:document.querySelector(\"#prompt\").value,scheduleType:\"interval\",every:document.querySelector(\"#every\").value,unit:\"minutes\",destination:\"test-simulator\"})});const d=await r.json();status.textContent=r.ok?\"Scheduled. It will deliver automatically; pause or complete it from Task Queue.\":(d.error||\"Failed\");refresh();};refresh();setInterval(refresh,3000);</script></body>`, "text/html; charset=utf-8");
       if (widgetRoute) return send(200, bulletinWidgetHtml(widgetRoute[1]), "text/html; charset=utf-8");
-      if (req.method === "GET" && url.pathname === "/api/tasks") { if (stateReloading) return send(503, { error: "Bulletin state is refreshing; retry shortly" }); return send(200, { tasks: state.tasks.map(publicTask), activity: state.activity.slice(-100).reverse() }); }
+      if (req.method === "GET" && url.pathname === "/api/tasks") { if (stateReloading) return send(503, { error: "Bulletin state is refreshing; retry shortly" }); let pendingControls = {}; if (typeof persistence?.loadTaskControls === "function") { try { pendingControls = await persistence.loadTaskControls(); } catch { return send(503, { error: "Bulletin task controls are temporarily unavailable" }); } } return send(200, { tasks: state.tasks.map(task => publicTask({ ...task, pendingControl: pendingControls[task.id]?.action || null })), activity: state.activity.slice(-100).reverse() }); }
       if (req.method === "POST" && url.pathname === "/api/tasks") {
         const input = await body(); if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 200 || typeof input.prompt !== "string" || !input.prompt.trim()) return send(400, { error: "Task name (1–200 characters) and prompt are required" }); if (input.prompt.length > 20000) return send(400, { error: "Task prompt must be 20,000 characters or fewer" });
         const destination = input.destination === "test-simulator" ? "test-simulator" : "chatgpt";
