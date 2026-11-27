@@ -57,7 +57,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     saveTail = operation.catch(() => {});
     return operation;
   }
-  async function load() {
+  async function load({ recoverInterrupted = true } = {}) {
     if (persistence) state = await persistence.loadQueue() ?? { tasks: [], activity: [] };
     else {
       try { state = JSON.parse(await readFile(statePath, "utf8")); }
@@ -74,7 +74,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     state.cron.lastTickFailedAt ??= null;
     state.cron.lastTickProcessed ??= null;
     let recoveredCron = false;
-    if (state.cron.inFlight) {
+    if (recoverInterrupted && state.cron.inFlight) {
       state.cron.inFlight = false;
       state.cron.status = "interrupted";
       state.cron.lastTickFailedAt = now();
@@ -83,7 +83,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       recoveredCron = true;
     }
     let recovered = 0;
-    for (const task of state.tasks) {
+    if (recoverInterrupted) for (const task of state.tasks) {
       if (task.status !== "dispatching") continue;
       task.status = "dispatch-uncertain";
       task.nextRunAt = null;
@@ -94,6 +94,23 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       recovered += 1;
     }
     if (recovered || recoveredCron) await save();
+  }
+  async function loadForStartup() {
+    const leaseRequired = typeof persistence?.acquireLease === "function" && typeof persistence?.releaseLease === "function";
+    if (!leaseRequired) return load();
+    const leaseOwnerId = randomUUID();
+    const acquired = await persistence.acquireLease("apollo-bulletin-dispatch", leaseOwnerId, now(), 600_000);
+    if (!acquired) return load({ recoverInterrupted: false });
+    try {
+      await load();
+    } finally {
+      try {
+        const released = await persistence.releaseLease("apollo-bulletin-dispatch", leaseOwnerId, now());
+        if (!released) console.warn("[apollo-bulletin] Startup recovery lease was not released by its owner");
+      } catch (error) {
+        console.warn("[apollo-bulletin] Startup recovery lease release failed:", String(error?.message || error));
+      }
+    }
   }
   function publicTask(task) { const { prompt, basePrompt, completionMarker, reviewKey, reviewRequested, ...visible } = task; return visible; }
   function continuationPromptFor(task) { return "Continue the existing task in this exact conversation. Read the prior work, current TODO/checkpoint, and handoff. Resume from the first unfinished step; do not repeat completed work. Keep the handoff current and validate changes. If genuinely complete, include this exact marker alone on its own line: " + task.completionMarker + ". If blocked or owner review is needed, explain the blocker and stop without claiming completion."; }
@@ -134,6 +151,14 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       }
       if (ownsBusy) busy = false;
       releaseMutation?.();
+    }
+  }
+  async function recordStartupEvent(event, detail) {
+    try {
+      const mutation = await withQueueMutation(() => { log(event, null, detail); return true; });
+      if (mutation.busy) console.warn("[apollo-bulletin] Startup event was not persisted because another dispatcher owns the queue");
+    } catch (error) {
+      console.error("[apollo-bulletin] Startup event persistence failed:", String(error?.message || error));
     }
   }
   async function tick(source = "local-poll") {
@@ -448,10 +473,16 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const completedTickFresh = cronState.status === "completed" && Number.isFinite(lastTickCompletedAt) &&
           lastTickCompletedAt > 0 && lastTickCompletedAt <= now() && now() - lastTickCompletedAt <= 180_000;
         const cronExecutionConfirmed = completedTickFresh;
+        let taskControlPersistenceReady = !cronRequired;
+        if (cronRequired && persistenceAvailable && typeof persistence?.checkSignalPersistence === "function") {
+          try { taskControlPersistenceReady = await persistence.checkSignalPersistence() === true; }
+          catch { taskControlPersistenceReady = false; }
+        }
         const readiness = readinessStatus({
           browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
           dispatcherLeaseRequired: cronRequired, dispatcherLeaseAvailable: dispatcherLeaseConfigured && persistenceAvailable,
+          taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
         });
         const cron = {
           configured: cronAuthConfigured, hostlessMode: cronRequired, lastTickStatus: cronState.status || "never",
@@ -465,14 +496,14 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
           persistence: persistenceAvailable ? "turso" : persistenceRequired ? "unavailable" : "local-fallback", persistenceRequired, persistenceReachable: persistenceAvailable,
           ownerAuthorizationPolicy: "platform-owner-session", ownerActorPinConfigured: Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()),
-          dispatcherLeaseConfigured,
+          dispatcherLeaseConfigured, taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
         });
       }
       send(404,{error:"not_found"});
     } catch (error) { send(error.statusCode || 500,{error:error.message || String(error)}); }
   });
-  return { server, async listen() { await load(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(process.env,{sessionStore:persistence}); browserWorker=browser.worker; await browserWorker.openLogin(); log("browser-started",null,"Dedicated Chromium opened ChatGPT sign-in"); await save(); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); log("browser-start-failed",null,String(error?.message||error).slice(0,300)); await save(); } } if (process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON !== "1") { timer=setInterval(()=>void tick(),1000); timer.unref(); void tick(); } return server.address(); }, async close(){ if(timer) clearInterval(timer); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); await activeTickDone; if(browserWorker) await browserWorker.close(); await saveTail; } };
+  return { server, async listen() { await loadForStartup(); await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>{server.off("error",reject);resolve();});}); if (process.env.APOLLO_BULLETIN_ENABLE_BROWSER === "1") { try { const browser=await createApolloChatGptBrowserWorkerFromEnvironment(process.env,{sessionStore:persistence}); browserWorker=browser.worker; await browserWorker.openLogin(); await recordStartupEvent("browser-started","Dedicated Chromium opened ChatGPT sign-in"); } catch(error) { console.error("[apollo-bulletin] Chromium startup failed:",String(error?.message||error)); await recordStartupEvent("browser-start-failed",String(error?.message||error).slice(0,300)); } } if (process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON !== "1") { timer=setInterval(()=>void tick(),1000); timer.unref(); void tick(); } return server.address(); }, async close(){ if(timer) clearInterval(timer); if(server.listening) await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve())); await activeTickDone; if(browserWorker) await browserWorker.close(); await saveTail; } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
