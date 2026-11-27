@@ -138,6 +138,7 @@ test("Hostless cron readiness requires a persisted completed tick, not only a co
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
     async ping() { return true; },
+    async checkSignalPersistence() { return true; },
     async acquireLease(key, ownerId, at, ttlMs) {
       const current = leases.get(key);
       if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
@@ -257,6 +258,7 @@ test("an in-flight cron tick is not execution proof until its result is persiste
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
     async ping() { return true; },
+    async checkSignalPersistence() { return true; },
     async acquireLease(key, ownerId, at, ttlMs) {
       const current = leases.get(key);
       if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
