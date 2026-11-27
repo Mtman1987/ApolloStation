@@ -313,3 +313,78 @@ test("pause from a second instance is persisted as a control signal and applied 
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+
+test("startup recovery waits for the shared dispatcher lease before rewriting an active dispatch", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "startup-lease-test-token";
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+
+  const leases = new Map();
+  let persisted = {
+    tasks: [{ id: "deploy-overlap", name: "Deploy overlap", prompt: "Send once", destination: "test-simulator", status: "scheduled", nextRunAt: Date.now() - 1_000, schedule: { type: "manual" } }],
+    activity: [],
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
+  };
+  let releaseDispatch;
+  let dispatchEntered = false;
+  let dispatchCalls = 0;
+  const dispatchGate = new Promise(resolve => { releaseDispatch = resolve; });
+  const dispatch = async () => {
+    dispatchCalls += 1;
+    dispatchEntered = true;
+    await dispatchGate;
+    return { submitted: true, receipt: { reply: "delivered" } };
+  };
+  const first = createBulletinServer({ port: 0, store, dispatch });
+  const second = createBulletinServer({ port: 0, store, dispatch });
+  try {
+    const firstAddress = await first.listen();
+    const firstOrigin = "http://127.0.0.1:" + firstAddress.port;
+    const wake = await fetch(firstOrigin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer startup-lease-test-token" } });
+    assert.equal(wake.status, 202);
+    for (let attempt = 0; attempt < 100 && !dispatchEntered; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dispatchEntered, true);
+
+    const secondAddress = await second.listen();
+    const secondOrigin = "http://127.0.0.1:" + secondAddress.port;
+    assert.equal(persisted.tasks[0].status, "dispatching", "a new instance must not recover another live instance's in-flight task");
+
+    releaseDispatch();
+    for (let attempt = 0; attempt < 100 && persisted.tasks[0].status !== "dispatched"; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(persisted.tasks[0].status, "dispatched");
+    const secondWake = await fetch(secondOrigin + "/api/cron/tick", { method: "POST", headers: { authorization: "Bearer startup-lease-test-token" } });
+    assert.equal(secondWake.status, 202);
+    for (let attempt = 0; attempt < 100 && persisted.cron?.completedTicks < 2; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dispatchCalls, 1, "the overlapping instance must reload the completed task without sending it again");
+    assert.equal(persisted.tasks[0].status, "dispatched");
+  } finally {
+    releaseDispatch();
+    await Promise.all([first.close(), second.close()]);
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
