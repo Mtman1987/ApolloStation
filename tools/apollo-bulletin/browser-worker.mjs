@@ -15,6 +15,46 @@ export function normalizeChatGptConversationUrl(value) {
   return target.href;
 }
 
+export function chatGptResponseSettled(quietMs = 4_000) {
+  const stopVisible = [...document.querySelectorAll("button")].some(button =>
+    /stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim()) &&
+    button.offsetParent !== null
+  );
+  const composerElement = document.querySelector("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],[contenteditable='true'][id*='prompt'],textarea");
+  const composerReady = Boolean(composerElement && !composerElement.hasAttribute("disabled") && composerElement.getAttribute("aria-disabled") !== "true");
+  const assistantMessages = [...document.querySelectorAll("[data-message-author-role='assistant']")];
+  const responseText = String(assistantMessages.at(-1)?.innerText || "").trim();
+  const now = performance.now();
+  const state = window.__apolloBulletinResponseState || {
+    sawBusy: false,
+    sawTextChange: false,
+    lastText: null,
+    stableSince: now,
+  };
+
+  if (stopVisible || !composerReady) {
+    state.sawBusy = true;
+    state.lastText = responseText;
+    state.stableSince = now;
+    window.__apolloBulletinResponseState = state;
+    return false;
+  }
+  if (!responseText) {
+    state.lastText = "";
+    state.stableSince = now;
+    window.__apolloBulletinResponseState = state;
+    return false;
+  }
+  if (state.lastText !== responseText) {
+    if (state.lastText !== null && state.lastText !== "") state.sawTextChange = true;
+    state.lastText = responseText;
+    state.stableSince = now;
+  }
+  window.__apolloBulletinResponseState = state;
+  const requiredQuietMs = state.sawBusy || state.sawTextChange ? quietMs : Math.max(quietMs, 8_000);
+  return now - state.stableSince >= requiredQuietMs;
+}
+
 export class ApolloChatGptBrowserWorker {
   constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium), sessionStore }) {
     this.profilePath = resolve(profilePath);
@@ -156,6 +196,7 @@ export class ApolloChatGptBrowserWorker {
       if (!(await sendButton.isVisible().catch(() => false)) || !(await sendButton.isEnabled().catch(() => false))) {
         throw new Error("ChatGPT Send did not become visibly enabled after filling the empty composer");
       }
+      await page.evaluate(() => { delete window.__apolloBulletinResponseState; });
       const submittedAt = this.now();
       clickAttempted = true;
       await sendButton.click();
@@ -167,15 +208,8 @@ export class ApolloChatGptBrowserWorker {
       );
       const response = assistantMessages.last();
       await response.waitFor({ state: "visible", timeout: 10_000 });
-      await page.waitForFunction(() => {
-        const stop = [...document.querySelectorAll("button")].some(button =>
-          /stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim()) &&
-          button.offsetParent !== null
-        );
-        const composerElement = document.querySelector("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],[contenteditable='true'][id*='prompt'],textarea");
-        const composerReady = Boolean(composerElement && !composerElement.hasAttribute("disabled") && composerElement.getAttribute("aria-disabled") !== "true");
-        return !stop && composerReady;
-      }, null, { timeout: 120_000 });
+      await page.waitForFunction(chatGptResponseSettled, 4_000, { timeout: 120_000, polling: 500 });
+      await page.evaluate(() => { delete window.__apolloBulletinResponseState; });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("The ChatGPT conversation changed while the response was being generated");
       }
