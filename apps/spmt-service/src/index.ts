@@ -243,6 +243,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
       return link && !link.revokedAt ? [link.userId] : [];
     }))];
     const canonicalOwnerProfile = ownerBootstrap ? data.getProfileByUsername(OWNER_SPMT_USERNAME) : undefined;
+    if (ownerBootstrap && !canonicalOwnerProfile) {
+      return { ok: false, status: 409, body: { error: "owner_profile_unavailable", message: "The verified platform-owner identity has no canonical Apollo profile available. No replacement account or tenant was created." } };
+    }
     if (linkedUserIds.length > 1 && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "identity_account_mismatch", message: "The verified Discord and Twitch identities point to different Apollo accounts. No account or tenant was changed." } };
     }
