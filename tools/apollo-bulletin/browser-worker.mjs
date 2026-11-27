@@ -16,10 +16,11 @@ export function normalizeChatGptConversationUrl(value) {
 }
 
 export function chatGptResponseSettled(quietMs = 4_000) {
-  const stopVisible = [...document.querySelectorAll("button")].some(button =>
-    /stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim()) &&
-    button.offsetParent !== null
-  );
+  const stopVisible = [...document.querySelectorAll("button")].some(button => {
+    if (!/stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim())) return false;
+    const style = window.getComputedStyle(button);
+    return style.display !== "none" && style.visibility !== "hidden" && button.getClientRects().length > 0;
+  });
   const composerElement = document.querySelector("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],[contenteditable='true'][id*='prompt'],textarea");
   const composerReady = Boolean(composerElement && !composerElement.hasAttribute("disabled") && composerElement.getAttribute("aria-disabled") !== "true");
   const assistantMessages = [...document.querySelectorAll("[data-message-author-role='assistant']")];
