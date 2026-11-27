@@ -33,6 +33,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspace dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund --no-progress
       - name: Verify credentials are present without printing values
         run: |
           test -n "$TURSO_DATABASE_URL" || { echo "::error::TURSO_DATABASE_URL is missing"; exit 1; }
