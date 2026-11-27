@@ -225,9 +225,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
     // The verified owner's canonical SPMT username takes precedence over any
     // stale provider-link mapping. For everyone else, retain provider-link-first
     // resolution so linked Discord/Twitch identities continue to work as before.
-    const ownerBootstrap = donorUsername === OWNER_SPMT_USERNAME
-      || donorDiscordId === OWNER_DISCORD_ID
+    const ownerBootstrap = donorDiscordId === OWNER_DISCORD_ID
       || donorTwitchId === OWNER_TWITCH_ID;
+    if (donorUsername === OWNER_SPMT_USERNAME && !ownerBootstrap) {
+      return { ok: false, status: 403, body: { error: "owner_identity_not_verified", message: "The platform-owner username must be confirmed by its linked verified Discord or Twitch identity." } };
+    }
     const usernameProfile = data.getProfileByUsername(donorUsername);
     // Provider IDs are the account key for recovery. A stale shell username must
     // never outrank the database link, because the shell's tenant context is what
@@ -240,7 +242,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const link = store.getProviderLink(provider, providerUserId);
       return link && !link.revokedAt ? [link.userId] : [];
     }))];
-    const canonicalOwnerProfile = ownerBootstrap ? usernameProfile : undefined;
+    const canonicalOwnerProfile = ownerBootstrap ? data.getProfileByUsername(OWNER_SPMT_USERNAME) : undefined;
     if (linkedUserIds.length > 1 && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "identity_account_mismatch", message: "The verified Discord and Twitch identities point to different Apollo accounts. No account or tenant was changed." } };
     }
