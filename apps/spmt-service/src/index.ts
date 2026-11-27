@@ -240,16 +240,17 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const link = store.getProviderLink(provider, providerUserId);
       return link && !link.revokedAt ? [link.userId] : [];
     }))];
-    if (linkedUserIds.length > 1) {
+    const canonicalOwnerProfile = ownerBootstrap ? usernameProfile : undefined;
+    if (linkedUserIds.length > 1 && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "identity_account_mismatch", message: "The verified Discord and Twitch identities point to different Apollo accounts. No account or tenant was changed." } };
     }
-    const linkedUserId = linkedUserIds[0];
+    const linkedUserId = linkedUserIds.length === 1 ? linkedUserIds[0] : undefined;
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
-    if (linkedUserId && !linkedProfile) {
+    if (linkedUserId && !linkedProfile && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "linked_account_unavailable", message: "The verified provider identity is linked, but its Apollo account record could not be loaded." } };
     }
     let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
-      linkedProfile ?? usernameProfile;
+      canonicalOwnerProfile ?? linkedProfile ?? usernameProfile;
     if (!profile && (!allowBootstrap || (!ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1"))) {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
