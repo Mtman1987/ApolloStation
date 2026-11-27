@@ -31,8 +31,10 @@ jobs:
       NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
       NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
     steps:
-      - name: Check out main
+      - name: Check out the triggering source revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
         with:
           ref: main
       - name: Set up Node.js
