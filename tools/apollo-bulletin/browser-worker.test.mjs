@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ApolloChatGptBrowserWorker } from "./browser-worker.mjs";
+import { ApolloChatGptBrowserWorker, chatGptResponseSettled } from "./browser-worker.mjs";
 
 function fakeWorker({ url = "https://chatgpt.com/", pageClosed = false, browserConnected = true } = {}) {
   const worker = new ApolloChatGptBrowserWorker({});
@@ -176,6 +176,7 @@ test("completion marker is detected before a long assistant reply is truncated f
   worker.context = { async storageState() { return { cookies: [], origins: [] }; } };
   worker.page = {
     async goto() {},
+    async evaluate() {},
     url() { return targetUrl; },
     locator(selector) {
       if (selector.includes("data-message-author-role")) {
@@ -197,4 +198,79 @@ test("completion marker is detected before a long assistant reply is truncated f
   assert.equal(result.receipt.reply.includes(marker), false, "the marker is beyond the stored receipt limit");
   assert.equal(result.receipt.completionMarkerObserved, true);
   assert.equal(worker.busy, false);
+});
+
+test("assistant output must be stable after a generation signal before it is considered complete", () => {
+  const keys = ["document", "window", "performance"];
+  const previous = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  let now = 0;
+  let stopVisible = true;
+  let responseText = "partial response";
+  const stopButton = {
+    getAttribute(name) { return name === "aria-label" ? "Stop generating" : null; },
+    innerText: "",
+    offsetParent: {},
+  };
+  const document = {
+    querySelectorAll(selector) {
+      if (selector === "button") return stopVisible ? [stopButton] : [];
+      if (selector.includes("data-message-author-role")) return [{ innerText: responseText }];
+      return [];
+    },
+    querySelector() {
+      return { hasAttribute() { return false; }, getAttribute() { return null; } };
+    },
+  };
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: document });
+  Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: {} });
+  Object.defineProperty(globalThis, "performance", { configurable: true, writable: true, value: { now: () => now } });
+  try {
+    assert.equal(chatGptResponseSettled(100), false, "visible generation control proves the response is still running");
+    stopVisible = false;
+    assert.equal(chatGptResponseSettled(100), false, "idle UI still needs a quiet interval");
+    now = 50;
+    responseText = "partial response with final paragraph";
+    assert.equal(chatGptResponseSettled(100), false, "new response text resets the quiet interval");
+    now = 149;
+    assert.equal(chatGptResponseSettled(100), false);
+    now = 150;
+    assert.equal(chatGptResponseSettled(100), true);
+  } finally {
+    for (const key of keys) {
+      const descriptor = previous.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+});
+
+test("fast responses without an observable generation button still require a longer stable interval", () => {
+  const keys = ["document", "window", "performance"];
+  const previous = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  let now = 0;
+  const document = {
+    querySelectorAll(selector) {
+      if (selector.includes("data-message-author-role")) return [{ innerText: "completed response" }];
+      return [];
+    },
+    querySelector() {
+      return { hasAttribute() { return false; }, getAttribute() { return null; } };
+    },
+  };
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: document });
+  Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: {} });
+  Object.defineProperty(globalThis, "performance", { configurable: true, writable: true, value: { now: () => now } });
+  try {
+    assert.equal(chatGptResponseSettled(100), false);
+    now = 7_999;
+    assert.equal(chatGptResponseSettled(100), false);
+    now = 8_000;
+    assert.equal(chatGptResponseSettled(100), true);
+  } finally {
+    for (const key of keys) {
+      const descriptor = previous.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
 });
