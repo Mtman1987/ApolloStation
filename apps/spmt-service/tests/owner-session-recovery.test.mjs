@@ -125,3 +125,56 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("the platform-owner username alone cannot bootstrap an owner session", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "apollo-owner-identity-guard-"));
+  const service = createSpmtService({
+    databasePath: join(directory, "spmt.sqlite"),
+    webhookKey: Buffer.alloc(32, 29),
+    host: "127.0.0.1",
+    port: 0,
+    runtimeMode: "production",
+    fetchImpl: async (input, init = {}) => {
+      assert.equal(String(input), "https://spmt.live/api/auth/me");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer unverified-owner-name-token");
+      return new Response(JSON.stringify({ user: { id: "spoofed-spmt-user", username: "mtman1987", discordId: "not-the-owner-discord", twitchId: "not-the-owner-twitch" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  try {
+    service.authority.ensureUser("owner-existing");
+    service.data.registerUser({
+      userId: "owner-existing",
+      username: "mtman1987",
+      displayName: "Apollo Owner",
+      password: "owner-test-password-12345",
+      tenantIds: ["owner-tenant"],
+    });
+    service.control.registerTenant({
+      tenantId: "owner-tenant",
+      ownerUserId: "owner-existing",
+      displayName: "Owner Workspace",
+    });
+    service.authority.getOrCreateWorkspace("owner-tenant");
+
+    await service.listen();
+    const address = service.server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/bridge-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bridgeJson: JSON.stringify({ token: "unverified-owner-name-token" }) }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(body.error, "owner_identity_not_verified");
+    assert.deepEqual(service.data.getProfile("owner-existing").tenantIds, ["owner-tenant"]);
+    assert.equal(service.data.getProfileByUsername("spoofed-spmt-user"), undefined);
+  } finally {
+    await service.close().catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
