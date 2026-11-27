@@ -22,13 +22,17 @@ jobs:
         include:
           - label: Node 1 app token
             secret: NODE1_TURSO_AUTH_TOKEN
+            required: true
           - label: Node 2 seed token
             secret: NODE2_TURSO_AUTH_TOKEN
-          - label: Shared Turso token
+            required: true
+          - label: Shared Turso token (optional existing credential)
             secret: TURSO_AUTH_TOKEN
+            required: false
     env:
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
       TURSO_AUTH_TOKEN: ${{ secrets[matrix.secret] }}
+      REQUIRED_TOKEN: ${{ matrix.required }}
       APOLLO_TURSO_LIVE_TEST: "1"
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +44,19 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci --prefer-offline --no-audit --no-fund --no-progress
       - name: Verify credentials are present without printing values
+        id: credentials
         run: |
           test -n "$TURSO_DATABASE_URL" || { echo "::error::TURSO_DATABASE_URL is missing"; exit 1; }
-          test -n "$TURSO_AUTH_TOKEN" || { echo "::error::Selected Turso token is missing"; exit 1; }
+          if [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ "$REQUIRED_TOKEN" = "true" ]; then
+              echo "::error::Selected required Turso token is missing"
+              exit 1
+            fi
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Optional shared Turso token is not configured; no new secret will be created."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run isolated synthetic Turso persistence test
+        if: steps.credentials.outputs.available == 'true'
         run: node --test tests/turso-live-runtime.test.mjs
