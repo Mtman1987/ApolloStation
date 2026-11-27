@@ -172,7 +172,7 @@ test("the platform-owner username alone cannot bootstrap an owner session", asyn
     assert.equal(response.status, 403);
     assert.equal(body.error, "owner_identity_not_verified");
     assert.deepEqual(service.data.getProfile("owner-existing").tenantIds, ["owner-tenant"]);
-    assert.equal(service.data.getProfileByUsername("spoofed-spmt-user"), undefined);
+    assert.equal(service.data.getProfileByUsername("mtman1987")?.userId, "owner-existing");
   } finally {
     await service.close().catch(() => undefined);
     rmSync(directory, { recursive: true, force: true });
