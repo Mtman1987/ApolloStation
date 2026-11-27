@@ -179,9 +179,13 @@ export class ApolloChatGptBrowserWorker {
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("The ChatGPT conversation changed while the response was being generated");
       }
-      const reply = (await response.innerText()).trim().slice(0, 12000);
-      if (!reply) throw new Error("ChatGPT response was empty; manual review required");
-      const receipt = { provider: "chatgpt-visible-ui", submittedAt, receivedAt: this.now(), conversationUrl: targetUrl, reply };
+      const fullReply = (await response.innerText()).trim();
+      if (!fullReply) throw new Error("ChatGPT response was empty; manual review required");
+      // Detect the marker before bounding the receipt text; long responses must not hide completion.
+      const completionMarkerObserved = typeof task.completionMarker === "string" &&
+        fullReply.split(/\r?\n/).some(line => line.trim() === task.completionMarker);
+      const reply = fullReply.slice(0, 12000);
+      const receipt = { provider: "chatgpt-visible-ui", submittedAt, receivedAt: this.now(), conversationUrl: targetUrl, reply, completionMarkerObserved };
       this.lastReceipt = receipt;
       return { submitted: true, receipt, reason: "ChatGPT response observed in the exact conversation" };
     } catch (error) {
