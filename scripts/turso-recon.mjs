@@ -132,6 +132,7 @@ async function reconTarget(label, url, token) {
     "spmt_user_credentials", "spmt_provider_links",
     "spmt_access_sessions", "spmt_refresh_tokens",
     "apollo_recovered_json_stage_v1", "apollo_async_json_records_v1",
+    "apollo_bulletin_state", "apollo_bulletin_leases",
   ]) {
     if (!has(name)) continue;
     const count = await run(`count:${name}`, `SELECT COUNT(*) AS n FROM ${name}`);
@@ -155,6 +156,11 @@ async function reconTarget(label, url, token) {
 
   if (has("apollo_async_json_records_v1")) {
     await run("async_records:by_namespace", "SELECT namespace, COUNT(DISTINCT tenant_id) AS tenants, COUNT(*) AS records FROM apollo_async_json_records_v1 GROUP BY namespace ORDER BY records DESC", 100);
+  }
+
+  // Bulletin persistence inventory is metadata-only: never select state_json or browser/session contents.
+  if (has("apollo_bulletin_state") && ["state_key", "updated_at", "state_json"].every((column) => cols("apollo_bulletin_state").includes(column))) {
+    await run("bulletin:state_inventory", "SELECT state_key, updated_at, length(state_json) AS payload_bytes FROM apollo_bulletin_state WHERE state_key LIKE 'apollo-bulletin:%' ORDER BY state_key LIMIT 50", 50);
   }
 
   target.sessions = {};
