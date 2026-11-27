@@ -178,3 +178,41 @@ test("the platform-owner username alone cannot bootstrap an owner session", asyn
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("verified owner identity does not create a replacement account when the canonical profile is missing", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "apollo-owner-profile-missing-"));
+  const service = createSpmtService({
+    databasePath: join(directory, "spmt.sqlite"),
+    webhookKey: Buffer.alloc(32, 31),
+    host: "127.0.0.1",
+    port: 0,
+    runtimeMode: "production",
+    fetchImpl: async (input, init = {}) => {
+      assert.equal(String(input), "https://spmt.live/api/auth/me");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer verified-owner-token");
+      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173", twitchId: "94371378" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  try {
+    await service.listen();
+    const address = service.server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/bridge-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bridgeJson: JSON.stringify({ token: "verified-owner-token" }) }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.error, "owner_profile_unavailable");
+    assert.equal(service.store.getUser("usr_spmtowner123"), undefined);
+    assert.equal(service.store.listTenants().length, 0);
+  } finally {
+    await service.close().catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
