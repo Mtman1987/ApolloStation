@@ -154,3 +154,47 @@ test("browser startup restores the stored ChatGPT session state from Turso", asy
     if (previous === undefined) delete process.env.HMO_TEST_BROWSER_PATH; else process.env.HMO_TEST_BROWSER_PATH = previous;
   }
 });
+
+test("completion marker is detected before a long assistant reply is truncated for storage", async () => {
+  const marker = "APOLLO_BULLETIN_COMPLETE_LONG_REPLY";
+  const fullReply = "Progress detail. ".repeat(900) + "\n" + marker;
+  const targetUrl = "https://chatgpt.com/c/long-reply-marker";
+  const response = { async waitFor() {}, async innerText() { return fullReply; } };
+  const composer = {
+    async waitFor() {},
+    async evaluate() { return ""; },
+    async fill() {},
+  };
+  const sendButton = {
+    async isVisible() { return true; },
+    async isEnabled() { return true; },
+    async click() {},
+  };
+  const worker = new ApolloChatGptBrowserWorker({
+    sessionStore: { async saveBrowserState() {} },
+  });
+  worker.context = { async storageState() { return { cookies: [], origins: [] }; } };
+  worker.page = {
+    async goto() {},
+    url() { return targetUrl; },
+    locator(selector) {
+      if (selector.includes("data-message-author-role")) {
+        return { async count() { return 0; }, last() { return response; } };
+      }
+      return { last() { return composer; } };
+    },
+    getByRole() { return { last() { return sendButton; } }; },
+    async waitForFunction() {},
+  };
+
+  const result = await worker.sendTask({
+    prompt: "Complete the task",
+    conversationUrl: targetUrl,
+    completionMarker: marker,
+  });
+  assert.equal(result.submitted, true);
+  assert.equal(result.receipt.reply.length, 12000);
+  assert.equal(result.receipt.reply.includes(marker), false, "the marker is beyond the stored receipt limit");
+  assert.equal(result.receipt.completionMarkerObserved, true);
+  assert.equal(worker.busy, false);
+});
