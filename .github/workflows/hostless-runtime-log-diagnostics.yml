@@ -44,7 +44,6 @@ permissions:
 jobs:
   collect:
     name: Collect ${{ matrix.label }} logs
-    if: github.event_name != 'push' || github.ref != 'refs/heads/fix/apollo-bulletin-readiness-distributed-lease' || matrix.node == 'node1'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
