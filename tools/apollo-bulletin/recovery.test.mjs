@@ -340,3 +340,58 @@ test("unknown task destinations are rejected instead of silently targeting live 
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("server completes a ChatGPT task when the browser observed a marker beyond the stored reply limit", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  delete process.env.APOLLO_BULLETIN_CRON_TOKEN;
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+
+  let persisted = { tasks: [], activity: [] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+  };
+  const app = createBulletinServer({
+    port: 0,
+    store,
+    dispatch: async () => ({
+      submitted: true,
+      receipt: { reply: "x".repeat(12000), completionMarkerObserved: true },
+    }),
+  });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Long response completion",
+        prompt: "Finish the task and report completion",
+        destination: "chatgpt",
+        conversationUrl: "https://chatgpt.com/c/long-response-completion",
+        scheduleType: "manual",
+      }),
+    });
+    assert.equal(created.status, 201);
+    const { task } = await created.json();
+    const run = await fetch(origin + "/api/tasks/" + task.id + "/run", { method: "POST" });
+    assert.equal(run.status, 200);
+    await run.text();
+    for (let attempt = 0; attempt < 100 && persisted.tasks[0].status !== "completed"; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(persisted.tasks[0].status, "completed");
+    assert.equal(persisted.tasks[0].totalCycles, 1);
+    assert.ok(persisted.activity.some(item => item.event === "task-completion-marker-observed"));
+  } finally {
+    await app.close();
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
