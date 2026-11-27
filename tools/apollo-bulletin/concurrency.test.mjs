@@ -388,3 +388,74 @@ test("startup recovery waits for the shared dispatcher lease before rewriting an
     }
   }
 });
+
+test("first queue mutation waits for the local startup tick instead of returning a transient 503", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  delete process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON;
+  delete process.env.APOLLO_BULLETIN_CRON_TOKEN;
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  delete process.env.APOLLO_BULLETIN_REQUIRE_TURSO;
+
+  let persisted = {
+    tasks: [{
+      id: "startup-local-dispatch",
+      name: "Startup local dispatch",
+      prompt: "Deliver once",
+      destination: "test-simulator",
+      status: "scheduled",
+      nextRunAt: Date.now() - 1_000,
+      schedule: { type: "manual" },
+      createdAt: Date.now() - 2_000,
+    }],
+    activity: [],
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+  };
+  let releaseDispatch;
+  let dispatchEntered = false;
+  const dispatchGate = new Promise(resolve => { releaseDispatch = resolve; });
+  const app = createBulletinServer({
+    port: 0,
+    store,
+    dispatch: async () => {
+      dispatchEntered = true;
+      await dispatchGate;
+      return { submitted: true, receipt: { reply: "delivered" }, reason: "test receipt" };
+    },
+  });
+
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    for (let attempt = 0; attempt < 100 && !dispatchEntered; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(dispatchEntered, true, "the local startup tick should have claimed the due task");
+
+    let createSettled = false;
+    const create = fetch(origin + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Created during startup tick", prompt: "Persist this task", destination: "test-simulator", scheduleType: "manual" }),
+    }).finally(() => { createSettled = true; });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    assert.equal(createSettled, false, "same-instance queue mutation must wait for the active tick, not fail busy");
+
+    releaseDispatch();
+    const response = await create;
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    assert.ok(body.task.id);
+    assert.equal(persisted.tasks.length, 2);
+    assert.equal(persisted.tasks[0].status, "dispatched");
+    assert.equal(persisted.tasks[1].name, "Created during startup tick");
+  } finally {
+    releaseDispatch();
+    await app.close();
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
