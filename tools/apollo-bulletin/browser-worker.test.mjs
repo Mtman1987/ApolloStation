@@ -209,7 +209,7 @@ test("assistant output must be stable after a generation signal before it is con
   const stopButton = {
     getAttribute(name) { return name === "aria-label" ? "Stop generating" : null; },
     innerText: "",
-    offsetParent: {},
+    getClientRects() { return [{}]; },
   };
   const document = {
     querySelectorAll(selector) {
@@ -222,7 +222,7 @@ test("assistant output must be stable after a generation signal before it is con
     },
   };
   Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: document });
-  Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: {} });
+  Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: { getComputedStyle() { return { display: "block", visibility: "visible" }; } } });
   Object.defineProperty(globalThis, "performance", { configurable: true, writable: true, value: { now: () => now } });
   try {
     assert.equal(chatGptResponseSettled(100), false, "visible generation control proves the response is still running");
