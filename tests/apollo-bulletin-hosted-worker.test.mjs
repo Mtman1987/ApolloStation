@@ -145,6 +145,7 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
     async ping() { return true; },
+    async checkSignalPersistence() { return true; },
     async acquireLease(key, ownerId, at, ttlMs) {
       const current = leases.get(key);
       if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
@@ -554,4 +555,47 @@ test("review capability links allow only the exact unguessable GET route without
   const malformed = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/review/not-a-uuid", "http://127.0.0.1:3000", async () => { throw new Error("malformed review paths must not bypass auth"); }, {});
   assert.equal(malformed.authorized, false);
   assert.equal(malformed.status, 401);
+});
+
+
+test("Bulletin readiness fails when durable pause/stop/review signal persistence is unavailable", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "signal-readiness-test-token";
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  const persisted = {
+    tasks: [],
+    activity: [],
+    cron: { status: "completed", inFlight: false, completedTicks: 1, failedTicks: 0, lastTickCompletedAt: Date.now() },
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue() {},
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async checkSignalPersistence() { return false; },
+    async acquireLease() { return true; },
+    async releaseLease() { return true; },
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/health/ready");
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(body.ready, false);
+    assert.equal(body.persistenceReachable, true);
+    assert.equal(body.cronExecutionConfirmed, true);
+    assert.equal(body.taskControlPersistenceRequired, true);
+    assert.equal(body.taskControlPersistenceReady, false);
+  } finally {
+    await app.close();
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 });
