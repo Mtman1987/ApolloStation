@@ -16,7 +16,7 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
     fetchImpl: async (input, init = {}) => {
       assert.equal(String(input), "https://spmt.live/api/auth/me");
       assert.equal(new Headers(init.headers).get("authorization"), "Bearer verified-owner-token");
-      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173" } }), {
+      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173", twitchId: "94371378" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -76,6 +76,12 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
       tenantIds: ["another-users-tenant"],
     });
     service.authority.getOrCreateWorkspace("another-users-tenant");
+    service.store.putProviderLink({
+      provider: "twitch",
+      providerUserId: "94371378",
+      userId: "another-user",
+      linkedAt: new Date().toISOString(),
+    });
 
     await service.listen();
     const address = service.server.address();
