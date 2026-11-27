@@ -24,6 +24,8 @@ jobs:
             secret: NODE1_TURSO_AUTH_TOKEN
           - label: Node 2 seed token
             secret: NODE2_TURSO_AUTH_TOKEN
+          - label: Shared Turso token
+            secret: TURSO_AUTH_TOKEN
     env:
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
       TURSO_AUTH_TOKEN: ${{ secrets[matrix.secret] }}
