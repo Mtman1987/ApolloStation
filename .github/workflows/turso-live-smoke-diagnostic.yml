@@ -5,6 +5,8 @@ on:
     branches: [fix/apollo-bulletin-readiness-distributed-lease]
     paths:
       - ".github/workflows/turso-live-smoke-diagnostic.yml"
+      - "tests/turso-live-runtime.test.mjs"
+      - "tools/apollo-bulletin/turso-store.mjs"
   workflow_dispatch:
 
 permissions:
