@@ -32,6 +32,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   let state;
   let busy = false;
   let activeTick = false;
+  let tickInProgress = false;
   let browserWorker;
   let timer;
   let saveTail = Promise.resolve();
@@ -120,6 +121,12 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     const previousMutation = mutationTail;
     mutationTail = new Promise(resolve => { releaseMutation = resolve; });
     await previousMutation;
+    // A local poll can already own the in-process queue when the first UI request arrives.
+    // Wait for that tick to finish, then reload the persisted queue under the normal mutation lock.
+    while (busy && tickInProgress) {
+      const pendingTick = activeTickDone;
+      await pendingTick;
+    }
     let ownsBusy = false;
     let leaseOwnerId = null;
     let leaseAcquired = false;
@@ -164,6 +171,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
   async function tick(source = "local-poll") {
     if (busy) return { processed: 0, busy: true };
     busy = true;
+    tickInProgress = true;
     activeTickDone = new Promise(resolve => { resolveActiveTickDone = resolve; });
     let processed = 0;
     let tickFailure;
@@ -307,6 +315,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           }
         }
         activeTick = false;
+        tickInProgress = false;
         busy = false;
         resolveActiveTickDone?.();
         resolveActiveTickDone = null;
