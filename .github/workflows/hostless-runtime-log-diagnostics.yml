@@ -157,7 +157,7 @@ jobs:
             const safe = {
               ready: d.ready, browser: d.browser, browserHealthy: d.browserHealthy,
               browserSessionPersisted: d.browserSessionPersisted, browserSessionReady: d.browserSessionReady,
-              browserLoginRequired: d.browserLoginRequired, persistence: d.persistence,
+              browserLoginRequired: d.browserLoginRequired, persistence: d.persistence, persistenceCredentialSource: d.persistenceCredentialSource,
               persistenceReachable: d.persistenceReachable, cronRequired: d.cronRequired,
               cronAuthConfigured: d.cronAuthConfigured, cronExecutionConfirmed: d.cronExecutionConfirmed,
               dispatcherLeaseConfigured: d.dispatcherLeaseConfigured,
