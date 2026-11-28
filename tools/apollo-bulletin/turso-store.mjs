@@ -75,6 +75,14 @@ export class TursoBulletinStore {
     return true;
   }
 
+  async checkDispatcherLease() {
+    const key = "apollo-bulletin-readiness-probe:" + process.pid;
+    const ownerId = "readiness:" + randomUUID();
+    const acquired = await this.acquireLease(key, ownerId, Date.now(), 15_000);
+    if (!acquired) return false;
+    return this.releaseLease(key, ownerId, Date.now());
+  }
+
   async requestReview(taskId, requestedAt = Date.now()) {
     if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(taskId) || !Number.isSafeInteger(requestedAt) || requestedAt < 0) {
       throw new TypeError("Bulletin review signal requires a valid task ID and timestamp");
