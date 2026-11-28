@@ -138,7 +138,9 @@ test("Turso review-link signals are independent of the queue and consumed once",
   await store.saveQueue({ tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
   await store.requestReview("task-1", 123456);
   assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  assert.deepEqual(await store.loadReviewRequests(), { "task-1": { requestedAt: 123456 } });
   assert.deepEqual(await store.consumeReviewRequest("task-1"), { requestedAt: 123456 });
+  assert.deepEqual(await store.loadReviewRequests(), {});
   assert.equal(await store.consumeReviewRequest("task-1"), null);
 });
 
