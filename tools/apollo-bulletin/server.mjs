@@ -164,6 +164,9 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     if (!persistence || busy || stateReloading) return true;
     try {
       const persisted = await persistence.loadQueue();
+      // A nonempty in-memory queue with no durable row is a persistence loss,
+      // not an empty queue. Refuse to present stale data as current.
+      if (!persisted && (state?.tasks?.length || state?.activity?.length)) return false;
       // A local tick or mutation may have started while the read was in flight.
       // Never replace its newer in-memory state with the earlier snapshot.
       if (!busy && !stateReloading && persisted && typeof persisted === "object") state = persisted;
