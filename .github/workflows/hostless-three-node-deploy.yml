@@ -92,7 +92,7 @@ jobs:
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
       - name: Check dedicated browser worker syntax
-        run: node --check scripts/setup-local-browser.mjs && node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --test tools/apollo-bulletin/*.test.mjs scripts/setup-local-browser.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs apps/spmt-service/tests/owner-session-recovery.test.mjs
+        run: node --check scripts/setup-local-browser.mjs && node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --test tools/apollo-bulletin/*.test.mjs scripts/setup-local-browser.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs apps/spmt-service/tests/owner-session-recovery.test.mjs scripts/hostless/deployment-poll.test.mjs
 
   detect-deploy-targets:
     name: Detect which Hostless nodes changed
