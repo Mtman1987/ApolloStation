@@ -10,6 +10,23 @@ import { readinessStatus } from "./readiness.mjs";
 import { resolveBrowserControlPassword, resolveCronToken } from "./cron-auth.mjs";
 
 const BULLETIN_WIDGET_TITLES = { tasks:"Task Queue", active:"Active Task", reviews:"Review Requests", activity:"Activity Log", scheduler:"Scheduler", history:"Task History" };
+function hasPersistedBulletinState(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const cron = value.cron && typeof value.cron === "object" && !Array.isArray(value.cron) ? value.cron : {};
+  return Boolean(value.tasks?.length || value.activity?.length || value.browserMessages?.length ||
+    (cron.status && cron.status !== "never") || Number(cron.completedTicks) > 0 || Number(cron.failedTicks) > 0 ||
+    Number(cron.lastTickStartedAt) > 0 || Number(cron.lastTickCompletedAt) > 0 || Number(cron.lastTickFailedAt) > 0 || cron.inFlight === true);
+}
+function normalizeQueueState(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw Object.assign(new Error("Stored Apollo Bulletin queue has an invalid shape; refusing to reset it"), { statusCode:503 });
+  for (const key of ["tasks","activity","browserMessages"]) if (value[key] != null && !Array.isArray(value[key])) throw Object.assign(new Error("Stored Apollo Bulletin " + key + " has an invalid shape; refusing to reset it"), { statusCode:503 });
+  if (value.cron != null && (typeof value.cron !== "object" || Array.isArray(value.cron))) throw Object.assign(new Error("Stored Apollo Bulletin cron state has an invalid shape; refusing to reset it"), { statusCode:503 });
+  value.tasks ||= [];
+  value.activity ||= [];
+  value.browserMessages ||= [];
+  value.cron ||= {};
+  return value;
+}
 function bulletinWidgetHtml(kind) {
   const title=BULLETIN_WIDGET_TITLES[kind];
   const form=kind==="tasks" ? '<form id="create"><label>Task name<input name="name" placeholder="Task name" required></label><label>Task prompt<textarea name="prompt" placeholder="Prompt to send to ChatGPT" required></textarea></label><label>Exact ChatGPT conversation URL (required for ChatGPT)<input name="conversationUrl" type="url" placeholder="https://chatgpt.com/c/..." autocomplete="url"></label><label>Destination<select name="destination"><option value="chatgpt">ChatGPT (Apollo hosted browser)</option><option value="test-simulator">Test Simulator (safe, no external AI)</option></select></label><label>Schedule type<select name="scheduleType"><option value="manual">Manual</option><option value="once">Once at a date/time</option><option value="interval">Repeat every interval</option><option value="weekly">Selected weekdays</option><option value="monthly">Monthly date</option></select></label><label>Run once at (local wall-clock time)<input name="runAt" type="datetime-local"></label><label>Schedule timezone (IANA)<input name="timeZone" value="America/Chicago" placeholder="America/Chicago" autocomplete="off"></label><label>Maximum continuation cycles<input name="maxCycles" type="number" min="1" max="100" value="8"></label><div class="schedule"><label>Repeat every<input name="every" type="number" min="1" value="5" placeholder="Interval"></label><label>Interval unit<select name="unit"><option value="minutes" selected>Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></label></div><label>Weekly days<select name="weekdays" multiple><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label><div class="schedule"><label>Weekly/monthly local time<input name="time" type="time" value="09:00"></label><label>Day of month<input name="day" type="number" min="1" max="31" value="1"></label></div><button>Create task</button></form>' : "";
@@ -59,13 +76,14 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
     return operation;
   }
   async function load({ recoverInterrupted = true } = {}) {
-    if (persistence) state = await persistence.loadQueue() ?? { tasks: [], activity: [] };
-    else {
-      try { state = JSON.parse(await readFile(statePath, "utf8")); }
-      catch (e) { if (e.code !== "ENOENT") throw e; state = { tasks: [], activity: [] }; }
+    if (persistence) {
+      const persisted = await persistence.loadQueue();
+      if (!persisted && hasPersistedBulletinState(state)) throw Object.assign(new Error("Bulletin durable queue row disappeared; refusing to reset the in-memory state"), { statusCode:503 });
+      state = normalizeQueueState(persisted ?? { tasks: [], activity: [] });
+    } else {
+      try { state = normalizeQueueState(JSON.parse(await readFile(statePath, "utf8"))); }
+      catch (e) { if (e.code !== "ENOENT") throw e; state = normalizeQueueState({ tasks: [], activity: [] }); }
     }
-    state.tasks ||= []; state.activity ||= []; state.browserMessages ||= [];
-    if (!state.cron || typeof state.cron !== "object" || Array.isArray(state.cron)) state.cron = {};
     state.cron.status ||= "never";
     state.cron.inFlight = Boolean(state.cron.inFlight);
     state.cron.completedTicks = Number.isFinite(Number(state.cron.completedTicks)) ? Number(state.cron.completedTicks) : 0;
@@ -166,10 +184,10 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
       const persisted = await persistence.loadQueue();
       // A nonempty in-memory queue with no durable row is a persistence loss,
       // not an empty queue. Refuse to present stale data as current.
-      if (!persisted && (state?.tasks?.length || state?.activity?.length)) return false;
+      if (!persisted && hasPersistedBulletinState(state)) return false;
       // A local tick or mutation may have started while the read was in flight.
       // Never replace its newer in-memory state with the earlier snapshot.
-      if (!busy && !stateReloading && persisted && typeof persisted === "object") state = persisted;
+      if (!busy && !stateReloading && persisted) state = normalizeQueueState(persisted);
       return true;
     } catch (error) {
       console.warn("[apollo-bulletin] Persisted queue read failed:", String(error?.message || error));
@@ -242,6 +260,30 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           }
           if (controlsChanged) await save();
         }
+        const pendingReviewRequests = typeof persistence?.loadReviewRequests === "function" ? await persistence.loadReviewRequests() : {};
+        let reviewSignalsChanged = false;
+        for (const task of state.tasks) {
+          const persistedReviewRequest = Boolean(pendingReviewRequests?.[task.id]);
+          const localReviewRequest = Boolean(task.reviewRequested);
+          if (!persistedReviewRequest && !localReviewRequest) continue;
+          if (["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) {
+            if (persistedReviewRequest && typeof persistence?.consumeReviewRequest === "function") await persistence.consumeReviewRequest(task.id);
+            task.reviewRequested = false;
+            continue;
+          }
+          if (task.status === "dispatching") continue;
+          if (persistedReviewRequest) {
+            if (typeof persistence?.consumeReviewRequest !== "function") throw new Error("Bulletin review signal cannot be consumed");
+            await persistence.consumeReviewRequest(task.id);
+          }
+          task.reviewRequested = false;
+          task.status = "awaiting_review";
+          task.nextRunAt = null;
+          task.lastEvent = "Owner review requested before the next dispatch";
+          log("owner-review-requested", task.id);
+          reviewSignalsChanged = true;
+        }
+        if (reviewSignalsChanged) await save();
       } finally {
         stateReloading = false;
       }
@@ -259,6 +301,18 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         // Claim and persist before touching the browser. An uncertain send is never retried.
         task.status = "dispatching"; task.lastDispatchAt = now(); task.nextRunAt = null; log("dispatch-intent-persisted", task.id);
         try { await save(); } catch (error) { task.status = "paused"; task.nextRunAt = null; task.lastEvent = "Dispatch was not attempted because the intent claim could not be persisted: " + String(error?.message || error).slice(0, 300); log("dispatch-claim-persistence-failed", task.id); try { await save(); } catch (retryError) { console.error("[apollo-bulletin] Could not persist paused task after claim failure:", String(retryError?.message || retryError)); } processed += 1; break; }
+        const reviewBeforeSend = typeof persistence?.consumeReviewRequest === "function" ? await persistence.consumeReviewRequest(task.id) : null;
+        if (reviewBeforeSend || task.reviewRequested) {
+          task.reviewRequested = false;
+          task.status = "awaiting_review";
+          task.nextRunAt = null;
+          task.lastDispatchAt = null;
+          task.lastEvent = "Owner review requested before the message was sent";
+          log("owner-review-requested-before-dispatch", task.id);
+          await save();
+          processed += 1;
+          break;
+        }
         try {
           log("browser-task-start", task.id, task.destination + " · " + (task.conversationUrl || "default target"));
           const result = await (dispatch ?? deliver)(task);
@@ -393,8 +447,11 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const verb = action[2];
         if ((verb === "pause" || verb === "stop") && typeof persistence?.requestTaskControl === "function") {
           let queue = state;
-          try { queue = await persistence.loadQueue() ?? state; }
-          catch (error) { console.error("[apollo-bulletin] Could not read task state for control request:", String(error?.message || error)); return send(503, { error: "Bulletin task state is temporarily unavailable" }); }
+          try {
+            const persistedQueue = await persistence.loadQueue();
+            if (!persistedQueue && hasPersistedBulletinState(state)) return send(503, { error:"Bulletin durable task state is missing" });
+            queue = persistedQueue ? normalizeQueueState(persistedQueue) : state;
+          } catch (error) { console.error("[apollo-bulletin] Could not read task state for control request:", String(error?.message || error)); return send(503, { error: "Bulletin task state is temporarily unavailable" }); }
           const task = queue.tasks?.find(t => t.id === action[1]);
           if (!task) return send(404, { error: "Task not found" });
           if (verb === "pause" && ["dispatch-uncertain","dispatched","awaiting_review","completed","stopped"].includes(task.status)) return send(409, { error: "This task has an unresolved send or is already resolved; inspect it before changing its state." });
@@ -441,8 +498,11 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
         const key = url.pathname.slice("/review/".length);
         let reviewQueue = state;
         if (persistence) {
-          try { reviewQueue = await persistence.loadQueue() ?? state; }
-          catch (error) { console.error("[apollo-bulletin] Review link queue read failed:", String(error?.message || error)); return send(503, { error: "Review state is temporarily unavailable" }); }
+          try {
+            const persistedQueue = await persistence.loadQueue();
+            if (!persistedQueue && hasPersistedBulletinState(state)) return send(503, { error:"Bulletin durable review state is missing" });
+            reviewQueue = persistedQueue ? normalizeQueueState(persistedQueue) : state;
+          } catch (error) { console.error("[apollo-bulletin] Review link queue read failed:", String(error?.message || error)); return send(503, { error: "Review state is temporarily unavailable" }); }
         }
         const task = reviewQueue.tasks?.find(t => t.reviewKey === key);
         if (!task) return send(404, "Review link not found", "text/plain; charset=utf-8");
@@ -458,7 +518,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           }
         }
         const safeName = String(task.name || "Apollo task").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-        const html = `<!doctype html><meta name="viewport" content="width=device-width"><title>Review requested</title><body style="font:16px system-ui;background:#0b1220;color:#eef;padding:28px"><h1>Owner review requested</h1><p>${safeName}</p><p>The task will pause after its current cycle. Open Apollo Bulletin to inspect the handoff and logs, then explicitly resume or mark complete.</p><a style="color:#8bd" href="/bulletin/">Return to Bulletin</a></body>`;
+        const html = `<!doctype html><meta name="viewport" content="width=device-width"><title>Review requested</title><body style="font:16px system-ui;background:#0b1220;color:#eef;padding:28px"><h1>Owner review requested</h1><p>${safeName}</p><p>The task will pause before its next dispatch, or after the current cycle if one is already running. Open Apollo Bulletin to inspect the handoff and logs, then explicitly resume or mark complete.</p><a style="color:#8bd" href="/bulletin/">Return to Bulletin</a></body>`;
         return send(200, html, "text/html; charset=utf-8");
       }
       if (req.method === "GET" && url.pathname === "/fake-chatgpt") return send(200, "<!doctype html><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ChatGPT · Apollo Simulation</title><body style=\"margin:0;background:#212121;color:#eee;font:16px system-ui\"><header style=\"padding:15px;border-bottom:1px solid #555\">ChatGPT · APOLLO SIMULATION</header><main id=\"messages\" style=\"max-width:760px;margin:auto;padding:24px 16px 100px\"><div data-message-author-role=\"assistant\" style=\"background:#303030;padding:14px;border-radius:12px\">Hello! This is the simulated ChatGPT page. Apollo uses a real Chromium browser to interact with this page; only the AI reply is simulated.</div></main><form id=\"form\" style=\"position:fixed;bottom:0;left:0;right:0;padding:12px;background:#222;display:flex;gap:8px\"><textarea id=\"prompt-textarea\" placeholder=\"Message ChatGPT\" style=\"flex:1;min-height:48px;background:#333;color:white;border:0;padding:10px\"></textarea><button aria-label=\"Send message\">Send</button></form><script>const f=document.querySelector(\"#form\"),p=document.querySelector(\"#prompt-textarea\"),m=document.querySelector(\"#messages\");f.onsubmit=e=>{e.preventDefault();const v=p.value.trim();if(!v)return;const u=document.createElement(\"div\");u.dataset.messageAuthorRole=\"user\";u.textContent=v;u.style.cssText=\"background:#444;padding:14px;margin:12px 0;border-radius:12px\";m.append(u);p.value=\"\";setTimeout(()=>{const a=document.createElement(\"div\");a.dataset.messageAuthorRole=\"assistant\";a.textContent=\"SIMULATED CHATGPT REPLY: I received your prompt through Apollo Chromium: \"+v;a.style.cssText=\"background:#303030;padding:14px;margin:12px 0;border-radius:12px\";m.append(a)},300)};</script>", "text/html; charset=utf-8");
