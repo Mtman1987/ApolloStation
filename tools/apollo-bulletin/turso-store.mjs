@@ -97,16 +97,41 @@ export class TursoBulletinStore {
     return true;
   }
 
+  async loadReviewRequests() {
+    await this.initialize();
+    const prefix = "apollo-bulletin:review-request:";
+    const result = await this.adapter.execute(
+      "SELECT state_key, state_json FROM apollo_bulletin_state WHERE state_key LIKE ?",
+      [prefix + "%"],
+      true,
+    );
+    const requests = {};
+    for (const row of result.rows || []) {
+      const key = String(row[0] || "");
+      if (!key.startsWith(prefix)) continue;
+      try {
+        const request = JSON.parse(String(row[1]));
+        if (!Number.isSafeInteger(request?.requestedAt) || request.requestedAt < 0) throw new Error("invalid timestamp");
+        requests[key.slice(prefix.length)] = request;
+      } catch { throw new Error("Stored Apollo Bulletin review signal is invalid"); }
+    }
+    return requests;
+  }
+
   async checkSignalPersistence() {
     const probeId = "readiness-" + randomUUID();
     try {
-      await this.requestTaskControl(probeId, "pause", Date.now());
+      const controlRequestedAt = Date.now();
+      await this.requestTaskControl(probeId, "pause", controlRequestedAt);
       const controls = await this.loadTaskControls();
-      const visibleControl = controls[probeId]?.action === "pause";
+      const visibleControl = controls[probeId]?.action === "pause" && controls[probeId]?.requestedAt === controlRequestedAt;
       const consumedControl = await this.consumeTaskControl(probeId);
-      await this.requestReview(probeId, Date.now());
+      const reviewRequestedAt = Date.now();
+      await this.requestReview(probeId, reviewRequestedAt);
+      const reviews = await this.loadReviewRequests();
+      const visibleReview = reviews[probeId]?.requestedAt === reviewRequestedAt;
       const consumedReview = await this.consumeReviewRequest(probeId);
-      return visibleControl && consumedControl?.action === "pause" && Number.isSafeInteger(consumedReview?.requestedAt);
+      return visibleControl && consumedControl?.action === "pause" && visibleReview && Number.isSafeInteger(consumedReview?.requestedAt);
     } finally {
       await Promise.allSettled([this.consumeTaskControl(probeId), this.consumeReviewRequest(probeId)]);
     }
