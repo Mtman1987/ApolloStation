@@ -504,10 +504,17 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           try { taskControlPersistenceReady = await persistence.checkSignalPersistence() === true; }
           catch { taskControlPersistenceReady = false; }
         }
+        let dispatcherLeaseAvailable = !cronRequired;
+        if (cronRequired && persistenceAvailable) {
+          if (typeof persistence?.checkDispatcherLease === "function") {
+            try { dispatcherLeaseAvailable = await persistence.checkDispatcherLease() === true; }
+            catch { dispatcherLeaseAvailable = false; }
+          } else dispatcherLeaseAvailable = dispatcherLeaseConfigured;
+        }
         const readiness = readinessStatus({
           browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
-          dispatcherLeaseRequired: cronRequired, dispatcherLeaseAvailable: dispatcherLeaseConfigured && persistenceAvailable,
+          dispatcherLeaseRequired: cronRequired, dispatcherLeaseAvailable,
           taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
         });
         const cron = {
