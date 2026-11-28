@@ -172,3 +172,11 @@ test("dispatcher lease readiness probe fails when the database refuses lease acq
   store.acquireLease = async () => false;
   assert.equal(await store.checkDispatcherLease(), false);
 });
+
+test("concurrent dispatcher readiness probes share one in-flight lease check", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  const results = await Promise.all([store.checkDispatcherLease(), store.checkDispatcherLease(), store.checkDispatcherLease()]);
+  assert.deepEqual(results, [true, true, true]);
+  assert.equal(adapter.leases.size, 1);
+});
