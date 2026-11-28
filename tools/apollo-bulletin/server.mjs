@@ -503,7 +503,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           ready: readiness.ready, browser: browserWorker ? (browserSessionReady ? "chromium-session-ready" : browserInfrastructureReady && browserStatus?.loginRequired ? "chromium-login-required" : browserHealthy && !browserSessionPersisted ? "chromium-session-persistence-not-ready" : "browser-not-ready") : "browser-not-started",
           browserRequired, browserHealthy, browserSessionPersisted, browserSessionPersistedAt: browserStatus?.lastSessionPersistedAt ?? null,
           browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
-          persistence: persistenceAvailable ? "turso" : persistenceRequired ? "unavailable" : "local-fallback", persistenceRequired, persistenceReachable: persistenceAvailable,
+          persistence: persistenceAvailable ? "turso" : persistenceRequired ? "unavailable" : "local-fallback", persistenceRequired, persistenceReachable: persistenceAvailable, persistenceCredentialSource: persistence?.credentialSource || (persistence ? "injected" : null),
           ownerAuthorizationPolicy: "platform-owner-session", ownerActorPinConfigured: Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()),
           dispatcherLeaseConfigured, taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
