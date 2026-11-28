@@ -153,3 +153,22 @@ test("Turso pause and stop commands are queryable and consumed once without queu
   assert.deepEqual(await store.consumeTaskControl("task-1"), { action: "pause", requestedAt: 123456 });
   assert.equal(await store.consumeTaskControl("task-1"), null);
 });
+
+test("dispatcher lease readiness probe acquires and releases one reusable probe row", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  assert.equal(await store.checkDispatcherLease(), true);
+  assert.equal(adapter.leases.size, 1);
+  const [key, lease] = [...adapter.leases.entries()][0];
+  assert.match(key, /^apollo-bulletin-readiness-probe:/);
+  assert.equal(lease.expiresAt, 0, "the readiness probe releases its lease");
+  assert.equal(await store.checkDispatcherLease(), true);
+  assert.equal(adapter.leases.size, 1, "repeated health checks reuse the same row");
+});
+
+test("dispatcher lease readiness probe fails when the database refuses lease acquisition", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  store.acquireLease = async () => false;
+  assert.equal(await store.checkDispatcherLease(), false);
+});
