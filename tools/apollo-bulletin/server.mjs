@@ -489,6 +489,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           try {
             if (typeof persistence.ping === "function") await persistence.ping();
             persistedQueue = await persistence.loadQueue();
+            if (persistenceRequired && !persistedQueue) persistenceAvailable = false;
           } catch {
             persistenceAvailable = false;
           }
