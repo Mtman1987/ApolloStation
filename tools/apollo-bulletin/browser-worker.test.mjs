@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ApolloChatGptBrowserWorker, chatGptResponseSettled } from "./browser-worker.mjs";
+import { ApolloChatGptBrowserWorker, chatGptResponseSettled, isChatGptLoginRequired } from "./browser-worker.mjs";
 
 function fakeWorker({ url = "https://chatgpt.com/", pageClosed = false, browserConnected = true } = {}) {
   const worker = new ApolloChatGptBrowserWorker({});
@@ -35,7 +35,7 @@ test("a missing page blocks before send and always releases the browser busy loc
 });
 
 test("browser status exposes health separately from ChatGPT login state", async () => {
-  for (const url of ["https://chatgpt.com/auth/login", "https://chatgpt.com/auth/signin", "https://chatgpt.com/login", "https://auth.openai.com/log-in", "https://auth.openai.com/sign-in"]) {
+  for (const url of ["https://chatgpt.com/auth/login", "https://chatgpt.com/auth/signin", "https://chatgpt.com/login", "https://auth.openai.com/log-in", "https://auth.openai.com/sign-in", "https://auth.openai.com/u/login/identifier", "https://auth.openai.com/u/login/password", "https://auth.openai.com/u/signup/identifier"]) {
     const status = await fakeWorker({ url }).status();
     assert.equal(status.healthy, true);
     assert.equal(status.connected, true);
@@ -273,4 +273,12 @@ test("fast responses without an observable generation button still require a lon
       else delete globalThis[key];
     }
   }
+});
+
+test("current OpenAI /u/login and /u/signup routes are recognized without a login button", () => {
+  assert.equal(isChatGptLoginRequired("https://auth.openai.com/u/login/identifier"), true);
+  assert.equal(isChatGptLoginRequired("https://auth.openai.com/u/login/password"), true);
+  assert.equal(isChatGptLoginRequired("https://auth.openai.com/u/signup/identifier"), true);
+  assert.equal(isChatGptLoginRequired("https://auth.openai.com/authorize"), false);
+  assert.equal(isChatGptLoginRequired("https://chatgpt.com/c/example"), false);
 });
