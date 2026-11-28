@@ -114,8 +114,21 @@ test("Turso cron lease can be claimed after expiry", async () => {
 
 test("Turso Bulletin store is created only when an existing database URL and token are present", () => {
   assert.equal(createTursoBulletinStoreFromEnvironment({}), null);
-  const store = createTursoBulletinStoreFromEnvironment({ TURSO_DATABASE_URL: "libsql://test.invalid", NODE1_TURSO_AUTH_TOKEN: "test-only" });
+  const store = createTursoBulletinStoreFromEnvironment({ TURSO_DATABASE_URL: "libsql://test.invalid", NODE1_TURSO_AUTH_TOKEN: "node-scoped-test-token" });
   assert.ok(store instanceof TursoBulletinStore);
+  assert.equal(store.adapter.authToken, "node-scoped-test-token");
+  assert.equal(store.credentialSource, "NODE1_TURSO_AUTH_TOKEN");
+});
+
+test("existing shared runtime Turso token takes precedence over node-scoped read-only credentials", () => {
+  const store = createTursoBulletinStoreFromEnvironment({
+    TURSO_DATABASE_URL: "libsql://test.invalid",
+    TURSO_AUTH_TOKEN: "existing-shared-runtime-test-token",
+    NODE1_TURSO_AUTH_TOKEN: "node-scoped-test-token",
+  });
+  assert.ok(store instanceof TursoBulletinStore);
+  assert.equal(store.adapter.authToken, "existing-shared-runtime-test-token");
+  assert.equal(store.credentialSource, "TURSO_AUTH_TOKEN");
 });
 
 
