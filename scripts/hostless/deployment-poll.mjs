@@ -26,7 +26,7 @@ export async function waitForHostlessDeployment(options) {
     token,
     app,
     deploymentId,
-    timeoutMs = 20 * 60 * 1000,
+    timeoutMs = 10 * 60 * 1000,
     intervalMs = 10_000,
     now = Date.now,
     sleep = defaultSleep,
