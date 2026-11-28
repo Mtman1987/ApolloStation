@@ -15,6 +15,56 @@ export function normalizeChatGptConversationUrl(value) {
   return target.href;
 }
 
+export function isChatGptLoginRequired(url, loginControlVisible = false) {
+  if (loginControlVisible) return true;
+  let pathname = "";
+  try { pathname = new URL(url).pathname; } catch { return false; }
+  // OpenAI's hosted login uses /u/login/identifier and signup uses
+  // /u/signup/identifier; neither contains a literal "log-in" path.
+  return /(?:^|\/)(?:u\/)?(?:login|signup|log-?in|sign-?in)(?:\/|$)/i.test(pathname);
+}
+
+export function chatGptResponseSettled(quietMs = 4_000) {
+  const stopVisible = [...document.querySelectorAll("button")].some(button => {
+    if (!/stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim())) return false;
+    const style = window.getComputedStyle(button);
+    return style.display !== "none" && style.visibility !== "hidden" && button.getClientRects().length > 0;
+  });
+  const composerElement = document.querySelector("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],[contenteditable='true'][id*='prompt'],textarea");
+  const composerReady = Boolean(composerElement && !composerElement.hasAttribute("disabled") && composerElement.getAttribute("aria-disabled") !== "true");
+  const assistantMessages = [...document.querySelectorAll("[data-message-author-role='assistant']")];
+  const responseText = String(assistantMessages.at(-1)?.innerText || "").trim();
+  const now = performance.now();
+  const state = window.__apolloBulletinResponseState || {
+    sawBusy: false,
+    sawTextChange: false,
+    lastText: null,
+    stableSince: now,
+  };
+
+  if (stopVisible || !composerReady) {
+    state.sawBusy = true;
+    state.lastText = responseText;
+    state.stableSince = now;
+    window.__apolloBulletinResponseState = state;
+    return false;
+  }
+  if (!responseText) {
+    state.lastText = "";
+    state.stableSince = now;
+    window.__apolloBulletinResponseState = state;
+    return false;
+  }
+  if (state.lastText !== responseText) {
+    if (state.lastText !== null && state.lastText !== "") state.sawTextChange = true;
+    state.lastText = responseText;
+    state.stableSince = now;
+  }
+  window.__apolloBulletinResponseState = state;
+  const requiredQuietMs = state.sawBusy || state.sawTextChange ? quietMs : Math.max(quietMs, 8_000);
+  return now - state.stableSince >= requiredQuietMs;
+}
+
 export class ApolloChatGptBrowserWorker {
   constructor({ profilePath = process.env.APOLLO_BROWSER_PROFILE_PATH || "/tmp/apollo-browser-profile", allowedOrigin = DEFAULT_TEST_ORIGIN, now = () => Date.now(), launch = playwrightChromium.launchPersistentContext.bind(playwrightChromium), sessionStore }) {
     this.profilePath = resolve(profilePath);
@@ -26,6 +76,8 @@ export class ApolloChatGptBrowserWorker {
     this.busy = false;
     this.lastReceipt = undefined;
     this.sessionStore = sessionStore;
+    this.sessionPersistedAt = null;
+    this.sessionPersistenceFailed = false;
   }
 
   async start() {
@@ -52,21 +104,36 @@ export class ApolloChatGptBrowserWorker {
     return this.status();
   }
 
+  async isHealthy() {
+    if (!this.context || !this.page) return false;
+    try {
+      if (this.page.isClosed()) return false;
+      const browser = this.context.browser?.();
+      if (!browser || typeof browser.isConnected !== "function" || !browser.isConnected()) return false;
+      const host = new URL(this.page.url()).hostname.toLowerCase();
+      return ["chatgpt.com", "auth.openai.com", "openai.com"].some(domain => host === domain || host.endsWith("." + domain));
+    } catch {
+      return false;
+    }
+  }
+
   async status() {
-    const page = this.#requirePage();
-    const url = page.url();
-    const title = await page.title().catch(() => "");
-    const loginRequired = /\/auth\/(login|signin)|\/login/i.test(url) ||
-      await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
-    return {
-      connected: /^https:\/\/(?:chatgpt\.com|auth\.openai\.com|openai\.com)(?:\/|$)/i.test(url),
-      loginRequired,
-      url,
-      title,
-      busy: this.busy,
-      lastReceipt: this.lastReceipt,
-      profilePath: this.profilePath,
-    };
+    const healthy = await this.isHealthy();
+    const sessionPersistenceReady = Boolean(this.sessionStore?.saveBrowserState && this.sessionPersistedAt !== null && !this.sessionPersistenceFailed);
+    const page = this.page;
+    if (!page || page.isClosed()) {
+      return { connected: false, healthy: false, loginRequired: null, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
+    try {
+      const url = page.url();
+      const title = await page.title().catch(() => "");
+      const loginButtonVisible = await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      const loginLinkVisible = await page.getByRole("link", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      const loginRequired = isChatGptLoginRequired(url, loginButtonVisible || loginLinkVisible);
+      return { connected: healthy, healthy, loginRequired, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    } catch {
+      return { connected: false, healthy: false, loginRequired: null, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
+    }
   }
 
   async navigate(targetUrl) {
@@ -113,9 +180,9 @@ export class ApolloChatGptBrowserWorker {
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("Task prompt is missing");
     const targetUrl = normalizeChatGptConversationUrl(task.conversationUrl);
     this.busy = true;
-    const page = this.#requirePage();
     let clickAttempted = false;
     try {
+      const page = this.#requirePage();
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("ChatGPT redirected away from the exact target conversation; refusing to send");
@@ -140,6 +207,7 @@ export class ApolloChatGptBrowserWorker {
       if (!(await sendButton.isVisible().catch(() => false)) || !(await sendButton.isEnabled().catch(() => false))) {
         throw new Error("ChatGPT Send did not become visibly enabled after filling the empty composer");
       }
+      await page.evaluate(() => { delete window.__apolloBulletinResponseState; });
       const submittedAt = this.now();
       clickAttempted = true;
       await sendButton.click();
@@ -151,21 +219,18 @@ export class ApolloChatGptBrowserWorker {
       );
       const response = assistantMessages.last();
       await response.waitFor({ state: "visible", timeout: 10_000 });
-      await page.waitForFunction(() => {
-        const stop = [...document.querySelectorAll("button")].some(button =>
-          /stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim()) &&
-          button.offsetParent !== null
-        );
-        const composerElement = document.querySelector("#prompt-textarea,[contenteditable='true'][data-testid*='composer'],[contenteditable='true'][id*='prompt'],textarea");
-        const composerReady = Boolean(composerElement && !composerElement.hasAttribute("disabled") && composerElement.getAttribute("aria-disabled") !== "true");
-        return !stop && composerReady;
-      }, null, { timeout: 120_000 });
+      await page.waitForFunction(chatGptResponseSettled, 4_000, { timeout: 120_000, polling: 500 });
+      await page.evaluate(() => { delete window.__apolloBulletinResponseState; });
       if (normalizeChatGptConversationUrl(page.url()) !== targetUrl) {
         throw new Error("The ChatGPT conversation changed while the response was being generated");
       }
-      const reply = (await response.innerText()).trim().slice(0, 12000);
-      if (!reply) throw new Error("ChatGPT response was empty; manual review required");
-      const receipt = { provider: "chatgpt-visible-ui", submittedAt, receivedAt: this.now(), conversationUrl: targetUrl, reply };
+      const fullReply = (await response.innerText()).trim();
+      if (!fullReply) throw new Error("ChatGPT response was empty; manual review required");
+      // Detect the marker before bounding the receipt text; long responses must not hide completion.
+      const completionMarkerObserved = typeof task.completionMarker === "string" &&
+        fullReply.split(/\r?\n/).some(line => line.trim() === task.completionMarker);
+      const reply = fullReply.slice(0, 12000);
+      const receipt = { provider: "chatgpt-visible-ui", submittedAt, receivedAt: this.now(), conversationUrl: targetUrl, reply, completionMarkerObserved };
       this.lastReceipt = receipt;
       return { submitted: true, receipt, reason: "ChatGPT response observed in the exact conversation" };
     } catch (error) {
@@ -183,8 +248,15 @@ export class ApolloChatGptBrowserWorker {
 
   async #persistSession() {
     if (!this.sessionStore?.saveBrowserState || !this.context) return;
-    const state = await this.context.storageState({ indexedDB: true });
-    await this.sessionStore.saveBrowserState(state);
+    try {
+      const state = await this.context.storageState({ indexedDB: true });
+      await this.sessionStore.saveBrowserState(state);
+      this.sessionPersistedAt = this.now();
+      this.sessionPersistenceFailed = false;
+    } catch (error) {
+      this.sessionPersistenceFailed = true;
+      throw error;
+    }
   }
 
   #requirePage() {

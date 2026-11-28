@@ -25,6 +25,9 @@ test("Bulletin requires the exact conversation URL for real ChatGPT tasks", asyn
   try {
     const address = await app.listen();
     const origin = "http://127.0.0.1:" + address.port;
+    const widget = await fetch(origin + "/widgets/tasks").then(response => response.text());
+    assert.match(widget, /Exact ChatGPT conversation URL \(required for ChatGPT\)/);
+    assert.match(widget, /conversation\.required=destination\.value==="chatgpt"/);
     const create = body => fetch(origin + "/api/tasks", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
@@ -138,11 +141,26 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     ],
     activity: [],
   };
+  const leases = new Map();
   const store = {
     async loadQueue() { return structuredClone(persisted); },
     async saveQueue(value) { persisted = structuredClone(value); },
     async loadBrowserState() { return null; },
     async saveBrowserState() {},
+    async ping() { return true; },
+    async checkSignalPersistence() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
   };
   const app = createBulletinServer({ port: 0, store, dispatch: async task => ({ submitted: true, receipt: { reply: "simulated" }, reason: task.id }) });
   try {
@@ -160,6 +178,11 @@ test("Hostless cron endpoint is authenticated and wakes one due task per tick", 
     const firstActivity = await (await fetch("http://127.0.0.1:" + address.port + "/api/tasks")).json();
     assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-started"));
     assert.ok(firstActivity.activity.some(item => item.event === "hostless-cron-tick-completed"));
+    const readiness = await (await fetch("http://127.0.0.1:" + address.port + "/health/ready")).json();
+    assert.equal(readiness.ready, true);
+    assert.equal(readiness.cronExecutionConfirmed, true);
+    assert.equal(readiness.dispatcherLeaseConfigured, true);
+    assert.equal(readiness.persistenceReachable, true);
     let secondBody;
     for (let attempt = 0; attempt < 30; attempt++) {
       const second = await fetch(endpoint, { method: "POST", headers: { authorization: "Bearer cron-test-token" } });
@@ -205,18 +228,28 @@ test("Apollo Bulletin proxy requires a signed-in Apollo session for app routes",
     async (url, options) => {
       assert.equal(String(url), "http://127.0.0.1:3000/v1/auth/session/check");
       seenCookie = options.headers.cookie;
-      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1" }), { status: 200 });
+      return new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", platformOwner: true }), { status: 200 });
     },
     {},
   );
   assert.equal(seenCookie, "spmt_token=apollo-owner-session");
-  assert.equal(allowed.authorized, true, "actor pin is optional until configured");
+  assert.equal(allowed.authorized, true, "the canonical SPMT platform-owner flag is required even without an optional actor pin");
+  assert.equal(allowed.reason, "apollo-owner-session");
+  const nonOwner = await authorizeBulletinRequest(
+    { headers: { cookie: "spmt_token=other-session" } },
+    "/bulletin/api/tasks",
+    "http://127.0.0.1:3000",
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user", platformOwner: false }), { status: 200 }),
+    {},
+  );
+  assert.equal(nonOwner.authorized, false);
+  assert.equal(nonOwner.status, 403);
   const wrongOwner = await authorizeBulletinRequest(
     { headers: { cookie: "spmt_token=other-session" } },
     "/bulletin/api/tasks",
     "http://127.0.0.1:3000",
-    async () => new Response(JSON.stringify({ authenticated: true, actorId: "other-user" }), { status: 200 }),
-    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "owner-1" },
+    async () => new Response(JSON.stringify({ authenticated: true, actorId: "owner-1", platformOwner: true }), { status: 200 }),
+    { APOLLO_BULLETIN_OWNER_ACTOR_ID: "different-owner" },
   );
   assert.equal(wrongOwner.authorized, false);
   assert.equal(wrongOwner.status, 403);
@@ -479,4 +512,93 @@ test("pre-send browser blocks pause recoverably and require owner resume, not an
     await new Promise(resolve=>setTimeout(resolve,1100));
     assert.equal(dispatchCalls,2,"blocked send remains paused after second attempt");
   } finally { await app.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test("Hostless cron proxy skips blank credentials and never falls back to the retired Boss Key", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const authorize = (token, environment) => authorizeBulletinRequest(
+    { headers: { authorization: "Bearer " + token } },
+    "/bulletin/api/cron/tick",
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("cron auth must not call SPMT session check"); },
+    environment,
+  );
+  const browserFallback = await authorize("browser-fallback-token", {
+    APOLLO_BULLETIN_CRON_TOKEN: "  \n ",
+    APOLLO_BROWSER_CONTROL_PASSWORD: " browser-fallback-token ",
+    APOLLO_PREVIEW_PASSWORD: "preview-token",
+  });
+  assert.equal(browserFallback.authorized, true);
+  const previewFallback = await authorize("preview-fallback-token", {
+    APOLLO_BULLETIN_CRON_TOKEN: " ",
+    APOLLO_BROWSER_CONTROL_PASSWORD: "\t",
+    APOLLO_PREVIEW_PASSWORD: " preview-fallback-token ",
+  });
+  assert.equal(previewFallback.authorized, true);
+  const bossOnly = await authorize("legacy-boss-key", { BOSS_KEY: "legacy-boss-key" });
+  assert.equal(bossOnly.authorized, false);
+  assert.equal(bossOnly.status, 503);
+});
+
+test("review capability links allow only the exact unguessable GET route without an Apollo cookie", async () => {
+  const { authorizeBulletinRequest } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  const key = "123e4567-e89b-42d3-a456-426614174000";
+  const allowed = await authorizeBulletinRequest(
+    { headers: {}, method: "GET" },
+    "/bulletin/review/" + key,
+    "http://127.0.0.1:3000",
+    async () => { throw new Error("review capability must not require an Apollo session lookup"); },
+    {},
+  );
+  assert.equal(allowed.authorized, true);
+  assert.equal(allowed.reason, "review-capability-link");
+  const post = await authorizeBulletinRequest({ headers: {}, method: "POST" }, "/bulletin/review/" + key, "http://127.0.0.1:3000", async () => { throw new Error("no cookie should be denied before identity lookup"); }, {});
+  assert.equal(post.authorized, false);
+  assert.equal(post.status, 401);
+  const malformed = await authorizeBulletinRequest({ headers: {}, method: "GET" }, "/bulletin/review/not-a-uuid", "http://127.0.0.1:3000", async () => { throw new Error("malformed review paths must not bypass auth"); }, {});
+  assert.equal(malformed.authorized, false);
+  assert.equal(malformed.status, 401);
+});
+
+
+test("Bulletin readiness fails when durable pause/stop/review signal persistence is unavailable", async () => {
+  const keys = ["APOLLO_BULLETIN_USE_HOSTLESS_CRON", "APOLLO_BULLETIN_CRON_TOKEN", "APOLLO_BULLETIN_ENABLE_BROWSER", "APOLLO_BULLETIN_REQUIRE_TURSO"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "signal-readiness-test-token";
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  delete process.env.APOLLO_BULLETIN_ENABLE_BROWSER;
+  const persisted = {
+    tasks: [],
+    activity: [],
+    cron: { status: "completed", inFlight: false, completedTicks: 1, failedTicks: 0, lastTickCompletedAt: Date.now() },
+  };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue() {},
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async checkSignalPersistence() { return false; },
+    async acquireLease() { return true; },
+    async releaseLease() { return true; },
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:" + address.port + "/health/ready");
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(body.ready, false);
+    assert.equal(body.persistenceReachable, true);
+    assert.equal(body.cronExecutionConfirmed, true);
+    assert.equal(body.taskControlPersistenceRequired, true);
+    assert.equal(body.taskControlPersistenceReady, false);
+  } finally {
+    await app.close();
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 });

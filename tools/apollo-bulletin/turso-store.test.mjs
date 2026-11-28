@@ -1,0 +1,184 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { TursoBulletinStore, createTursoBulletinStoreFromEnvironment } from "./turso-store.mjs";
+
+function memoryAdapter() {
+  const rows = new Map();
+  const leases = new Map();
+  let stateCreates = 0, leaseCreates = 0;
+  return {
+    rows, leases,
+    get creates() { return stateCreates + leaseCreates; },
+    async execute(sql, args = []) {
+      if (sql.startsWith("CREATE TABLE IF NOT EXISTS apollo_bulletin_state")) { stateCreates += 1; return { rows: [], affectedRows: 0 }; }
+      if (sql.startsWith("CREATE TABLE IF NOT EXISTS apollo_bulletin_leases")) { leaseCreates += 1; return { rows: [], affectedRows: 0 }; }
+      if (sql.startsWith("SELECT 1 AS ready")) return { rows: [[1]], affectedRows: 0 };
+      if (sql.startsWith("SELECT state_json")) {
+        const value = rows.get(args[0]);
+        return { rows: value === undefined ? [] : [[value]], affectedRows: 0 };
+      }
+      if (sql.startsWith("SELECT state_key, state_json")) {
+        const prefix = String(args[0]).replace(/%$/, "");
+        return { rows: [...rows.entries()].filter(([key]) => key.startsWith(prefix)), affectedRows: 0 };
+      }
+      if (sql.startsWith("INSERT INTO apollo_bulletin_state")) {
+        rows.set(args[0], args[1]);
+        return { rows: [], affectedRows: 1 };
+      }
+      if (sql.startsWith("DELETE FROM apollo_bulletin_state")) { const value = rows.get(args[0]); rows.delete(args[0]); return { rows: value === undefined ? [] : [[value]], affectedRows: value === undefined ? 0 : 1 }; }
+      if (sql.startsWith("INSERT INTO apollo_bulletin_leases")) {
+        const [key, ownerId, expiresAt, updatedAt, now, renewalOwnerId] = args;
+        const current = leases.get(key);
+        if (!current || current.expiresAt <= now || current.ownerId === renewalOwnerId) {
+          leases.set(key, { ownerId, expiresAt, updatedAt });
+          return { rows: [], affectedRows: 1 };
+        }
+        return { rows: [], affectedRows: 0 };
+      }
+      if (sql.startsWith("UPDATE apollo_bulletin_leases")) {
+        const [updatedAt, key, ownerId] = args;
+        const current = leases.get(key);
+        if (!current || current.ownerId !== ownerId) return { rows: [], affectedRows: 0 };
+        leases.set(key, { ...current, expiresAt: 0, updatedAt });
+        return { rows: [], affectedRows: 1 };
+      }
+      throw new Error("Unexpected SQL in Bulletin store test: " + sql);
+    },
+  };
+}
+
+test("Turso Bulletin store restores queue and browser state through a new store instance", async () => {
+  const adapter = memoryAdapter();
+  const first = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const queue = { tasks: [{ id: "task-1", status: "awaiting_review", nextRunAt: null }], activity: [{ event: "task-created" }] };
+  const browser = { cookies: [{ name: "test-cookie", value: "test-only" }], origins: [] };
+  await first.saveQueue(queue);
+  await first.saveBrowserState(browser);
+
+  const restarted = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.deepEqual(await restarted.loadQueue(), queue);
+  assert.deepEqual(await restarted.loadBrowserState(), browser);
+  assert.equal(adapter.creates, 4, "each store instance initializes both state and lease tables");
+});
+
+test("Turso Bulletin store health ping verifies the database round-trip", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.equal(await store.ping(), true);
+});
+
+test("Turso Bulletin store refuses to replace corrupt persisted state with an empty queue", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  await store.initialize();
+  adapter.rows.set("apollo-bulletin:queue:v1", "{invalid");
+  await assert.rejects(store.loadQueue(), /Stored Apollo Bulletin state is invalid JSON; refusing to reset it/);
+});
+
+test("Turso cron lease is exclusive across store instances and only its owner can release it", async () => {
+  const adapter = memoryAdapter();
+  const first = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const second = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const [firstWon, secondWon] = await Promise.all([
+    first.acquireLease("hostless-cron", "worker-a", 1_000, 5_000),
+    second.acquireLease("hostless-cron", "worker-b", 1_000, 5_000),
+  ]);
+  assert.equal(Number(firstWon) + Number(secondWon), 1);
+  const owner = firstWon ? "worker-a" : "worker-b";
+  const other = firstWon ? second : first;
+  assert.equal(await other.acquireLease("hostless-cron", "worker-c", 2_000, 5_000), false);
+  assert.equal(await other.releaseLease("hostless-cron", "worker-c", 2_001), false);
+  const ownerStore = firstWon ? first : second;
+  assert.equal(await ownerStore.releaseLease("hostless-cron", owner, 2_002), true);
+  assert.equal(await other.acquireLease("hostless-cron", "worker-c", 2_003, 5_000), true);
+});
+
+test("Turso cron lease renews for its current owner without admitting another worker", async () => {
+  const adapter = memoryAdapter();
+  const owner = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const other = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.equal(await owner.acquireLease("dispatcher", "worker-a", 1_000, 5_000), true);
+  assert.equal(await owner.acquireLease("dispatcher", "worker-a", 2_000, 5_000), true);
+  assert.equal(adapter.leases.get("dispatcher").expiresAt, 7_000);
+  assert.equal(await other.acquireLease("dispatcher", "worker-b", 3_000, 5_000), false);
+});
+
+test("Turso cron lease can be claimed after expiry", async () => {
+  const adapter = memoryAdapter();
+  const first = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  const second = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  assert.equal(await first.acquireLease("hostless-cron", "worker-a", 1_000, 1_000), true);
+  assert.equal(await second.acquireLease("hostless-cron", "worker-b", 1_999, 1_000), false);
+  assert.equal(await second.acquireLease("hostless-cron", "worker-b", 2_000, 1_000), true);
+});
+
+test("Turso Bulletin store is created only when an existing database URL and token are present", () => {
+  assert.equal(createTursoBulletinStoreFromEnvironment({}), null);
+  const store = createTursoBulletinStoreFromEnvironment({ TURSO_DATABASE_URL: "libsql://test.invalid", NODE1_TURSO_AUTH_TOKEN: "node-scoped-test-token" });
+  assert.ok(store instanceof TursoBulletinStore);
+  assert.equal(store.adapter.authToken, "node-scoped-test-token");
+  assert.equal(store.credentialSource, "NODE1_TURSO_AUTH_TOKEN");
+});
+
+test("existing shared runtime Turso token takes precedence over node-scoped read-only credentials", () => {
+  const store = createTursoBulletinStoreFromEnvironment({
+    TURSO_DATABASE_URL: "libsql://test.invalid",
+    TURSO_AUTH_TOKEN: "existing-shared-runtime-test-token",
+    NODE1_TURSO_AUTH_TOKEN: "node-scoped-test-token",
+  });
+  assert.ok(store instanceof TursoBulletinStore);
+  assert.equal(store.adapter.authToken, "existing-shared-runtime-test-token");
+  assert.equal(store.credentialSource, "TURSO_AUTH_TOKEN");
+});
+
+
+test("Turso review-link signals are independent of the queue and consumed once", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  await store.saveQueue({ tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  await store.requestReview("task-1", 123456);
+  assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  assert.deepEqual(await store.loadReviewRequests(), { "task-1": { requestedAt: 123456 } });
+  assert.deepEqual(await store.consumeReviewRequest("task-1"), { requestedAt: 123456 });
+  assert.deepEqual(await store.loadReviewRequests(), {});
+  assert.equal(await store.consumeReviewRequest("task-1"), null);
+});
+
+
+test("Turso pause and stop commands are queryable and consumed once without queue-row overwrites", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url: "libsql://test.invalid", authToken: "test-only", adapter });
+  await store.saveQueue({ tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  await store.requestTaskControl("task-1", "pause", 123456);
+  assert.deepEqual(await store.loadTaskControls(), { "task-1": { action: "pause", requestedAt: 123456 } });
+  assert.deepEqual(await store.loadQueue(), { tasks: [{ id: "task-1", status: "dispatching" }], activity: [] });
+  assert.deepEqual(await store.consumeTaskControl("task-1"), { action: "pause", requestedAt: 123456 });
+  assert.equal(await store.consumeTaskControl("task-1"), null);
+});
+
+test("dispatcher lease readiness probe acquires and releases one reusable probe row", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  assert.equal(await store.checkDispatcherLease(), true);
+  assert.equal(adapter.leases.size, 1);
+  const [key, lease] = [...adapter.leases.entries()][0];
+  assert.match(key, /^apollo-bulletin-readiness-probe:/);
+  assert.equal(lease.expiresAt, 0, "the readiness probe releases its lease");
+  assert.equal(await store.checkDispatcherLease(), true);
+  assert.equal(adapter.leases.size, 1, "repeated health checks reuse the same row");
+});
+
+test("dispatcher lease readiness probe fails when the database refuses lease acquisition", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  store.acquireLease = async () => false;
+  assert.equal(await store.checkDispatcherLease(), false);
+});
+
+test("concurrent dispatcher readiness probes share one in-flight lease check", async () => {
+  const adapter = memoryAdapter();
+  const store = new TursoBulletinStore({ url:"libsql://test.invalid", authToken:"test-only", adapter });
+  const results = await Promise.all([store.checkDispatcherLease(), store.checkDispatcherLease(), store.checkDispatcherLease()]);
+  assert.deepEqual(results, [true, true, true]);
+  assert.equal(adapter.leases.size, 1);
+});

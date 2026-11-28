@@ -165,7 +165,7 @@ test("Hostless recovery release keeps bounded polling, parallelizes independent 
 
   assert.ok(script.includes('"deploy", "status", String(deploymentId), "--json", "--wait", "--timeout", "60"'));
   assert.ok(script.includes("timeout: 75 * 1000,"));
-  assert.ok(script.includes("timeoutMs: 20 * 60 * 1000,"));
+  assert.ok(script.includes("timeoutMs: 10 * 60 * 1000,"));
   assert.ok(script.includes("checking the exact deployment through the Hostless API"));
   assert.ok(script.includes("waitForHostlessDeployment({"));
   assert.ok(script.includes('event?.type === "deployment"'));

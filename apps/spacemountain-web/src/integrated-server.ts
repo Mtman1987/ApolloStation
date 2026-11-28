@@ -11,6 +11,8 @@ const SPMT_OVERLAY=/^\/v1\/overlay(?:\/|$)/;
 const SPMT_API=/^\/v1(?:\/|$)/;
 const NEBULA_RUNTIME=/^(?:\/apps\/nebula-arcade(?:\/|$)|\/api\/nebula-arcade(?:\/|$)|\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula(?:-[^/]+|\/|$)|\/overlay\/game-mix\/)/;
 const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
+function firstNonBlankCredential(...values: Array<string | undefined>): string { for (const value of values) if (typeof value === "string" && value.trim()) return value.trim(); return ""; }
+function isBulletinReviewCapability(method: string | undefined, pathname: string): boolean { return (method ?? "GET") === "GET" && /^\/bulletin\/review\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pathname); }
 type GreenAppId=typeof GREEN_APP_IDS[number];
 
 export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpaceMountainWebHostOptions {
@@ -26,8 +28,9 @@ export async function authorizeBulletinRequest(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<{ authorized: boolean; status: number; reason: string }> {
   if (pathname === "/bulletin/health/ready" && (request.method ?? "GET") === "GET") return { authorized: true, status: 200, reason: "public-readiness" };
+  if (isBulletinReviewCapability(request.method, pathname)) return { authorized: true, status: 200, reason: "review-capability-link" };
   if (pathname === "/bulletin/api/cron/tick") {
-    const expected = environment.APOLLO_BULLETIN_CRON_TOKEN || environment.APOLLO_BROWSER_CONTROL_PASSWORD || environment.APOLLO_PREVIEW_PASSWORD;
+    const expected = firstNonBlankCredential(environment.APOLLO_BULLETIN_CRON_TOKEN, environment.APOLLO_BROWSER_CONTROL_PASSWORD, environment.APOLLO_PREVIEW_PASSWORD);
     if (!expected) return { authorized: false, status: 503, reason: "Bulletin cron authentication is not configured" };
     const authorization = request.headers.authorization || "";
     const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
@@ -47,10 +50,10 @@ export async function authorizeBulletinRequest(
     if (!response.ok) return { authorized: false, status: response.status === 401 || response.status === 403 ? 401 : 503, reason: "Apollo session could not be verified" };
     const identity = await response.json().catch(() => ({})) as Record<string, unknown>;
     const allowedActor = environment.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim();
-    if (identity.authenticated !== true || (allowedActor && identity.actorId !== allowedActor)) {
+    if (identity.authenticated !== true || identity.platformOwner !== true || (allowedActor && identity.actorId !== allowedActor)) {
       return { authorized: false, status: 403, reason: "An authorized Apollo owner session is required" };
     }
-    return { authorized: true, status: 200, reason: "apollo-session" };
+    return { authorized: true, status: 200, reason: "apollo-owner-session" };
   } catch {
     return { authorized: false, status: 503, reason: "Apollo identity service is unavailable" };
   }
@@ -65,7 +68,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
   for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
-    if (previewPassword && !["/health/ready", "/health/live", "/sandbox/health", "/bulletin/health/ready", "/bulletin/api/cron/tick"].includes(url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
+    if (previewPassword && !["/health/ready", "/health/live", "/sandbox/health", "/bulletin/health/ready", "/bulletin/api/cron/tick"].includes(url.pathname) && !isBulletinReviewCapability(request.method, url.pathname) && !isPreviewAuthorized(request.headers.authorization, previewPassword)) {
       response.writeHead(401, { "www-authenticate": 'Basic realm="ApolloStation private preview", charset="UTF-8"', "cache-control": "no-store" });
       response.end("Private preview — sign in to continue.");
       return;

@@ -16,7 +16,7 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
     fetchImpl: async (input, init = {}) => {
       assert.equal(String(input), "https://spmt.live/api/auth/me");
       assert.equal(new Headers(init.headers).get("authorization"), "Bearer verified-owner-token");
-      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173" } }), {
+      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173", twitchId: "94371378" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -68,7 +68,20 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
       ownerUserId: "another-user",
       displayName: "Another Workspace",
     });
+    service.data.registerUser({
+      userId: "another-user",
+      username: "another-user",
+      displayName: "Another User",
+      password: "another-user-test-password-12345",
+      tenantIds: ["another-users-tenant"],
+    });
     service.authority.getOrCreateWorkspace("another-users-tenant");
+    service.store.putProviderLink({
+      provider: "twitch",
+      providerUserId: "94371378",
+      userId: "another-user",
+      linkedAt: new Date().toISOString(),
+    });
 
     await service.listen();
     const address = service.server.address();
@@ -84,6 +97,120 @@ test("verified owner sign-in recovers an active owned tenant missing from the pr
     assert.deepEqual(body.tenantIds, ["recovered-owner-tenant"]);
     assert.deepEqual(service.data.getProfile("owner-existing").tenantIds, ["recovered-owner-tenant"]);
     assert.equal(body.tenantIds.includes("another-users-tenant"), false);
+
+    const ownerCookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
+    assert.match(ownerCookie, /^spmt_token=/);
+    const ownerIdentityResponse = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/check`, { headers: { cookie: ownerCookie } });
+    assert.equal(ownerIdentityResponse.status, 200);
+    const ownerIdentity = await ownerIdentityResponse.json();
+    assert.equal(ownerIdentity.platformOwner, true);
+    assert.equal(ownerIdentity.actorId, "owner-existing");
+
+    const otherLogin = await fetch(`http://127.0.0.1:${address.port}/v1/auth/browser-login`, {
+      method: "POST",
+      headers: { origin: "https://spacemountain.live", "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "another-user", password: "another-user-test-password-12345" }).toString(),
+      redirect: "manual",
+    });
+    assert.equal(otherLogin.status, 303);
+    const otherCookie = otherLogin.headers.get("set-cookie")?.split(";")[0] ?? "";
+    assert.match(otherCookie, /^spmt_token=/);
+    const otherIdentityResponse = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/check`, { headers: { cookie: otherCookie } });
+    assert.equal(otherIdentityResponse.status, 200);
+    const otherIdentity = await otherIdentityResponse.json();
+    assert.equal(otherIdentity.platformOwner, false);
+    assert.equal(otherIdentity.actorId, "another-user");
+  } finally {
+    await service.close().catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the platform-owner username alone cannot bootstrap an owner session", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "apollo-owner-identity-guard-"));
+  const service = createSpmtService({
+    databasePath: join(directory, "spmt.sqlite"),
+    webhookKey: Buffer.alloc(32, 29),
+    host: "127.0.0.1",
+    port: 0,
+    runtimeMode: "production",
+    fetchImpl: async (input, init = {}) => {
+      assert.equal(String(input), "https://spmt.live/api/auth/me");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer unverified-owner-name-token");
+      return new Response(JSON.stringify({ user: { id: "spoofed-spmt-user", username: "mtman1987", discordId: "not-the-owner-discord", twitchId: "not-the-owner-twitch" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  try {
+    service.authority.ensureUser("owner-existing");
+    service.data.registerUser({
+      userId: "owner-existing",
+      username: "mtman1987",
+      displayName: "Apollo Owner",
+      password: "owner-test-password-12345",
+      tenantIds: ["owner-tenant"],
+    });
+    service.control.registerTenant({
+      tenantId: "owner-tenant",
+      ownerUserId: "owner-existing",
+      displayName: "Owner Workspace",
+    });
+    service.authority.getOrCreateWorkspace("owner-tenant");
+
+    await service.listen();
+    const address = service.server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/bridge-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bridgeJson: JSON.stringify({ token: "unverified-owner-name-token" }) }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(body.error, "owner_identity_not_verified");
+    assert.deepEqual(service.data.getProfile("owner-existing").tenantIds, ["owner-tenant"]);
+    assert.equal(service.data.getProfileByUsername("mtman1987")?.userId, "owner-existing");
+  } finally {
+    await service.close().catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("verified owner identity does not create a replacement account when the canonical profile is missing", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "apollo-owner-profile-missing-"));
+  const service = createSpmtService({
+    databasePath: join(directory, "spmt.sqlite"),
+    webhookKey: Buffer.alloc(32, 31),
+    host: "127.0.0.1",
+    port: 0,
+    runtimeMode: "production",
+    fetchImpl: async (input, init = {}) => {
+      assert.equal(String(input), "https://spmt.live/api/auth/me");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer verified-owner-token");
+      return new Response(JSON.stringify({ user: { id: "spmt-owner-123", username: "mtman1987", discordId: "767875979561009173", twitchId: "94371378" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  try {
+    await service.listen();
+    const address = service.server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/auth/session/bridge-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bridgeJson: JSON.stringify({ token: "verified-owner-token" }) }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.error, "owner_profile_unavailable");
+    assert.equal(service.store.getUser("usr_spmtowner123"), undefined);
+    assert.equal(service.store.listTenants().length, 0);
   } finally {
     await service.close().catch(() => undefined);
     rmSync(directory, { recursive: true, force: true });

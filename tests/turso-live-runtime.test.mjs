@@ -38,3 +38,19 @@ test("live Turso smoke check", { skip: !enabled }, async () => {
     } catch { /* unique synthetic namespace only */ }
   }
 });
+
+test("live Turso Bulletin store supports its durable control signals and exclusive dispatcher lease", { skip: !enabled }, async () => {
+  const { TursoBulletinStore } = await import("../tools/apollo-bulletin/turso-store.mjs");
+  const ownerId = "live-smoke-" + randomUUID();
+  const store = new TursoBulletinStore({ url, authToken });
+  try {
+    await store.initialize();
+    assert.equal(await store.ping(), true);
+    assert.equal(await store.checkSignalPersistence(), true);
+    assert.equal(await store.acquireLease("apollo-bulletin-live-smoke", ownerId, Date.now(), 60_000), true);
+    assert.equal(await store.acquireLease("apollo-bulletin-live-smoke", "other-" + ownerId, Date.now(), 60_000), false);
+    assert.equal(await store.releaseLease("apollo-bulletin-live-smoke", ownerId), true);
+  } finally {
+    await store.releaseLease("apollo-bulletin-live-smoke", ownerId).catch(() => false);
+  }
+});

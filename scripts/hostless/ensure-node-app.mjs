@@ -385,7 +385,7 @@ if (!isHostlessDeploymentSuccessful(finalStatus)) {
       token,
       app: node.app,
       deploymentId: String(deploymentId),
-      timeoutMs: 20 * 60 * 1000,
+      timeoutMs: 10 * 60 * 1000,
       intervalMs: 10_000,
       onStatus: (status) => console.log(`Hostless API deployment status for ${node.app}: ${status}`),
     });

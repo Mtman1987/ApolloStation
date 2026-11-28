@@ -225,9 +225,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
     // The verified owner's canonical SPMT username takes precedence over any
     // stale provider-link mapping. For everyone else, retain provider-link-first
     // resolution so linked Discord/Twitch identities continue to work as before.
-    const ownerBootstrap = donorUsername === OWNER_SPMT_USERNAME
-      || donorDiscordId === OWNER_DISCORD_ID
+    const ownerBootstrap = donorDiscordId === OWNER_DISCORD_ID
       || donorTwitchId === OWNER_TWITCH_ID;
+    if (donorUsername === OWNER_SPMT_USERNAME && !ownerBootstrap) {
+      return { ok: false, status: 403, body: { error: "owner_identity_not_verified", message: "The platform-owner username must be confirmed by its linked verified Discord or Twitch identity." } };
+    }
     const usernameProfile = data.getProfileByUsername(donorUsername);
     // Provider IDs are the account key for recovery. A stale shell username must
     // never outrank the database link, because the shell's tenant context is what
@@ -240,16 +242,20 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const link = store.getProviderLink(provider, providerUserId);
       return link && !link.revokedAt ? [link.userId] : [];
     }))];
-    if (linkedUserIds.length > 1) {
+    const canonicalOwnerProfile = ownerBootstrap ? data.getProfileByUsername(OWNER_SPMT_USERNAME) : undefined;
+    if (ownerBootstrap && !canonicalOwnerProfile) {
+      return { ok: false, status: 409, body: { error: "owner_profile_unavailable", message: "The verified platform-owner identity has no canonical Apollo profile available. No replacement account or tenant was created." } };
+    }
+    if (linkedUserIds.length > 1 && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "identity_account_mismatch", message: "The verified Discord and Twitch identities point to different Apollo accounts. No account or tenant was changed." } };
     }
-    const linkedUserId = linkedUserIds[0];
+    const linkedUserId = linkedUserIds.length === 1 ? linkedUserIds[0] : undefined;
     const linkedProfile = linkedUserId ? (() => { try { return data.getProfile(linkedUserId); } catch { return undefined; } })() : undefined;
-    if (linkedUserId && !linkedProfile) {
+    if (linkedUserId && !linkedProfile && !canonicalOwnerProfile) {
       return { ok: false, status: 409, body: { error: "linked_account_unavailable", message: "The verified provider identity is linked, but its Apollo account record could not be loaded." } };
     }
     let profile: ReturnType<PlatformDataService["getProfileByUsername"]> | undefined =
-      linkedProfile ?? usernameProfile;
+      canonicalOwnerProfile ?? linkedProfile ?? usernameProfile;
     if (!profile && (!allowBootstrap || (!ownerBootstrap && process.env.APOLLO_SPMT_BRIDGE_BOOTSTRAP !== "1"))) {
       return { ok: false, status: 403, body: { error: "workspace_not_linked", message: "No existing Apollo workspace is linked to this SPMT account. Sign-in will not create an empty workspace." } };
     }
@@ -620,7 +626,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (!principal || principal.actorType !== "user") {
           return json(response, 401, { authenticated: false, cookiePresent: Boolean(browserToken), apolloValidated: false });
         }
-        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds });
+        const ownerProfile = data.getProfileByUsername(OWNER_SPMT_USERNAME);
+        const platformOwner = Boolean(ownerProfile && ownerProfile.userId === principal.actorId);
+        return json(response, 200, { authenticated: true, cookiePresent: true, apolloValidated: true, actorId: principal.actorId, tenantIds: principal.tenantIds, platformOwner });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/token/introspect") {

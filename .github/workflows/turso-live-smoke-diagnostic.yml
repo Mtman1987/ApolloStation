@@ -1,0 +1,61 @@
+name: Turso live write capability diagnostic
+
+on:
+  push:
+    branches: [fix/apollo-bulletin-readiness-distributed-lease]
+    paths:
+      - ".github/workflows/turso-live-smoke-diagnostic.yml"
+      - "tests/turso-live-runtime.test.mjs"
+      - "tools/apollo-bulletin/turso-store.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    name: Safe Turso write/read/rollback smoke — ${{ matrix.label }}
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/apollo-bulletin-readiness-distributed-lease'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Node 1 app token
+            secret: NODE1_TURSO_AUTH_TOKEN
+            required: true
+          - label: Node 2 seed token
+            secret: NODE2_TURSO_AUTH_TOKEN
+            required: true
+    env:
+      TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      TURSO_AUTH_TOKEN: ${{ secrets[matrix.secret] }}
+      REQUIRED_TOKEN: ${{ matrix.required }}
+      APOLLO_TURSO_LIVE_TEST: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspace dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund --no-progress
+      - name: Verify credentials are present without printing values
+        id: credentials
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "::error::TURSO_DATABASE_URL is missing"; exit 1; }
+          if [ -z "$TURSO_AUTH_TOKEN" ]; then
+            if [ "$REQUIRED_TOKEN" = "true" ]; then
+              echo "::error::Selected required Turso token is missing"
+              exit 1
+            fi
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No existing Turso token was supplied; live smoke skipped."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run isolated synthetic Turso persistence test
+        if: steps.credentials.outputs.available == 'true'
+        run: node --test tests/turso-live-runtime.test.mjs

@@ -92,7 +92,7 @@ jobs:
       - name: Build focused Node 1 and Node 2 Hostless runtime
         run: npm run build:hostless
       - name: Check dedicated browser worker syntax
-        run: node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --test tools/apollo-bulletin/readiness.test.mjs tools/apollo-bulletin/schedule.test.mjs tools/apollo-bulletin/recovery.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs
+        run: node --check scripts/setup-local-browser.mjs && node --check tools/apollo-bulletin/browser-worker.mjs && node --check tools/apollo-bulletin/server.mjs && node --check tools/apollo-bulletin/turso-store.mjs && node --check tools/apollo-bulletin/cron-tick.mjs && node --test tools/apollo-bulletin/*.test.mjs scripts/setup-local-browser.test.mjs tests/apollo-bulletin-hosted-worker.test.mjs tests/apollo-bulletin-browser-sim.test.mjs tests/apollo-bulletin-overlay.test.mjs tests/hostless-runtime-config-bootstrap.test.mjs apps/spmt-service/tests/owner-session-recovery.test.mjs scripts/hostless/deployment-poll.test.mjs
 
   detect-deploy-targets:
     name: Detect which Hostless nodes changed
@@ -414,26 +414,57 @@ jobs:
 
       - name: Verify live Node 1 and Bulletin readiness
         if: ${{ matrix.node == 'node1' }}
-        timeout-minutes: 3
+        timeout-minutes: 11
         run: |
           node --input-type=module <<'NODE'
+          import { isReadinessResponseReady } from "./tools/apollo-bulletin/readiness.mjs";
           const base = "https://apollo-node-1.hostless.app";
           for (const path of ["/health/ready", "/bulletin/health/ready"]) {
             let last;
-            for (let attempt = 0; attempt < 8; attempt++) {
+            for (let attempt = 0; attempt < 90; attempt++) {
               try {
-                const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+                const response = await fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(5000) });
                 const data = await response.json().catch(() => ({}));
-                if (response.ok && (data.ready === true || data.state === "ready")) {
-                  console.log(JSON.stringify({ path, status: response.status, ready: true, browser: data.browser ?? undefined, persistence: data.persistence ?? undefined, ownerActorConfigured: data.ownerActorConfigured ?? undefined }));
+                const bulletinChecksPass = path !== "/bulletin/health/ready" || (
+                  data.cronRequired === true &&
+                  data.cronAuthConfigured === true &&
+                  data.cronExecutionConfirmed === true &&
+                  data.dispatcherLeaseConfigured === true &&
+                  data.persistenceReachable === true &&
+                  data.browserHealthy === true &&
+                  data.browserSessionPersisted === true
+                );
+                if (response.ok && isReadinessResponseReady(path, data) && bulletinChecksPass) {
+                  console.log(JSON.stringify({
+                    path, status: response.status, ready: true,
+                    browserHealthy: data.browserHealthy ?? undefined,
+                    browserSessionPersisted: data.browserSessionPersisted ?? undefined,
+                    chatGptLoginRequired: data.browserSessionReady === false,
+                    persistence: data.persistence ?? undefined,
+                    cronExecutionConfirmed: data.cronExecutionConfirmed ?? undefined,
+                    dispatcherLeaseConfigured: data.dispatcherLeaseConfigured ?? undefined,
+                    ownerAuthorizationPolicy: data.ownerAuthorizationPolicy ?? undefined
+                  }));
                   last = null;
                   break;
                 }
-                last = { status: response.status, ready: data.ready, detail: data };
+                last = { status: response.status, ready: data.ready, bulletinChecksPass, detail: data };
               } catch (error) { last = { error: String(error?.message || error) }; }
-              if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 3000));
+              if (attempt < 89) await new Promise(resolve => setTimeout(resolve, 1500));
             }
             if (last) throw new Error("Live readiness failed for " + path + ": " + JSON.stringify(last));
+          }
+          const probes = [
+            { path: "/bulletin/api/tasks", method: "GET", expected: 401 },
+            { path: "/bulletin/browser", method: "GET", expected: 401 },
+            { path: "/bulletin/api/browser/status", method: "GET", expected: 401 },
+            { path: "/bulletin/api/cron/tick", method: "POST", expected: 401 },
+            { path: "/bulletin/review/123e4567-e89b-42d3-a456-426614174000", method: "GET", expected: 404 }
+          ];
+          for (const probe of probes) {
+            const response = await fetch(base + probe.path, { method: probe.method, cache: "no-store", signal: AbortSignal.timeout(8000) });
+            if (response.status !== probe.expected) throw new Error("Unexpected live Bulletin route status: " + JSON.stringify({ path: probe.path, method: probe.method, status: response.status, expected: probe.expected }));
+            console.log(JSON.stringify({ path: probe.path, method: probe.method, status: response.status, expected: probe.expected }));
           }
           NODE
   # Live log snapshot per node, uploaded as an Actions artifact after every

@@ -6,6 +6,11 @@ name: Turso read-only recon
 
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/apollo-bulletin-readiness-distributed-lease]
+    paths:
+      - ".github/workflows/turso-recon.yml"
+      - "scripts/turso-recon.mjs"
 
 permissions:
   contents: read
@@ -18,7 +23,7 @@ concurrency:
 jobs:
   recon:
     name: Read-only Turso recon (SELECT/PRAGMA only)
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/apollo-bulletin-readiness-distributed-lease'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -26,10 +31,10 @@ jobs:
       NODE1_TURSO_AUTH_TOKEN: ${{ secrets.NODE1_TURSO_AUTH_TOKEN }}
       NODE2_TURSO_AUTH_TOKEN: ${{ secrets.NODE2_TURSO_AUTH_TOKEN }}
     steps:
-      - name: Check out main
+      - name: Check out the triggering source revision
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -53,7 +58,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publish recon digest to Apollo diagnostics issue
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/github-script@v7
         with:
           script: |
