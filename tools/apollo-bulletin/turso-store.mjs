@@ -164,7 +164,14 @@ export class TursoBulletinStore {
 
 export function createTursoBulletinStoreFromEnvironment(environment = process.env) {
   const url = environment.TURSO_DATABASE_URL || environment.SHARED_TURSO_DATABASE_URL;
-  const authToken = environment.NODE1_TURSO_AUTH_TOKEN || environment.TURSO_AUTH_TOKEN;
+  // The already-provisioned shared runtime token is the durable application
+  // credential. Node-scoped GitHub tokens may be read-only and are fallback
+  // credentials only; do not let one shadow the existing runtime writer.
+  const authTokenSource = environment.TURSO_AUTH_TOKEN ? "TURSO_AUTH_TOKEN"
+    : environment.NODE1_TURSO_AUTH_TOKEN ? "NODE1_TURSO_AUTH_TOKEN" : null;
+  const authToken = authTokenSource ? environment[authTokenSource] : "";
   if (!url || !authToken) return null;
-  return new TursoBulletinStore({ url, authToken });
+  const store = new TursoBulletinStore({ url, authToken });
+  store.credentialSource = authTokenSource;
+  return store;
 }
