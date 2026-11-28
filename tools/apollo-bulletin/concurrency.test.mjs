@@ -503,3 +503,30 @@ test("task-list reads refresh the persisted queue on a second Bulletin instance"
     await Promise.all([first.close(), second.close()]);
   }
 });
+
+test("task-list reads fail closed if a previously nonempty durable queue row disappears", async () => {
+  let persisted = null;
+  const store = {
+    async loadQueue() { return persisted ? structuredClone(persisted) : null; },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+  };
+  const app = createBulletinServer({ port: 0, store });
+  try {
+    const address = await app.listen();
+    const origin = "http://127.0.0.1:" + address.port;
+    const created = await fetch(origin + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Durable row", prompt: "Must remain durable", destination: "test-simulator", scheduleType: "manual" }),
+    });
+    assert.equal(created.status, 201);
+    persisted = null;
+    const response = await fetch(origin + "/api/tasks");
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /temporarily unavailable/);
+  } finally {
+    await app.close();
+  }
+});
