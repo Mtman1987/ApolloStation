@@ -512,7 +512,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           } else dispatcherLeaseAvailable = dispatcherLeaseConfigured;
         }
         const readiness = readinessStatus({
-          browserRequired, browserStarted: browserInfrastructureReady, persistenceRequired, persistenceAvailable,
+          browserRequired, browserStarted: browserInfrastructureReady, browserSessionReady, persistenceRequired, persistenceAvailable,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed,
           dispatcherLeaseRequired: cronRequired, dispatcherLeaseAvailable,
           taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
@@ -529,7 +529,7 @@ export function createBulletinServer({ statePath = process.env.APOLLO_BULLETIN_S
           browserSessionReady, browserLoginRequired: browserStatus?.loginRequired ?? null,
           persistence: persistenceAvailable ? "turso" : persistenceRequired ? "unavailable" : "local-fallback", persistenceRequired, persistenceReachable: persistenceAvailable, persistenceCredentialSource: persistence?.credentialSource || (persistence ? "injected" : null),
           ownerAuthorizationPolicy: "platform-owner-session", ownerActorPinConfigured: Boolean(process.env.APOLLO_BULLETIN_OWNER_ACTOR_ID?.trim()),
-          dispatcherLeaseConfigured, taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
+          dispatcherLeaseConfigured, dispatcherLeaseAvailable, taskControlPersistenceRequired: cronRequired, taskControlPersistenceReady,
           cronRequired, cronAuthConfigured, cronExecutionConfirmed, cron,
         });
       }
