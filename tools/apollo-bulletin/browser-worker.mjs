@@ -15,6 +15,15 @@ export function normalizeChatGptConversationUrl(value) {
   return target.href;
 }
 
+export function isChatGptLoginRequired(url, loginControlVisible = false) {
+  if (loginControlVisible) return true;
+  let pathname = "";
+  try { pathname = new URL(url).pathname; } catch { return false; }
+  // OpenAI's hosted login uses /u/login/identifier and signup uses
+  // /u/signup/identifier; neither contains a literal "log-in" path.
+  return /(?:^|\/)(?:u\/)?(?:login|signup|log-?in|sign-?in)(?:\/|$)/i.test(pathname);
+}
+
 export function chatGptResponseSettled(quietMs = 4_000) {
   const stopVisible = [...document.querySelectorAll("button")].some(button => {
     if (!/stop generating/i.test((button.getAttribute("aria-label") || button.innerText || "").trim())) return false;
@@ -118,8 +127,8 @@ export class ApolloChatGptBrowserWorker {
     try {
       const url = page.url();
       const title = await page.title().catch(() => "");
-      const loginRequired = /\/auth\/(?:log-?in|sign-?in)|\/(?:log-?in|sign-?in)/i.test(url) ||
-        await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      const loginControlVisible = await page.getByRole("button", { name: /log in|sign up|sign in/i }).first().isVisible().catch(() => false);
+      const loginRequired = isChatGptLoginRequired(url, loginControlVisible);
       return { connected: healthy, healthy, loginRequired, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url, title, busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
     } catch {
       return { connected: false, healthy: false, loginRequired: null, sessionPersistenceReady, lastSessionPersistedAt: this.sessionPersistedAt, url: "", title: "", busy: this.busy, lastReceipt: this.lastReceipt, profilePath: this.profilePath };
