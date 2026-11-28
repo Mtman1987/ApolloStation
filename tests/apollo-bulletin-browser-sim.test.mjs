@@ -20,7 +20,10 @@ test("Apollo browser proof is owner-gated and records an inspectable simulated a
 
     const page = await fetch(base + "/browser", { headers: { authorization } });
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /Dedicated ChatGPT browser/);
+    const browserHtml = await page.text();
+    assert.match(browserHtml, /Dedicated ChatGPT browser/);
+    assert.match(browserHtml, /max-width:100%;max-height:72vh;margin:0 auto/);
+    assert.match(browserHtml, /role="button" tabindex="0"/);
 
     const statusResponse = await fetch(base + "/api/browser/status", { headers: { authorization } });
     assert.equal(statusResponse.status, 503, "the proof must not claim Chromium is connected when no worker was started");
