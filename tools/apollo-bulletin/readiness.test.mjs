@@ -39,3 +39,9 @@ test("readiness requires persistent review and pause/stop signal support when Tu
   assert.deepEqual(readinessStatus({ ...base, taskControlPersistenceReady: false }), { ready: false, statusCode: 503 });
   assert.deepEqual(readinessStatus({ ...base, taskControlPersistenceReady: true }), { ready: true, statusCode: 200 });
 });
+
+test("required browser readiness waits for a signed-in persisted ChatGPT session", () => {
+  const dependencies = { browserRequired: true, browserStarted: true, persistenceRequired: true, persistenceAvailable: true, cronRequired: true, cronAuthConfigured: true, cronExecutionConfirmed: true, dispatcherLeaseRequired: true, dispatcherLeaseAvailable: true, taskControlPersistenceRequired: true, taskControlPersistenceReady: true };
+  assert.deepEqual(readinessStatus({ ...dependencies, browserSessionReady: false }), { ready: false, statusCode: 503 });
+  assert.deepEqual(readinessStatus({ ...dependencies, browserSessionReady: true }), { ready: true, statusCode: 200 });
+});
