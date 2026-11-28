@@ -395,3 +395,47 @@ test("server completes a ChatGPT task when the browser observed a marker beyond 
     }
   }
 });
+
+test("readiness fails when the durable queue row disappears despite a recent in-memory cron success", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-missing-row-test-token";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  let persisted = { tasks:[], activity:[], cron:{ status:"completed", lastTickCompletedAt:Date.now()-1000, completedTicks:1, failedTicks:0, inFlight:false } };
+  const leases = new Map();
+  const store = {
+    async loadQueue() { return persisted ? structuredClone(persisted) : null; },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async checkSignalPersistence() { return true; },
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt:at+ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt:0 });
+      return true;
+    },
+  };
+  const app = createBulletinServer({ port:0, store });
+  try {
+    const address = await app.listen();
+    persisted = null;
+    const response = await fetch("http://127.0.0.1:"+address.port+"/health/ready");
+    assert.equal(response.status,503);
+    const proof = await response.json();
+    assert.equal(proof.persistenceReachable,false);
+    assert.equal(proof.ready,false);
+  } finally {
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
