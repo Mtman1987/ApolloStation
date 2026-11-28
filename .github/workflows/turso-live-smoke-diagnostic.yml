@@ -28,11 +28,8 @@ jobs:
           - label: Node 2 seed token
             secret: NODE2_TURSO_AUTH_TOKEN
             required: true
-          - label: Shared Turso token (optional existing credential)
-            secret: TURSO_AUTH_TOKEN
-            required: false
     env:
-      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
+      TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL || 'libsql://apollo-persistence-spike-mtman1987.aws-us-east-1.turso.io' }}
       TURSO_AUTH_TOKEN: ${{ secrets[matrix.secret] }}
       REQUIRED_TOKEN: ${{ matrix.required }}
       APOLLO_TURSO_LIVE_TEST: "1"
@@ -55,7 +52,7 @@ jobs:
               exit 1
             fi
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Optional shared Turso token is not configured; no new secret will be created."
+            echo "::notice::No existing Turso token was supplied; live smoke skipped."
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
