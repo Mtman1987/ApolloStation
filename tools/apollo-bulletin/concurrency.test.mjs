@@ -459,3 +459,47 @@ test("first queue mutation waits for the local startup tick instead of returning
     }
   }
 });
+
+test("task-list reads refresh the persisted queue on a second Bulletin instance", async () => {
+  const leases = new Map();
+  let persisted = { tasks: [], activity: [] };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async acquireLease(key, ownerId, at, ttlMs) {
+      const current = leases.get(key);
+      if (current && current.expiresAt > at && current.ownerId !== ownerId) return false;
+      leases.set(key, { ownerId, expiresAt: at + ttlMs });
+      return true;
+    },
+    async releaseLease(key, ownerId) {
+      const current = leases.get(key);
+      if (!current || current.ownerId !== ownerId) return false;
+      leases.set(key, { ...current, expiresAt: 0 });
+      return true;
+    },
+  };
+  const first = createBulletinServer({ port: 0, store });
+  const second = createBulletinServer({ port: 0, store });
+  try {
+    const firstAddress = await first.listen();
+    const secondAddress = await second.listen();
+    const firstOrigin = "http://127.0.0.1:" + firstAddress.port;
+    const secondOrigin = "http://127.0.0.1:" + secondAddress.port;
+    const created = await fetch(firstOrigin + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Cross-instance read", prompt: "Visible everywhere", destination: "test-simulator", scheduleType: "manual" }),
+    });
+    assert.equal(created.status, 201);
+    const list = await fetch(secondOrigin + "/api/tasks");
+    assert.equal(list.status, 200);
+    const data = await list.json();
+    assert.equal(data.tasks.length, 1);
+    assert.equal(data.tasks[0].name, "Cross-instance read");
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+  }
+});
