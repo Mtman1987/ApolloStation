@@ -25,6 +25,9 @@ test("Bulletin requires the exact conversation URL for real ChatGPT tasks", asyn
   try {
     const address = await app.listen();
     const origin = "http://127.0.0.1:" + address.port;
+    const widget = await fetch(origin + "/widgets/tasks").then(response => response.text());
+    assert.match(widget, /Exact ChatGPT conversation URL \(required for ChatGPT\)/);
+    assert.match(widget, /conversation\.required=destination\.value==="chatgpt"/);
     const create = body => fetch(origin + "/api/tasks", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
