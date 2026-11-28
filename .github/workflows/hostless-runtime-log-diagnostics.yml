@@ -234,22 +234,6 @@ jobs:
           # All other environment values are discarded without being logged or uploaded.
           curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/environment-variables" -o hostless-diagnostics/environment-variable-names.json
           node --input-type=module -e 'import fs from "node:fs"; const p="hostless-diagnostics/environment-variable-names.json"; try { const d=JSON.parse(fs.readFileSync(p,"utf8")); const a=Array.isArray(d)?d:(d.variables??d.environmentVariables??d.items??d.data??[]); const names=a.map(x=>x.name??x.key).filter(x=>typeof x==="string").sort(); const item=a.find(x=>(x.name??x.key)==="SPMT_ORIGIN"); const raw=typeof item?.value==="string"?item.value:typeof item?.currentValue==="string"?item.currentValue:""; let origin=null; try { if(raw) origin=new URL(raw).origin; } catch {} fs.writeFileSync(p,JSON.stringify(names,null,2)); const bulletinNames=names.filter(name=>["APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BROWSER_CONTROL_PASSWORD","APOLLO_PREVIEW_PASSWORD","APOLLO_PRIVATE_PREVIEW","APOLLO_BULLETIN_PUBLIC_URL","TURSO_DATABASE_URL","SHARED_TURSO_DATABASE_URL","NODE1_TURSO_AUTH_TOKEN","TURSO_AUTH_TOKEN"].includes(name)); console.log("Apollo Bulletin configured variable names (values withheld): "+JSON.stringify(bulletinNames)); fs.writeFileSync("hostless-diagnostics/environment-safe-config.json",JSON.stringify({SPMT_ORIGIN:{configured:names.includes("SPMT_ORIGIN"),origin}},null,2)); } catch { fs.writeFileSync(p,"[unparseable response; raw body intentionally discarded]"); fs.writeFileSync("hostless-diagnostics/environment-safe-config.json",JSON.stringify({SPMT_ORIGIN:{configured:false,origin:null}})); }'
-          if [ -s hostless-diagnostics/deployment-detail.json ]; then
-            node --input-type=module <<'NODE'
-          import fs from "node:fs";
-          try {
-            const d = JSON.parse(fs.readFileSync("hostless-diagnostics/deployment-detail.json", "utf8"));
-            const a = d.appState && typeof d.appState === "object" ? d.appState : {};
-            console.log("Latest Hostless deployment (safe fields): " + JSON.stringify({
-              status: d.status, gitCommitHash: d.gitCommitHash, gitBranch: d.gitBranch,
-              triggerSource: d.triggerSource, appState: a.status,
-              pendingDeployment: a.pendingDeployment, pendingBuild: a.pendingBuild,
-              pendingSettingsFields: a.pendingSettingsFields
-            }));
-          } catch { console.log("Latest Hostless deployment detail was not valid JSON."); }
-          NODE
-          fi
-
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
@@ -277,12 +261,12 @@ jobs:
           echo "Recent log command exit code: $RECENT_STATUS" | tee -a hostless-diagnostics/summary.txt
 
           if [ -z "$DEPLOYMENT_ID" ]; then
-            DEPLOYMENT_ID="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/app-detail.json","utf8")); const a=d.app??d; process.stdout.write(String(a.activeDeployment??""));')"
+            DEPLOYMENT_ID="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/deployments.json","utf8")); const rows=Array.isArray(d)?d:(d.items??d.deployments??d.data??[]); const x=rows[0]; process.stdout.write(String(x?.id??x?._id??""));')"
             if [ -n "$DEPLOYMENT_ID" ]; then
-              echo "Resolved the app's active Hostless deployment: $DEPLOYMENT_ID"
+              echo "Resolved newest Hostless deployment from the deployment list: $DEPLOYMENT_ID"
             else
-              DEPLOYMENT_ID="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/deployments.json","utf8")); const rows=Array.isArray(d)?d:(d.items??d.deployments??d.data??[]); const x=rows[0]; process.stdout.write(String(x?.id??x?._id??""));')"
-              if [ -n "$DEPLOYMENT_ID" ]; then echo "Resolved latest Hostless deployment from the app deployment list: $DEPLOYMENT_ID"; fi
+              DEPLOYMENT_ID="$(node --input-type=module -e 'import fs from "node:fs"; const d=JSON.parse(fs.readFileSync("hostless-diagnostics/app-detail.json","utf8")); const a=d.app??d; process.stdout.write(String(a.activeDeployment??""));')"
+              if [ -n "$DEPLOYMENT_ID" ]; then echo "Resolved the app's active Hostless deployment as fallback: $DEPLOYMENT_ID"; fi
             fi
           fi
           if [ -n "$DEPLOYMENT_ID" ]; then
@@ -295,6 +279,21 @@ jobs:
             curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/logs" -o hostless-diagnostics/deployment-api-logs.json
             curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/post-build-logs" -o hostless-diagnostics/post-build-logs.json
             echo "Fetched Hostless deployment detail, release logs, and post-build logs through the API." | tee -a hostless-diagnostics/summary.txt
+            node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          try {
+            const d = JSON.parse(fs.readFileSync("hostless-diagnostics/deployment-detail.json", "utf8"));
+            const a = d.appState && typeof d.appState === "object" ? d.appState : {};
+            const safe = {
+              status: d.status, gitCommitHash: d.gitCommitHash, gitBranch: d.gitBranch,
+              triggerSource: d.triggerSource, createdAt: d.createdAt, startedAt: d.startedAt,
+              completedAt: d.completedAt, appState: a.status,
+              pendingDeployment: a.pendingDeployment, pendingBuild: a.pendingBuild,
+              pendingSettingsFields: a.pendingSettingsFields
+            };
+            console.log("Resolved latest Hostless deployment (safe fields): " + JSON.stringify(safe));
+          } catch { console.log("Latest Hostless deployment detail was not valid JSON."); }
+          NODE
           fi
           exit 0
 
