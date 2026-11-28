@@ -58,3 +58,14 @@ test("one-time offset timestamps reject invalid dates and timezone offsets", () 
     assert.throws(() => normalizeSchedule({ type:"once", runAt, timeZone:"America/Chicago" }, Date.UTC(2026,2,7,12)));
   }
 });
+
+test("unknown schedule types and interval units are rejected instead of silently becoming manual or minutes", () => {
+  assert.throws(() => normalizeSchedule({ type:"daily" }), /Unsupported schedule type/);
+  assert.throws(() => normalizeSchedule({ type:"interval", every:2, unit:"fortnights" }), /Unsupported interval unit/);
+  assert.deepEqual(normalizeSchedule({}), { type:"manual" });
+});
+
+test("ambiguous fall-back wall-clock times choose the first occurrence consistently", () => {
+  const schedule = normalizeSchedule({ type:"once", runAt:"2026-11-01T01:30", timeZone:"America/Chicago" }, Date.UTC(2026,9,31,12));
+  assert.equal(new Date(schedule.runAt).toISOString(), "2026-11-01T06:30:00.000Z");
+});
