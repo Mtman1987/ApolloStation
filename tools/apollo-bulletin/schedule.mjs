@@ -35,10 +35,12 @@ function parseRunAt(value, timeZone) {
   return new Date(value).getTime();
 }
 export function normalizeSchedule(input = {}, now = Date.now()) {
-  const type=["manual","once","interval","weekly","monthly"].includes(input.type)?input.type:"manual";
+  const supportedTypes=["manual","once","interval","weekly","monthly"];
+  const type=input.type===undefined||input.type===null||input.type===""?"manual":input.type;
+  if(!supportedTypes.includes(type))throw new Error("Unsupported schedule type");
   if(type==="manual")return {type};
   if(type==="once"){const timeZone=validTimeZone(input.timeZone||DEFAULT_TIME_ZONE),at=parseRunAt(input.runAt,timeZone);if(!Number.isFinite(at)||at<=now)throw new Error("One-time schedule must be in the future");return {type,runAt:at,timeZone};}
-  if(type==="interval"){const every=Number(input.every),unit=["seconds","minutes","hours","days"].includes(input.unit)?input.unit:"minutes";if(!Number.isInteger(every)||every<1||every>100000)throw new Error("Interval must be a positive whole number");return {type,every,unit};}
+  if(type==="interval"){const every=Number(input.every),unit=input.unit===undefined||input.unit===null||input.unit===""?"minutes":input.unit;if(!["seconds","minutes","hours","days"].includes(unit))throw new Error("Unsupported interval unit");if(!Number.isInteger(every)||every<1||every>100000)throw new Error("Interval must be a positive whole number");return {type,every,unit};}
   const time=/^([01]\d|2[0-3]):([0-5]\d)$/.test(input.time||"")?input.time:"09:00",timeZone=validTimeZone(input.timeZone||DEFAULT_TIME_ZONE);
   if(type==="weekly"){const weekdays=Array.isArray(input.weekdays)?input.weekdays.map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6):[];if(!weekdays.length)throw new Error("Choose at least one weekday");return {type,weekdays:[...new Set(weekdays)].sort(),time,timeZone};}
   const day=Number(input.day);if(!Number.isInteger(day)||day<1||day>31)throw new Error("Monthly day must be between 1 and 31");return {type,day,time,timeZone};
