@@ -439,3 +439,37 @@ test("readiness fails when the durable queue row disappears despite a recent in-
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
   }
 });
+
+test("readiness fails when dispatcher lease methods exist but live lease acquisition is refused", async () => {
+  const keys = ["APOLLO_BULLETIN_REQUIRE_TURSO","APOLLO_BULLETIN_USE_HOSTLESS_CRON","APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BULLETIN_ENABLE_BROWSER"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  process.env.APOLLO_BULLETIN_REQUIRE_TURSO = "1";
+  process.env.APOLLO_BULLETIN_USE_HOSTLESS_CRON = "1";
+  process.env.APOLLO_BULLETIN_CRON_TOKEN = "cron-lease-probe-test-token";
+  process.env.APOLLO_BULLETIN_ENABLE_BROWSER = "0";
+  let persisted = { tasks:[], activity:[], cron:{ status:"completed", lastTickCompletedAt:Date.now()-1000, completedTicks:1, failedTicks:0, inFlight:false } };
+  const store = {
+    async loadQueue() { return structuredClone(persisted); },
+    async saveQueue(value) { persisted = structuredClone(value); },
+    async loadBrowserState() { return null; },
+    async saveBrowserState() {},
+    async ping() { return true; },
+    async checkSignalPersistence() { return true; },
+    async acquireLease() { return true; },
+    async releaseLease() { return true; },
+    async checkDispatcherLease() { return false; },
+  };
+  const app = createBulletinServer({ port:0, store });
+  try {
+    const address = await app.listen();
+    const response = await fetch("http://127.0.0.1:"+address.port+"/health/ready");
+    assert.equal(response.status,503);
+    const proof = await response.json();
+    assert.equal(proof.dispatcherLeaseConfigured,true);
+    assert.equal(proof.dispatcherLeaseAvailable,false);
+    assert.equal(proof.ready,false);
+  } finally {
+    await app.close();
+    for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+  }
+});
