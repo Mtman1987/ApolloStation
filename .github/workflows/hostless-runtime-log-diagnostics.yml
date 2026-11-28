@@ -148,6 +148,31 @@ jobs:
           else
             echo "HTTP probes skipped: no public URL." | tee -a hostless-diagnostics/http-probes.txt
           fi
+          if [ -s hostless-diagnostics/http-_bulletin_health_ready.body ]; then
+            node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          try {
+            const d = JSON.parse(fs.readFileSync("hostless-diagnostics/http-_bulletin_health_ready.body", "utf8"));
+            const cron = d.cron && typeof d.cron === "object" ? d.cron : {};
+            const safe = {
+              ready: d.ready, browser: d.browser, browserHealthy: d.browserHealthy,
+              browserSessionPersisted: d.browserSessionPersisted, browserSessionReady: d.browserSessionReady,
+              browserLoginRequired: d.browserLoginRequired, persistence: d.persistence,
+              persistenceReachable: d.persistenceReachable, cronRequired: d.cronRequired,
+              cronAuthConfigured: d.cronAuthConfigured, cronExecutionConfirmed: d.cronExecutionConfirmed,
+              dispatcherLeaseConfigured: d.dispatcherLeaseConfigured,
+              taskControlPersistenceReady: d.taskControlPersistenceReady,
+              ownerAuthorizationPolicy: d.ownerAuthorizationPolicy,
+              cron: {
+                lastTickStatus: cron.lastTickStatus, lastTickCompletedAt: cron.lastTickCompletedAt,
+                lastTickProcessed: cron.lastTickProcessed, completedTicks: cron.completedTicks,
+                failedTicks: cron.failedTicks, inFlight: cron.inFlight
+              }
+            };
+            console.log("Apollo Bulletin live readiness (safe fields only): " + JSON.stringify(safe));
+          } catch { console.log("Apollo Bulletin live readiness response was not valid JSON."); }
+          NODE
+          fi
 
           # Verify the owner-facing recovery surface on Node 1 without completing OAuth
           # or attempting a password change. Only status, provider host, callback host,
@@ -209,6 +234,22 @@ jobs:
           # All other environment values are discarded without being logged or uploaded.
           curl -sS --max-time 20 -H "Authorization: $HOSTLESS_TOKEN" -H "Accept: application/json" "$API/environment-variables" -o hostless-diagnostics/environment-variable-names.json
           node --input-type=module -e 'import fs from "node:fs"; const p="hostless-diagnostics/environment-variable-names.json"; try { const d=JSON.parse(fs.readFileSync(p,"utf8")); const a=Array.isArray(d)?d:(d.variables??d.environmentVariables??d.items??d.data??[]); const names=a.map(x=>x.name??x.key).filter(x=>typeof x==="string").sort(); const item=a.find(x=>(x.name??x.key)==="SPMT_ORIGIN"); const raw=typeof item?.value==="string"?item.value:typeof item?.currentValue==="string"?item.currentValue:""; let origin=null; try { if(raw) origin=new URL(raw).origin; } catch {} fs.writeFileSync(p,JSON.stringify(names,null,2)); const bulletinNames=names.filter(name=>["APOLLO_BULLETIN_CRON_TOKEN","APOLLO_BROWSER_CONTROL_PASSWORD","APOLLO_PREVIEW_PASSWORD","APOLLO_PRIVATE_PREVIEW","APOLLO_BULLETIN_PUBLIC_URL","TURSO_DATABASE_URL","SHARED_TURSO_DATABASE_URL","NODE1_TURSO_AUTH_TOKEN","TURSO_AUTH_TOKEN"].includes(name)); console.log("Apollo Bulletin configured variable names (values withheld): "+JSON.stringify(bulletinNames)); fs.writeFileSync("hostless-diagnostics/environment-safe-config.json",JSON.stringify({SPMT_ORIGIN:{configured:names.includes("SPMT_ORIGIN"),origin}},null,2)); } catch { fs.writeFileSync(p,"[unparseable response; raw body intentionally discarded]"); fs.writeFileSync("hostless-diagnostics/environment-safe-config.json",JSON.stringify({SPMT_ORIGIN:{configured:false,origin:null}})); }'
+          if [ -s hostless-diagnostics/deployment-detail.json ]; then
+            node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          try {
+            const d = JSON.parse(fs.readFileSync("hostless-diagnostics/deployment-detail.json", "utf8"));
+            const a = d.appState && typeof d.appState === "object" ? d.appState : {};
+            console.log("Latest Hostless deployment (safe fields): " + JSON.stringify({
+              status: d.status, gitCommitHash: d.gitCommitHash, gitBranch: d.gitBranch,
+              triggerSource: d.triggerSource, appState: a.status,
+              pendingDeployment: a.pendingDeployment, pendingBuild: a.pendingBuild,
+              pendingSettingsFields: a.pendingSettingsFields
+            }));
+          } catch { console.log("Latest Hostless deployment detail was not valid JSON."); }
+          NODE
+          fi
+
           {
             echo "App: $APP"
             echo "Window: $WINDOW"
