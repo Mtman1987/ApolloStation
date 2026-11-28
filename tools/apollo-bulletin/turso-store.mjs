@@ -8,6 +8,7 @@ export class TursoBulletinStore {
   constructor({ url, authToken, adapter = new TursoHttpAdapter({ url, authToken }) }) {
     this.adapter = adapter;
     this.ready = false;
+    this.leaseProbePromise = null;
   }
 
   async initialize() {
@@ -76,11 +77,16 @@ export class TursoBulletinStore {
   }
 
   async checkDispatcherLease() {
-    const key = "apollo-bulletin-readiness-probe:" + process.pid;
-    const ownerId = "readiness:" + randomUUID();
-    const acquired = await this.acquireLease(key, ownerId, Date.now(), 15_000);
-    if (!acquired) return false;
-    return this.releaseLease(key, ownerId, Date.now());
+    if (this.leaseProbePromise) return this.leaseProbePromise;
+    this.leaseProbePromise = (async () => {
+      const key = "apollo-bulletin-readiness-probe:" + process.pid;
+      const ownerId = "readiness:" + randomUUID();
+      const acquired = await this.acquireLease(key, ownerId, Date.now(), 15_000);
+      if (!acquired) return false;
+      return this.releaseLease(key, ownerId, Date.now());
+    })();
+    try { return await this.leaseProbePromise; }
+    finally { this.leaseProbePromise = null; }
   }
 
   async requestReview(taskId, requestedAt = Date.now()) {
