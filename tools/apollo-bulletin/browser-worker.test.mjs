@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ApolloChatGptBrowserWorker, chatGptResponseSettled, isChatGptLoginRequired } from "./browser-worker.mjs";
 
-function fakeWorker({ url = "https://chatgpt.com/", pageClosed = false, browserConnected = true } = {}) {
+function fakeWorker({ url = "https://chatgpt.com/", pageClosed = false, browserConnected = true, loginButtonVisible = false, loginLinkVisible = false } = {}) {
   const worker = new ApolloChatGptBrowserWorker({});
   worker.context = { browser: () => browserConnected ? ({ isConnected: () => true }) : null };
   worker.page = {
     isClosed: () => pageClosed,
     url: () => url,
     title: async () => "ChatGPT",
-    getByRole: () => ({ first: () => ({ isVisible: async () => false }) }),
+    getByRole: role => ({ first: () => ({ isVisible: async () => role === "button" ? loginButtonVisible : loginLinkVisible }) }),
   };
   return worker;
 }
@@ -41,6 +41,12 @@ test("browser status exposes health separately from ChatGPT login state", async 
     assert.equal(status.connected, true);
     assert.equal(status.loginRequired, true, url);
   }
+});
+
+test("browser status recognizes a sign-in link on the ChatGPT landing page", async () => {
+  const status = await fakeWorker({ url:"https://chatgpt.com/", loginLinkVisible:true }).status();
+  assert.equal(status.healthy, true);
+  assert.equal(status.loginRequired, true);
 });
 
 test("browser health fails closed when the context has no connected browser", async () => {
