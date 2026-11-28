@@ -19,7 +19,7 @@ test("Hostless deployment polling stops at the ten-minute default deadline", asy
       sleep: async milliseconds => { clock += milliseconds; },
       intervalMs: 60_000,
     }),
-    error => error.status === "DEPLOYMENT_STARTED" && /600000ms/.test(error.message),
+    error => error.status === "deployment_started" && /600000ms/.test(error.message),
   );
   assert.equal(clock, 600_000);
   assert.equal(polls, 10);
