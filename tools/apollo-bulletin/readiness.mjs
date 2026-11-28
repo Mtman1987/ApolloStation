@@ -1,5 +1,5 @@
-export function readinessStatus({ browserRequired = false, browserStarted = false, persistenceRequired = false, persistenceAvailable = false, cronRequired = false, cronAuthConfigured = false, cronExecutionConfirmed = false, dispatcherLeaseRequired = false, dispatcherLeaseAvailable = false, taskControlPersistenceRequired = false, taskControlPersistenceReady = false } = {}) {
-  const ready = (!browserRequired || browserStarted) && (!persistenceRequired || persistenceAvailable) && (!cronRequired || (cronAuthConfigured && cronExecutionConfirmed)) && (!dispatcherLeaseRequired || dispatcherLeaseAvailable) && (!taskControlPersistenceRequired || taskControlPersistenceReady);
+export function readinessStatus({ browserRequired = false, browserStarted = false, browserSessionReady = browserStarted, persistenceRequired = false, persistenceAvailable = false, cronRequired = false, cronAuthConfigured = false, cronExecutionConfirmed = false, dispatcherLeaseRequired = false, dispatcherLeaseAvailable = false, taskControlPersistenceRequired = false, taskControlPersistenceReady = false } = {}) {
+  const ready = (!browserRequired || browserSessionReady) && (!persistenceRequired || persistenceAvailable) && (!cronRequired || (cronAuthConfigured && cronExecutionConfirmed)) && (!dispatcherLeaseRequired || dispatcherLeaseAvailable) && (!taskControlPersistenceRequired || taskControlPersistenceReady);
   return { ready, statusCode: ready ? 200 : 503 };
 }
 
